@@ -18,40 +18,56 @@ blocks in the terrain.
 
 Commands:
 
-    LEFT
-    RIGHT
-    FORWARD
-    BACK
-    END
-    ABSORB [direction]
-    CREATE [direction]
-    PUSH [direction]
-    REPEAT [command] END
-    IF [direction] [command 1] END [command 2] END
-    LOOP [command] END
-    CONTINUE
-    BREAK
-    DEFINE [name] [command] END
-    CALL [name]
+    Actions (all are single statements):
+        LEFT
+        RIGHT
+        FORWARD
+        BACKWARD
+        PUSH
+        PULL
+        ABSORB
+        CREATE
+        DESTROY
+        NULL
+    Modifiers and control flow:
+        CHECK [action]
+        REPEAT [command]
+        BLOCK [commands] NULL
+        IFTHEN [command 1] [command 2]
+        LOOP [commands] NULL/BREAK/CONTINUE
+        DEFINE [name] [command]
+        CALL [name]
 
-The `END` statements aren't strictly necessary. If they're not present,
-they'll implicitly be appended to the end of the command string. So, for
-example, `REPEAT LEFT REPEAT UP` would be the same as
-`REPEAT LEFT REPEAT UP END END` and go `LEFT UP UP LEFT UP UP`.
+All spells are cast the moment they're uttered and syntactically complete;
+there's no "finish spell" action. This makes it much easier to interact with
+the world, as many actions will have an immediate effect. In order chain
+actions together they must either be part of a `REPEAT`, `BLOCK`, or `LOOP`.
 
-The `IF` statement checks to see if the absorbed color matches the color of
-the tile.
+The `IFTHEN` statement acts as the standard ternary operator, using the boolean
+success of the previous action as input. The `CHECK` operator does a dry run of
+an action, returning its would-be success value without causing other effects.
 
 The `LOOP` statement doesn't have a conditional. Instead, it must be exited
-with a `BREAK` statement. The end of the loop can be `END`, `BREAK`, or
-`CONTINUE`. The behavior of `END` is the same as `BREAK` in this context
-(although we could easily switch it). `END` can also be used as a direction,
-in which case it's the "stand still" direction.
+with a `BREAK` statement. The end of the loop can be `NULL`, `BREAK`, or
+`CONTINUE`. The behavior of `NULL` is the same as `BREAK` in this context
+(although we could easily switch it).
 
 The `DEFINE` statement defines a reusable procedure with any name. The `CALL`
 statement then calls a procedure previously stored under a given name.
-Procedures can be called recursively, to some limit. Note that the name scopes
-are global.
+Procedures can be called recursively. Note that the name scopes are global,
+and they persist across different actions. Using blocks, a procedure can be
+redefined while its being run and then called recursively.
+
+Note that the game can function fine with just a subset of the commands.
+The directions all need to be present, and probably `CREATE`, but everything
+else can be swapped out. However, some of them are mutually dependent:
+
+- `DEFINE` and `CALL` must come together
+- `LOOP`, `BREAK`, and `CONTINUE` must all come together
+- `BLOCK` implies `NULL`
+- `CHECK` implies `IFTHEN` (it's useless without it)
+- `IFTHEN` should *probably* imply one of the block constructs
+- `LOOP` generally implies `IFTHEN`
 """
 
 import os
@@ -100,26 +116,36 @@ OBJECT_TYPES = {
     'wall': 2,
 }
 
+ACTIONS = {
+    "LEFT",
+    "RIGHT",
+    "FORWARD",
+    "BACKWARD",
+    "PUSH",
+    "PULL",
+    "ABSORB",
+    "CREATE",
+    "DESTROY",
+    "NULL",
+}
+
 
 def make_new_node(val):
-    node_classes = {
-        "LEFT": MoveNode,
-        "RIGHT": MoveNode,
-        "FORWARD": MoveNode,
-        "BACKWARD": MoveNode,
-        "ABSORB": ActionNode,
-        "CREATE": ActionNode,
-        "PUSH": ActionNode,
-        "REPEAT": RepeatNode,
-        "IF": IfNode,
-        "LOOP": LoopNode,
-        "CONTINUE": ContinueNode,
-        "BREAK": BreakNode,
-        "DEFINE": DefineNode,
-        "CALL": CallNode,
-    }
-    assert val in node_classes, val
-    return node_classes[val](val)
+    if val in ACTIONS:
+        node_class = ActionNode
+    else:
+        node_class = {
+            "CHECK": CheckNode,
+            "REPEAT": RepeatNode,
+            "BLOCK": BlockNode,
+            "IFTHEN": IfThenNode,
+            "LOOP": LoopNode,
+            "CONTINUE": ContinueNode,
+            "BREAK": BreakNode,
+            "DEFINE": DefineNode,
+            "CALL": CallNode,
+        }[val]
+    return node_class(val)
 
 
 class SyntaxNode(object):
@@ -133,26 +159,27 @@ class SyntaxNode(object):
 
 
 class ActionNode(SyntaxNode):
-    direction = None
+    can_push = False
+
+    def execute(self, state):
+        return state.execute_action(self.name)
+
+    def __str__(self):
+        return "<%s>" % (self.name,)
+
+
+class CheckNode(SyntaxNode):
+    action = None
 
     def push(self, val):
-        self.direction = val
+        self.action = val
         self.can_push = False
 
     def execute(self, state):
-        if self.direction is None:
-            return "A direction is missing..."
-        return state.execute_action(self.name, self.direction)
+        return state.execute_action(self.action, dry_run=True)
 
     def __str__(self):
-        return "<%s %s>" % (self.name, self.direction)
-
-
-class MoveNode(ActionNode):
-    def __init__(self, direction):
-        self.name = "MOVE"
-        self.direction = direction
-        self.can_push = False
+        return "<CHECK %s>" % (self.action,)
 
 
 class BlockNode(SyntaxNode):
@@ -162,7 +189,7 @@ class BlockNode(SyntaxNode):
     def push(self, val):
         if self.list and self.list[-1].can_push:
             self.list[-1].push(val)
-        elif val == 'END':
+        elif val == 'NULL':
             self.can_push = False
         else:
             self.list.append(make_new_node(val))
@@ -184,11 +211,14 @@ class DefineNode(SyntaxNode):
     def __init__(self, name, var_name=None):
         self.name = name
         self.var_name = var_name
-        self.command = BlockNode()
+        self.command = None
 
     def push(self, val):
         if self.var_name is None:
             self.var_name = val
+        elif self.command is None:
+            self.command = make_new_node(val)
+            self.can_push = self.command.can_push
         else:
             self.command.push(val)
             self.can_push = self.command.can_push
@@ -196,7 +226,7 @@ class DefineNode(SyntaxNode):
     def execute(self, state):
         if self.var_name is None:
             return "A name is missing..."
-        state.defined_commands[self.var_name] = self.command
+        state.saved_commands[self.var_name] = self.command
         return 0
 
     def __str__(self):
@@ -216,8 +246,8 @@ class CallNode(SyntaxNode):
             return "A name is missing..."
         elif state.energy < 0:
             return state.out_of_energy_msg
-        elif self.var_name in state.defined_commands:
-            return state.defined_commands[self.var_name].execute(state)
+        elif self.var_name in state.saved_commands:
+            return state.saved_commands[self.var_name].execute(state)
         else:
             return "'%s' has not been bound..." % state.command_to_word.get(self.var_name)
 
@@ -228,13 +258,18 @@ class CallNode(SyntaxNode):
 class RepeatNode(SyntaxNode):
     def __init__(self, name="REPEAT"):
         self.name = name
-        self.command = BlockNode()
+        self.command = None
 
     def push(self, val):
-        self.command.push(val)
+        if self.command is None:
+            self.command = make_new_node(val)
+        else:
+            self.command.push(val)
         self.can_push = self.command.can_push
 
     def execute(self, state):
+        if self.command is None:
+            return "A command is missing..."
         return self.command.execute(state) or self.command.execute(state)
 
     def __str__(self):
@@ -281,30 +316,34 @@ class LoopNode(BlockNode):
         return "<LOOP %s>" % (self.list)
 
 
-class IfNode(SyntaxNode):
-    def __init__(self, name="IF"):
+class IfThenNode(SyntaxNode):
+    def __init__(self, name="IFTHEN"):
         self.name = name
-        self.cond = None
-        self.yes_node = BlockNode()
-        self.no_node = BlockNode()
+        self.yes_node = None
+        self.no_node = None
 
     def push(self, val):
-        if self.cond is None:
-            self.cond = val
+        if self.yes_node is None:
+            self.yes_node = make_new_node(val)
         elif self.yes_node.can_push:
             self.yes_node.push(val)
+        elif self.no_node is None:
+            self.no_node = make_new_node(val)
+            self.can_push = self.no_node.can_push
         else:
             self.no_node.push(val)
             self.can_push = self.no_node.can_push
 
     def execute(self, state):
-        if state.check_direction(self.cond):
+        if self.yes_node is None or self.no_node is None:
+            return "A command is missing..."
+        elif state.last_action_bool:
             return self.yes_node.execute(state)
         else:
             return self.no_node.execute(state)
 
     def __str__(self):
-        return "<IF %s %s %s>" % (self.cond, self.yes_node, self.no_node)
+        return "<IFTHEN %s %s>" % (self.yes_node, self.no_node)
 
 
 class GameState(object):
@@ -314,12 +353,12 @@ class GameState(object):
 
     def __init__(self):
         self.agent_loc = np.array([0,0])
+        self.orientation = 0  # 0 = UP, 1 = RIGHT, 2 = DOWN, 3 = LEFT
         self.board = np.zeros((self.height, self.width), dtype=np.uint8)
-        self.commands = []
+
         self.score = 0
         self.color = 1
         self.board[self.agent_loc[0], self.agent_loc[1]] = OBJECT_TYPES['agent']
-        self.defined_commands = {}
         self.error_msg = None
         self.command_key = {
             # later we'll want to randomize this
@@ -327,21 +366,26 @@ class GameState(object):
             'd': "RIGHT",
             's': "BACKWARD",
             'w': "FORWARD",
-            'z': "END",
+            'z': "NULL",
             'q': "ABSORB",
             'c': "CREATE",
-            'f': "IF",
+            'i': "IFTHEN",
             'r': "REPEAT",
             'p': "DEFINE",
             'o': "CALL",
             'l': "LOOP",
             'u': "CONTINUE",
             'b': "BREAK",
+            'k': "BLOCK",
         }
         self.command_to_word = {
             v: MAGIC_WORDS[k] for k, v in self.command_key.items()
         }
-        self.log_msg = ""
+
+        self.commands = []
+        self.log_actions = []  # for debugging only
+        self.saved_commands = {}
+        self.last_action_bool = False
 
     def move_agent(self, dx, dy):
         new_loc = self.agent_loc + [dx, dy]
@@ -350,59 +394,59 @@ class GameState(object):
         self.board[new_loc[1], new_loc[0]] = OBJECT_TYPES['agent']
         self.agent_loc = new_loc
 
-    def execute_commands(self):
-        self.log_msg = ""
-        command_tree = BlockNode("root")
-        self.error_msg = ""
-        for command in self.commands:
-            if command_tree.can_push:
-                command_tree.push(self.command_key[command])
-        self.energy = 25
-        err = command_tree.execute(self)
-        self.error_msg = "" if not err or err in (1,2) else err
-        self.commands = []
-
-        # placeholder
-        delta_score = 5
-        self.score += delta_score
-        return delta_score
-
-    def execute_action(self, name, direction):
-        if direction not in ('LEFT', 'RIGHT', 'FORWARD', 'BACKWARD', 'END'):
-            return "'%s' is not a direction..." % self.command_to_word.get(direction)
+    def execute_action(self, action, dry_run=False):
         self.energy -= 1
         if self.energy < 0:
             return self.out_of_energy_msg
-        self.log_msg += "%s %s " % (name, direction)
-        return 0  # placeholder
+        if action == "LEFT":
+            self.orientation -= 1
+            self.orientation %= 4
+        elif action == "RIGHT":
+            self.orientation += 1
+            self.orientation %= 4
 
-    def check_direction(self, direction):
-        if direction not in ('LEFT', 'RIGHT', 'FORWARD', 'BACKWARD', 'END'):
-            return "'%s' is not a direction..." % self.command_to_word.get(direction)
-        return True  # placeholder
+        # placeholder
+        self.log_actions.append(action)
+        self.last_action_bool = True
+        return 0
+
+    _program = None
 
     def step(self, action):
-        # Returns change in score
-        if action in '\r\n':
-            # enter key
-            return self.execute_commands()
-        elif action.startswith('\x1b'):
-            # arrow key
-            dx = (action == RIGHT_ARROW_KEY) - (action == LEFT_ARROW_KEY)
-            dy = (action == DOWN_ARROW_KEY) - (action == UP_ARROW_KEY)
-            self.move_agent(dx, dy)
-        elif action == '\x7f':
-            # delete key
-            self.commands = self.commands[:-1]
+        if action == '\x7f':
+            # Delete key
+            if self.commands:
+                self.commands.pop()
         elif action in self.command_key:
+            # It's somewhat inefficient to rebuild the program from scratch
+            # when each action is added, but otherwise we'd have to handle
+            # popping commands when the delete key is hit. Hardly a bottleneck.
             self.commands.append(action)
+            program = BlockNode()
+            for command in self.commands:
+                program.push(self.command_key[command])
+            self._program = program
+            if not program.list[-1].can_push:
+                # Reached the end of the list.
+                self.log_actions = []
+                self.energy = 25
+                err = program.execute(self)
+                self.error_msg = "" if not err or err in (1,2) else err
+                self.commands = []
+            # Then need to evolve the board one step
         return 0
 
 
 def render(s):
     # This is not exactly a speedy rendering system, but oh well!
+
     SPRITES = {
-        'agent': '\x1b[1m@\x1b[0m',
+        'agent': '\x1b[1m%s\x1b[0m' % {
+            0: "⋀",
+            1: ">",
+            2: "⋁",
+            3: "<",
+        }[s.orientation],
         'wall': '#',
     }
     screen = np.empty((s.height+2, s.width+3), dtype=object)
@@ -420,13 +464,14 @@ def render(s):
     sys.stdout.write(' '.join(screen.ravel()))
     if s.error_msg:
         sys.stdout.write("\x1b[3m" + s.error_msg + "\x1b[0m\n")
-    sys.stdout.write(s.log_msg + '\n')
+    print(' '.join(s.log_actions))
+    print(s._program)
     words = [MAGIC_WORDS.get(c, '_') for c in s.commands]
     sys.stdout.write("Command: " + ' '.join(words))
     sys.stdout.flush()
 
 
-def main():
+def play():
     os.system('clear')
     game_state = GameState()
     while True:
@@ -439,4 +484,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    play()
