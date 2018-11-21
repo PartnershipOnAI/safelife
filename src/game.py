@@ -81,6 +81,7 @@ DOWN_ARROW_KEY = '\x1b[B'
 RIGHT_ARROW_KEY = '\x1b[C'
 LEFT_ARROW_KEY = '\x1b[D'
 INTERRUPT_KEY = '\x03'
+DELETE_KEY = '\x7f'
 
 MAGIC_WORDS = {
     'a': 'abra',
@@ -112,6 +113,7 @@ MAGIC_WORDS = {
 }
 
 OBJECT_TYPES = {
+    'empty': 0,
     'agent': 1,
     'wall': 2,
 }
@@ -127,6 +129,35 @@ ACTIONS = {
     "CREATE",
     "DESTROY",
     "NULL",
+}
+
+KEY_BINDINGS = {
+    LEFT_ARROW_KEY: "LEFT",
+    RIGHT_ARROW_KEY: "RIGHT",
+    UP_ARROW_KEY: "FORWARD",
+    DOWN_ARROW_KEY: "BACKWARD",
+    'a': "LEFT",
+    'd': "RIGHT",
+    'w': "FORWARD",
+    's': "BACKWARD",
+    '\r': "NULL",
+    'z': "NULL",
+    'q': "ABSORB",
+    'c': "CREATE",
+    'x': "DESTROY",
+    'i': "IFTHEN",
+    'r': "REPEAT",
+    'p': "DEFINE",
+    'o': "CALL",
+    'l': "LOOP",
+    'u': "CONTINUE",
+    'b': "BREAK",
+    'k': "BLOCK",
+}
+
+COMMAND_WORDS = {
+    cmd: MAGIC_WORDS[k] for k, cmd in KEY_BINDINGS.items()
+    if k in MAGIC_WORDS
 }
 
 
@@ -249,7 +280,8 @@ class CallNode(SyntaxNode):
         elif self.var_name in state.saved_commands:
             return state.saved_commands[self.var_name].execute(state)
         else:
-            return "'%s' has not been bound..." % state.command_to_word.get(self.var_name)
+            return "'%s' has not been bound..." % \
+                COMMAND_WORDS.get(self.var_name, self.var_name)
 
     def __str__(self):
         return "<CALL %s>" % (self.var_name,)
@@ -360,39 +392,28 @@ class GameState(object):
         self.color = 1
         self.board[self.agent_loc[0], self.agent_loc[1]] = OBJECT_TYPES['agent']
         self.error_msg = None
-        self.command_key = {
-            # later we'll want to randomize this
-            'a': "LEFT",
-            'd': "RIGHT",
-            's': "BACKWARD",
-            'w': "FORWARD",
-            'z': "NULL",
-            'q': "ABSORB",
-            'c': "CREATE",
-            'i': "IFTHEN",
-            'r': "REPEAT",
-            'p': "DEFINE",
-            'o': "CALL",
-            'l': "LOOP",
-            'u': "CONTINUE",
-            'b': "BREAK",
-            'k': "BLOCK",
-        }
-        self.command_to_word = {
-            v: MAGIC_WORDS[k] for k, v in self.command_key.items()
-        }
 
         self.commands = []
         self.log_actions = []  # for debugging only
         self.saved_commands = {}
         self.last_action_bool = False
 
-    def move_agent(self, dx, dy):
-        new_loc = self.agent_loc + [dx, dy]
-        new_loc %= [self.width, self.height]
-        self.board[self.agent_loc[1], self.agent_loc[0]] = 0
-        self.board[new_loc[1], new_loc[0]] = OBJECT_TYPES['agent']
-        self.agent_loc = new_loc
+    def relative_loc(self, n_forward, n_right=0):
+        x = n_right
+        y = -n_forward
+        for _ in range(self.orientation):
+            x, y = -y, x
+        x += self.agent_loc[0]
+        x %= self.width
+        y += self.agent_loc[1]
+        y %= self.height
+        return x, y
+
+    def move_agent(self, x, y):
+        if self.board[y, x] == OBJECT_TYPES['empty']:
+            self.board[self.agent_loc[1], self.agent_loc[0]] = 0
+            self.board[y, x] = OBJECT_TYPES['agent']
+            self.agent_loc = np.array([x, y])
 
     def execute_action(self, action, dry_run=False):
         self.energy -= 1
@@ -404,37 +425,63 @@ class GameState(object):
         elif action == "RIGHT":
             self.orientation += 1
             self.orientation %= 4
+        elif action == "FORWARD":
+            self.move_agent(*self.relative_loc(1))
+        elif action == "BACKWARD":
+            self.move_agent(*self.relative_loc(-1))
+        elif action == "CREATE":
+            x, y = self.relative_loc(1)
+            self.board[y, x] = OBJECT_TYPES['wall']
+        elif action == "DESTROY":
+            x, y = self.relative_loc(1)
+            self.board[y, x] = OBJECT_TYPES['empty']
 
         # placeholder
         self.log_actions.append(action)
         self.last_action_bool = True
         return 0
 
+    def advance_board(self):
+        # Apply one timestep of physics
+        # Mostly placeholder for now. Uses Game of Life rules.
+        shifted_boards = np.array([
+            np.roll(self.board, 1, 0),
+            np.roll(self.board, -1, 0),
+            np.roll(self.board, 1, 1),
+            np.roll(self.board, -1, 1),
+            np.roll(np.roll(self.board, 1,0), 1, 1),
+            np.roll(np.roll(self.board, 1,0), -1, 1),
+            np.roll(np.roll(self.board, -1,0), 1, 1),
+            np.roll(np.roll(self.board, -1,0), -1, 1),
+        ])
+        num_neighbors = np.sum(shifted_boards == OBJECT_TYPES['wall'], axis=0)
+        near_agent = np.sum(shifted_boards == OBJECT_TYPES['agent'], axis=0) > 0
+        empty_cells = (self.board == OBJECT_TYPES['empty']) & ~near_agent
+        live_cells = (self.board == OBJECT_TYPES['wall']) & ~near_agent
+        self.board[empty_cells & (num_neighbors == 3)] = OBJECT_TYPES['wall']
+        self.board[live_cells & (num_neighbors > 3)] = OBJECT_TYPES['empty']
+        self.board[live_cells & (num_neighbors < 2)] = OBJECT_TYPES['empty']
+
     _program = None
 
     def step(self, action):
-        if action == '\x7f':
-            # Delete key
-            if self.commands:
-                self.commands.pop()
-        elif action in self.command_key:
-            # It's somewhat inefficient to rebuild the program from scratch
-            # when each action is added, but otherwise we'd have to handle
-            # popping commands when the delete key is hit. Hardly a bottleneck.
-            self.commands.append(action)
-            program = BlockNode()
-            for command in self.commands:
-                program.push(self.command_key[command])
-            self._program = program
-            if not program.list[-1].can_push:
-                # Reached the end of the list.
-                self.log_actions = []
-                self.energy = 25
-                err = program.execute(self)
-                self.error_msg = "" if not err or err in (1,2) else err
-                self.commands = []
-            # Then need to evolve the board one step
-        return 0
+        assert action in COMMAND_WORDS
+        self.commands.append(action)
+        # It's somewhat inefficient to rebuild the program from scratch
+        # when each action is added, but otherwise we'd have to handle
+        # popping commands when the delete key is hit. Hardly a bottleneck.
+        program = BlockNode()
+        for command in self.commands:
+            program.push(command)
+        self._program = program  # for debugging
+        if not program.list or not program.list[-1].can_push:
+            # Reached the end of the list.
+            self.log_actions = []
+            self.energy = 25
+            err = program.execute(self)
+            self.error_msg = "" if not err or err in (1,2) else err
+            self.commands = []
+        self.advance_board()
 
 
 def render(s):
@@ -466,7 +513,7 @@ def render(s):
         sys.stdout.write("\x1b[3m" + s.error_msg + "\x1b[0m\n")
     print(' '.join(s.log_actions))
     print(s._program)
-    words = [MAGIC_WORDS.get(c, '_') for c in s.commands]
+    words = [COMMAND_WORDS.get(c, '_') for c in s.commands]
     sys.stdout.write("Command: " + ' '.join(words))
     sys.stdout.flush()
 
@@ -476,11 +523,14 @@ def play():
     game_state = GameState()
     while True:
         render(game_state)
-        action = getch()
-        if action == INTERRUPT_KEY:
+        key = getch()
+        if key == INTERRUPT_KEY:
             print("")
             return
-        game_state.step(action)
+        elif key == DELETE_KEY and game_state.commands:
+            game_state.commands.pop()
+        elif key in KEY_BINDINGS:
+            game_state.step(KEY_BINDINGS[key])
 
 
 if __name__ == "__main__":
