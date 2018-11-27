@@ -33,7 +33,7 @@ Commands:
         CHECK [action]
         REPEAT [command]
         BLOCK [commands] NULL
-        IFTHEN [command 1] [command 2]
+        IFSUCCESS [command 1] [command 2]
         LOOP [commands] NULL/BREAK/CONTINUE
         DEFINE [name] [command]
         CALL [name]
@@ -43,7 +43,7 @@ there's no "finish spell" action. This makes it much easier to interact with
 the world, as many actions will have an immediate effect. In order chain
 actions together they must either be part of a `REPEAT`, `BLOCK`, or `LOOP`.
 
-The `IFTHEN` statement acts as the standard ternary operator, using the boolean
+The `IFSUCCESS` statement acts as the standard ternary operator, using the boolean
 success of the previous action as input. The `CHECK` operator does a dry run of
 an action, returning its would-be success value without causing other effects.
 
@@ -65,9 +65,9 @@ else can be swapped out. However, some of them are mutually dependent:
 - `DEFINE` and `CALL` must come together
 - `LOOP`, `BREAK`, and `CONTINUE` must all come together
 - `BLOCK` implies `NULL`
-- `CHECK` implies `IFTHEN` (it's useless without it)
-- `IFTHEN` should *probably* imply one of the block constructs
-- `LOOP` generally implies `IFTHEN`
+- `CHECK` implies `IFSUCCESS` (it's useless without it)
+- `IFSUCCESS` should *probably* imply one of the block constructs
+- `LOOP` generally implies `IFSUCCESS`
 """
 
 import os
@@ -145,7 +145,7 @@ KEY_BINDINGS = {
     'q': "ABSORB",
     'c': "CREATE",
     'x': "DESTROY",
-    'i': "IFTHEN",
+    'i': "IFNOTEMPTY",
     'r': "REPEAT",
     'p': "DEFINE",
     'o': "CALL",
@@ -169,7 +169,7 @@ def make_new_node(val):
             "CHECK": CheckNode,
             "REPEAT": RepeatNode,
             "BLOCK": BlockNode,
-            "IFTHEN": IfThenNode,
+            "IFSUCCESS": IfSuccessNode,
             "LOOP": LoopNode,
             "CONTINUE": ContinueNode,
             "BREAK": BreakNode,
@@ -180,16 +180,42 @@ def make_new_node(val):
 
 
 class SyntaxNode(object):
+    """
+    Base class for building the parse tree.
+    """
     can_push = True
+    default_name = None
 
-    def __init__(self, name):
+    def __init__(self, name=default_name):
         self.name = name
+
+    def push(self, command):
+        """
+        Add a child command to this node of the tree.
+        """
+        raise NotImplementedError
+
+    def execute(self, state):
+        """
+        Execute the program defined by this node and any sub-nodes.
+
+        The `state` object should contain an instance of `GameState`, defined
+        below.
+        """
+        raise NotImplementedError
+
+    def __str__(self):
+        return "<%s>" % (self.name,)
 
     def __repr__(self):
         return str(self)
 
 
 class ActionNode(SyntaxNode):
+    """
+    Simple node that executes a single parameter-less action in the game state.
+    Has no sub-nodes.
+    """
     can_push = False
 
     def execute(self, state):
@@ -200,6 +226,12 @@ class ActionNode(SyntaxNode):
 
 
 class CheckNode(SyntaxNode):
+    """
+    Node that wraps the subsequent action in a dry run.
+
+    This can be used to set the state's `last_action_bool` flag without
+    actually executing the action. That flag can then be queried by an if node.
+    """
     action = None
 
     def push(self, val):
@@ -214,6 +246,13 @@ class CheckNode(SyntaxNode):
 
 
 class BlockNode(SyntaxNode):
+    """
+    Node to wrap multiple commands into a single block.
+
+    Necessary for control flow with more than single command.
+    Note that the `NULL` (or `BREAK` or `CONTINUE`) command must pushed onto
+    the node in order to exit the block.
+    """
     def __init__(self, name="BLOCK"):
         self.list = []
 
@@ -239,10 +278,15 @@ class BlockNode(SyntaxNode):
 
 
 class DefineNode(SyntaxNode):
+    """
+    Binds a routine to a given name which can later be executed with `CallNode`.
+
+    Note that the definition starts off in block mode.
+    """
     def __init__(self, name, var_name=None):
         self.name = name
         self.var_name = var_name
-        self.command = None
+        self.command = BlockNode()
 
     def push(self, val):
         if self.var_name is None:
@@ -265,6 +309,9 @@ class DefineNode(SyntaxNode):
 
 
 class CallNode(SyntaxNode):
+    """
+    Executes a routine previously defined with `DefineNode`.
+    """
     var_name = None
 
     def push(self, val):
@@ -288,9 +335,11 @@ class CallNode(SyntaxNode):
 
 
 class RepeatNode(SyntaxNode):
-    def __init__(self, name="REPEAT"):
-        self.name = name
-        self.command = None
+    """
+    Repeats the subsequent command upon execution.
+    """
+    default_name = "REPEAT"
+    command = None
 
     def push(self, val):
         if self.command is None:
@@ -309,6 +358,7 @@ class RepeatNode(SyntaxNode):
 
 
 class ContinueNode(SyntaxNode):
+    default_name = "CONTINUE"
     flag = 1
     can_push = False
 
@@ -318,18 +368,19 @@ class ContinueNode(SyntaxNode):
             return state.out_of_energy_msg
         return self.flag
 
-    def __str__(self):
-        return "<CONTINUE>"
-
 
 class BreakNode(ContinueNode):
+    DEFAULT_NAME = "BREAK"
     flag = 2
-
-    def __str__(self):
-        return "<BREAK>"
 
 
 class LoopNode(BlockNode):
+    """
+    Loops the following commands.
+
+    The loop is broken with either `NULL` or `BREAK`, and repeated with
+    `CONTINUE`.
+    """
     def execute(self, state):
         while True:
             for node in self.list:
@@ -348,11 +399,16 @@ class LoopNode(BlockNode):
         return "<LOOP %s>" % (self.list)
 
 
-class IfThenNode(SyntaxNode):
-    def __init__(self, name="IFTHEN"):
-        self.name = name
-        self.yes_node = None
-        self.no_node = None
+class IfNode(SyntaxNode):
+    """
+    Base class for branching nodes.
+    """
+    default_name = "IF"
+    yes_node = None
+    no_node = None
+
+    def get_bool(self, state):
+        raise NotImplementedError
 
     def push(self, val):
         if self.yes_node is None:
@@ -369,19 +425,45 @@ class IfThenNode(SyntaxNode):
     def execute(self, state):
         if self.yes_node is None or self.no_node is None:
             return "A command is missing..."
-        elif state.last_action_bool:
+        elif self.get_bool(state):
             return self.yes_node.execute(state)
         else:
             return self.no_node.execute(state)
 
     def __str__(self):
-        return "<IFTHEN %s %s>" % (self.yes_node, self.no_node)
+        return "<%s %s %s>" % (self.default_name, self.yes_node, self.no_node)
+
+
+class IfSuccessNode(IfNode):
+    """
+    Branches conditioned on the state's `last_action_bool` flag.
+    """
+    default_name = "IFSUCCESS"
+
+    def get_bool(self, state):
+        return state.last_action_bool
+
+
+class IfNotEmpty(IfNode):
+    """
+    Branches conditioned on the status of the position in front of the agent.
+    """
+    default_name = "IFNOTEMPTY"
+
+    def get_bool(self, state):
+        x, y = state.relative_loc(1)
+        return state.board[y, x] != OBJECT_TYPES['empty']
 
 
 class GameState(object):
+    """
+    Defines the game state and dynamics. Does NOT define rendering.
+    """
     width = 20
     height = 20
     out_of_energy_msg = "You collapse from exhaustion."
+    num_steps = 0
+    default_energy = 100
 
     def __init__(self):
         self.agent_loc = np.array([0,0])
@@ -399,6 +481,9 @@ class GameState(object):
         self.last_action_bool = False
 
     def relative_loc(self, n_forward, n_right=0):
+        """
+        Retrieves a location relative to the agent.
+        """
         x = n_right
         y = -n_forward
         for _ in range(self.orientation):
@@ -410,12 +495,23 @@ class GameState(object):
         return x, y
 
     def move_agent(self, x, y):
+        """
+        Move the agent to a new location if that location is empty.
+        """
         if self.board[y, x] == OBJECT_TYPES['empty']:
             self.board[self.agent_loc[1], self.agent_loc[0]] = 0
             self.board[y, x] = OBJECT_TYPES['agent']
             self.agent_loc = np.array([x, y])
+            self.last_action_bool = True
+        else:
+            self.last_action_bool = False
 
     def execute_action(self, action, dry_run=False):
+        """
+        Execute an individual action.
+
+        Either returns 0 or an error message.
+        """
         self.energy -= 1
         if self.energy < 0:
             return self.out_of_energy_msg
@@ -431,19 +527,28 @@ class GameState(object):
             self.move_agent(*self.relative_loc(-1))
         elif action == "CREATE":
             x, y = self.relative_loc(1)
+            self.last_action_bool = self.board[y, x] == OBJECT_TYPES['empty']
             self.board[y, x] = OBJECT_TYPES['wall']
         elif action == "DESTROY":
             x, y = self.relative_loc(1)
+            self.last_action_bool = self.board[y, x] == OBJECT_TYPES['wall']
             self.board[y, x] = OBJECT_TYPES['empty']
 
         # placeholder
         self.log_actions.append(action)
-        self.last_action_bool = True
         return 0
 
     def advance_board(self):
-        # Apply one timestep of physics
-        # Mostly placeholder for now. Uses Game of Life rules.
+        """
+        Apply one timestep of physics.
+
+        Mostly placeholder for now. Uses Game of Life rules.
+        """
+        ADVANCE_INTERVAL = 1
+        self.num_steps += 1
+        if self.num_steps % ADVANCE_INTERVAL > 0:
+            return  # only run physics once every ADVANCE_INTERVAL steps
+
         shifted_boards = np.array([
             np.roll(self.board, 1, 0),
             np.roll(self.board, -1, 0),
@@ -462,7 +567,7 @@ class GameState(object):
         self.board[live_cells & (num_neighbors > 3)] = OBJECT_TYPES['empty']
         self.board[live_cells & (num_neighbors < 2)] = OBJECT_TYPES['empty']
 
-    _program = None
+    _program = None  # for debugging / logging
 
     def step(self, action):
         assert action in COMMAND_WORDS
@@ -474,19 +579,59 @@ class GameState(object):
         for command in self.commands:
             program.push(command)
         self._program = program  # for debugging
+        self.advance_board()
         if not program.list or not program.list[-1].can_push:
             # Reached the end of the list.
             self.log_actions = []
-            self.energy = 25
+            self.energy = self.default_energy
             err = program.execute(self)
             self.error_msg = "" if not err or err in (1,2) else err
             self.commands = []
-        self.advance_board()
+
+
+class IsingModel(GameState):
+    def __init__(self):
+        super().__init__()
+        self.board = (np.random.random(self.board.shape) > 0.5) * 2
+        self.board[0,0] = 1
+
+    def advance_board(self):
+        """
+        Apply one timestep of physics.
+
+        Mostly placeholder for now. Uses Game of Life rules.
+        """
+        TEMPERATURE = 1.0
+        EPOCHS = 0.2
+        BIAS = 0.0
+
+        board = self.board
+        w = self.width
+        h = self.height
+        AGENT = OBJECT_TYPES['agent']
+        EMPTY = OBJECT_TYPES['empty']
+        WALL = OBJECT_TYPES['wall']
+        for _ in range(int(board.size * EPOCHS)):
+            x = np.random.randint(w)
+            y = np.random.randint(h)
+            if board[y, x] == AGENT:
+                continue
+            H = BIAS - 2
+            H += board[y, (x+1) % w] == WALL
+            H += board[y, (x-1) % w] == WALL
+            H += board[(y+1) % h, x] == WALL
+            H += board[(y-1) % h, x] == WALL
+            P = 0.5 + 0.5*np.tanh(H / TEMPERATURE)
+            board[y, x] = WALL if P > np.random.random() else EMPTY
 
 
 def render(s):
-    # This is not exactly a speedy rendering system, but oh well!
+    """
+    Renders the game state `s`.
 
+    This is not exactly a speedy rendering system, but it should be plenty
+    fast enough for our purposes.
+    """
     SPRITES = {
         'agent': '\x1b[1m%s\x1b[0m' % {
             0: "⋀",
@@ -520,7 +665,7 @@ def render(s):
 
 def play():
     os.system('clear')
-    game_state = GameState()
+    game_state = IsingModel()
     while True:
         render(game_state)
         key = getch()
