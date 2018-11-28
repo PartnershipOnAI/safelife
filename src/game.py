@@ -589,23 +589,32 @@ class GameState(object):
             self.commands = []
 
 
-class IsingModel(GameState):
-    def __init__(self):
+class AsyncGame(GameState):
+    """
+    Uses probablistic cellular automata update rules.
+
+    Can be used to simulate e.g. a two-dimensional Ising model.
+    """
+
+    def __init__(self, rules="ising", beta=100, seed=True):
         super().__init__()
-        self.board = (np.random.random(self.board.shape) > 0.5) * 2
-        self.board[0,0] = 1
+        if seed:
+            self.board[8:12,8:12] = 2  # Add a seed.
+        self.rules = {
+            'vine': [4, [-1, -1, 1, 1, 1], [-1, 1, -1, -1, -1]],
+            'ising': [4, [-2, -1, 0, 1, 2], [-2, -1, 0, 1, 2]],
+            'conway': [8, [-1, -1, 1, 1] + [-1]*5, [-1]*3 + [1] + [-1]*5],
+        }[rules]
+        self.beta = beta
 
     def advance_board(self):
         """
         Apply one timestep of physics.
-
-        Mostly placeholder for now. Uses Game of Life rules.
         """
-        TEMPERATURE = 1.0
-        EPOCHS = 0.2
-        BIAS = 0.0
+        EPOCHS = 0.1
 
         board = self.board
+        rules = self.rules
         w = self.width
         h = self.height
         AGENT = OBJECT_TYPES['agent']
@@ -616,12 +625,26 @@ class IsingModel(GameState):
             y = np.random.randint(h)
             if board[y, x] == AGENT:
                 continue
-            H = BIAS - 2
-            H += board[y, (x+1) % w] == WALL
-            H += board[y, (x-1) % w] == WALL
-            H += board[(y+1) % h, x] == WALL
-            H += board[(y-1) % h, x] == WALL
-            P = 0.5 + 0.5*np.tanh(H / TEMPERATURE)
+            xp = (x+1) % w
+            xn = (x-1) % w
+            yp = (y+1) % h
+            yn = (y-1) % h
+            neighbors = 0
+            neighbors += board[y, xp] == WALL
+            neighbors += board[y, xn] == WALL
+            neighbors += board[yn, x] == WALL
+            neighbors += board[yp, x] == WALL
+            if rules[0] > 4:
+                neighbors += board[yn, xp] == WALL
+                neighbors += board[yp, xn] == WALL
+            if rules[0] > 6:
+                neighbors += board[yn, xn] == WALL
+                neighbors += board[yp, xp] == WALL
+            if board[y, x] == WALL:
+                H = rules[1][neighbors]
+            else:
+                H = rules[2][neighbors]
+            P = 0.5 + 0.5*np.tanh(H * self.beta)
             board[y, x] = WALL if P > np.random.random() else EMPTY
 
 
@@ -663,9 +686,8 @@ def render(s):
     sys.stdout.flush()
 
 
-def play():
+def play(game_state):
     os.system('clear')
-    game_state = IsingModel()
     while True:
         render(game_state)
         key = getch()
@@ -679,4 +701,13 @@ def play():
 
 
 if __name__ == "__main__":
-    play()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--async')
+    parser.add_argument('--temperature', type=float, default=0.01)
+    args = parser.parse_args()
+    if args.async:
+        game = AsyncGame(args.async, 1/max(1e-6, args.temperature))
+    else:
+        game = GameState()
+    play(game)
