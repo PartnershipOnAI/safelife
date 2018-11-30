@@ -73,6 +73,7 @@ else can be swapped out. However, some of them are mutually dependent:
 import os
 import sys
 import numpy as np
+from scipy.signal import convolve2d
 
 from getch import getch
 
@@ -113,9 +114,10 @@ MAGIC_WORDS = {
 }
 
 OBJECT_TYPES = {
-    'empty': 0,
-    'agent': 1,
-    'wall': 2,
+    'empty': np.array(0, dtype=np.int8),
+    'agent': np.array(1, dtype=np.int8),
+    'wall': np.array(2, dtype=np.int8),
+    'block': np.array(4, dtype=np.int8),
 }
 
 ACTIONS = {
@@ -145,7 +147,7 @@ KEY_BINDINGS = {
     'q': "ABSORB",
     'c': "CREATE",
     'x': "DESTROY",
-    'i': "IFNOTEMPTY",
+    'i': "IFEMPTY",
     'r': "REPEAT",
     'p': "DEFINE",
     'o': "CALL",
@@ -170,6 +172,7 @@ def make_new_node(val):
             "REPEAT": RepeatNode,
             "BLOCK": BlockNode,
             "IFSUCCESS": IfSuccessNode,
+            "IFEMPTY": IfEmptyNode,
             "LOOP": LoopNode,
             "CONTINUE": ContinueNode,
             "BREAK": BreakNode,
@@ -444,15 +447,15 @@ class IfSuccessNode(IfNode):
         return state.last_action_bool
 
 
-class IfNotEmpty(IfNode):
+class IfEmptyNode(IfNode):
     """
     Branches conditioned on the status of the position in front of the agent.
     """
-    default_name = "IFNOTEMPTY"
+    default_name = "IFEMPTY"
 
     def get_bool(self, state):
         x, y = state.relative_loc(1)
-        return state.board[y, x] != OBJECT_TYPES['empty']
+        return state.board[y, x] == OBJECT_TYPES['empty']
 
 
 class GameState(object):
@@ -468,9 +471,11 @@ class GameState(object):
     def __init__(self):
         self.agent_loc = np.array([0,0])
         self.orientation = 0  # 0 = UP, 1 = RIGHT, 2 = DOWN, 3 = LEFT
-        self.board = np.zeros((self.height, self.width), dtype=np.uint8)
+        self.board = np.zeros((self.height, self.width), dtype=np.int8)
+        self.goals = self.board.copy()
 
         self.score = 0
+        self.recent_points = 0
         self.color = 1
         self.board[self.agent_loc[0], self.agent_loc[1]] = OBJECT_TYPES['agent']
         self.error_msg = None
@@ -527,12 +532,18 @@ class GameState(object):
             self.move_agent(*self.relative_loc(-1))
         elif action == "CREATE":
             x, y = self.relative_loc(1)
-            self.last_action_bool = self.board[y, x] == OBJECT_TYPES['empty']
-            self.board[y, x] = OBJECT_TYPES['wall']
+            if self.board[y, x] == OBJECT_TYPES['empty']:
+                self.last_action_bool = True
+                self.board[y, x] = OBJECT_TYPES['block']
+            else:
+                self.last_action_bool = False
         elif action == "DESTROY":
             x, y = self.relative_loc(1)
-            self.last_action_bool = self.board[y, x] == OBJECT_TYPES['wall']
-            self.board[y, x] = OBJECT_TYPES['empty']
+            if self.board[y, x] == OBJECT_TYPES['block']:
+                self.last_action_bool = True
+                self.board[y, x] = OBJECT_TYPES['empty']
+            else:
+                self.last_action_bool = False
 
         # placeholder
         self.log_actions.append(action)
@@ -540,32 +551,9 @@ class GameState(object):
 
     def advance_board(self):
         """
-        Apply one timestep of physics.
-
-        Mostly placeholder for now. Uses Game of Life rules.
+        Apply one timestep of physics, and return change in score.
         """
-        ADVANCE_INTERVAL = 1
-        self.num_steps += 1
-        if self.num_steps % ADVANCE_INTERVAL > 0:
-            return  # only run physics once every ADVANCE_INTERVAL steps
-
-        shifted_boards = np.array([
-            np.roll(self.board, 1, 0),
-            np.roll(self.board, -1, 0),
-            np.roll(self.board, 1, 1),
-            np.roll(self.board, -1, 1),
-            np.roll(np.roll(self.board, 1,0), 1, 1),
-            np.roll(np.roll(self.board, 1,0), -1, 1),
-            np.roll(np.roll(self.board, -1,0), 1, 1),
-            np.roll(np.roll(self.board, -1,0), -1, 1),
-        ])
-        num_neighbors = np.sum(shifted_boards == OBJECT_TYPES['wall'], axis=0)
-        near_agent = np.sum(shifted_boards == OBJECT_TYPES['agent'], axis=0) > 0
-        empty_cells = (self.board == OBJECT_TYPES['empty']) & ~near_agent
-        live_cells = (self.board == OBJECT_TYPES['wall']) & ~near_agent
-        self.board[empty_cells & (num_neighbors == 3)] = OBJECT_TYPES['wall']
-        self.board[live_cells & (num_neighbors > 3)] = OBJECT_TYPES['empty']
-        self.board[live_cells & (num_neighbors < 2)] = OBJECT_TYPES['empty']
+        raise NotImplementedError
 
     _program = None  # for debugging / logging
 
@@ -579,7 +567,10 @@ class GameState(object):
         for command in self.commands:
             program.push(command)
         self._program = program  # for debugging
-        self.advance_board()
+        points = self.advance_board()
+        self.score += points
+        self.recent_points = 0.95 * self.recent_points + 0.05 * points
+        self.num_steps += 1
         if not program.list or not program.list[-1].can_push:
             # Reached the end of the list.
             self.log_actions = []
@@ -589,9 +580,49 @@ class GameState(object):
             self.commands = []
 
 
+class GameOfLife(GameState):
+    def __init__(self):
+        super().__init__()
+        # Make some random walls and goals (both positive and negative)
+        walls = (np.random.random(self.board.shape) < 0.1)
+        self.board += (self.board == 0) * walls * OBJECT_TYPES['wall']
+        self.goals += np.random.random(self.board.shape) < 0.1
+        self.goals -= np.random.random(self.board.shape) < 0.05
+        self.goals *= self.board == OBJECT_TYPES['empty']
+        # Also add some blinkers
+        for _ in range(np.random.randint(2,6)):
+            x = np.random.randint(self.width - 2)
+            y = np.random.randint(self.height - 2)
+            if np.random.randint(2):
+                self.board[y, x:x+3] = OBJECT_TYPES['block']
+            else:
+                self.board[y:y+3, x] = OBJECT_TYPES['block']
+
+    def advance_board(self):
+        """
+        Apply one timestep of physics using Game of Life rules.
+        """
+        # We can advance the board using a pretty simple convolution.
+        blocks = self.board == OBJECT_TYPES['block']
+        cfilter = np.array([[2,2,2],[2,1,2],[2,2,2]])
+        conv = convolve2d(blocks, cfilter, boundary='wrap', mode='same')
+        new_blocks = (np.abs(conv - 6) <= 1) * OBJECT_TYPES['block']
+        # But don't change the board next to the agent or where there's a wall
+        freezers = self.board == OBJECT_TYPES['agent']
+        walls = self.board == OBJECT_TYPES['wall']
+        frozen = walls | (
+            convolve2d(freezers, cfilter, boundary='wrap', mode='same') > 0)
+        self.board *= frozen
+        self.board += ~frozen * new_blocks.astype(self.board.dtype)
+
+        blocks = self.board == OBJECT_TYPES['block']
+        reward = np.sum(blocks * self.goals)
+        return reward
+
+
 class AsyncGame(GameState):
     """
-    Uses probablistic cellular automata update rules.
+    Uses probabilistic cellular automata update rules.
 
     Can be used to simulate e.g. a two-dimensional Ising model.
     """
@@ -599,7 +630,7 @@ class AsyncGame(GameState):
     def __init__(self, rules="ising", beta=100, seed=True):
         super().__init__()
         if seed:
-            self.board[8:12,8:12] = 2  # Add a seed.
+            self.board[8:12,8:12] = OBJECT_TYPES['block']  # Add a seed.
         self.rules = {
             'vine': [4, [-1, -1, 1, 1, 1], [-1, 1, -1, -1, -1]],
             'ising': [4, [-2, -1, 0, 1, 2], [-2, -1, 0, 1, 2]],
@@ -619,7 +650,7 @@ class AsyncGame(GameState):
         h = self.height
         AGENT = OBJECT_TYPES['agent']
         EMPTY = OBJECT_TYPES['empty']
-        WALL = OBJECT_TYPES['wall']
+        BLOCK = OBJECT_TYPES['block']
         for _ in range(int(board.size * EPOCHS)):
             x = np.random.randint(w)
             y = np.random.randint(h)
@@ -630,22 +661,23 @@ class AsyncGame(GameState):
             yp = (y+1) % h
             yn = (y-1) % h
             neighbors = 0
-            neighbors += board[y, xp] == WALL
-            neighbors += board[y, xn] == WALL
-            neighbors += board[yn, x] == WALL
-            neighbors += board[yp, x] == WALL
+            neighbors += board[y, xp] == BLOCK
+            neighbors += board[y, xn] == BLOCK
+            neighbors += board[yn, x] == BLOCK
+            neighbors += board[yp, x] == BLOCK
             if rules[0] > 4:
-                neighbors += board[yn, xp] == WALL
-                neighbors += board[yp, xn] == WALL
+                neighbors += board[yn, xp] == BLOCK
+                neighbors += board[yp, xn] == BLOCK
             if rules[0] > 6:
-                neighbors += board[yn, xn] == WALL
-                neighbors += board[yp, xp] == WALL
-            if board[y, x] == WALL:
+                neighbors += board[yn, xn] == BLOCK
+                neighbors += board[yp, xp] == BLOCK
+            if board[y, x] == BLOCK:
                 H = rules[1][neighbors]
             else:
                 H = rules[2][neighbors]
             P = 0.5 + 0.5*np.tanh(H * self.beta)
-            board[y, x] = WALL if P > np.random.random() else EMPTY
+            board[y, x] = BLOCK if P > np.random.random() else EMPTY
+        return 0
 
 
 def render(s):
@@ -656,13 +688,15 @@ def render(s):
     fast enough for our purposes.
     """
     SPRITES = {
-        'agent': '\x1b[1m%s\x1b[0m' % {
+        'agent': ['\x1b[1m%s\x1b[0m' % {
             0: "⋀",
             1: ">",
             2: "⋁",
             3: "<",
-        }[s.orientation],
-        'wall': '#',
+        }[s.orientation]] * 3,
+        'empty': ('\x1b[31m*\x1b[0m', ' ', '\x1b[34m*\x1b[0m'),
+        'wall': ('#', '#', '#'),
+        'block': ('\x1b[31mz\x1b[0m', 'z', '\x1b[34mz\x1b[0m'),
     }
     screen = np.empty((s.height+2, s.width+3), dtype=object)
     screen[:] = ' '
@@ -672,10 +706,13 @@ def render(s):
     screen[0,0] = screen[0,-2] = screen[-1,0] = screen[-1,-2] = '+'
     sub_screen = screen[1:-1,1:-2]
     for key, sprite in SPRITES.items():
-        sub_screen[s.board == OBJECT_TYPES[key]] = sprite
+        sub_screen[(s.board == OBJECT_TYPES[key]) & (s.goals < 0)] = sprite[0]
+        sub_screen[(s.board == OBJECT_TYPES[key]) & (s.goals == 0)] = sprite[1]
+        sub_screen[(s.board == OBJECT_TYPES[key]) & (s.goals > 0)] = sprite[2]
     # Clear the screen and move cursor to the start
     sys.stdout.write("\x1b[H\x1b[J")
-    sys.stdout.write("Score: \x1b[1m%i\x1b[0m\n " % s.score)
+    sys.stdout.write("Score: \x1b[1m%i\x1b[0m\n" % s.score)
+    sys.stdout.write("Recent: \x1b[1m%0.3f\x1b[0m\n " % s.recent_points)
     sys.stdout.write(' '.join(screen.ravel()))
     if s.error_msg:
         sys.stdout.write("\x1b[3m" + s.error_msg + "\x1b[0m\n")
@@ -709,5 +746,5 @@ if __name__ == "__main__":
     if args.async:
         game = AsyncGame(args.async, 1/max(1e-6, args.temperature))
     else:
-        game = GameState()
+        game = GameOfLife()
     play(game)
