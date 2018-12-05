@@ -65,9 +65,10 @@ else can be swapped out. However, some of them are mutually dependent:
 - `DEFINE` and `CALL` must come together
 - `LOOP`, `BREAK`, and `CONTINUE` must all come together
 - `BLOCK` implies `NULL`
-- `CHECK` implies `IFSUCCESS` (it's useless without it)
-- `IFSUCCESS` should *probably* imply one of the block constructs
-- `LOOP` generally implies `IFSUCCESS`
+- `CHECK` implies `IF...` (it's useless without it)
+- `IF...` should *probably* imply one of the block constructs, although it's
+  possible to use it effectively with just `REPEAT`
+- `LOOP` generally implies `IF...`
 """
 
 import os
@@ -76,6 +77,7 @@ import numpy as np
 from scipy.signal import convolve2d
 
 from getch import getch
+from array_utils import wrapping_array
 
 UP_ARROW_KEY = '\x1b[A'
 DOWN_ARROW_KEY = '\x1b[B'
@@ -679,7 +681,7 @@ class AsyncGame(GameState):
         return reward
 
 
-def render(s):
+def render(s, view_size):
     """
     Renders the game state `s`.
 
@@ -697,7 +699,17 @@ def render(s):
         'wall': ('#', '#', '#'),
         'block': ('\x1b[31mz\x1b[0m', 'z', '\x1b[34mz\x1b[0m'),
     }
-    screen = np.empty((s.height+2, s.width+3), dtype=object)
+
+    if view_size:
+        view_width = view_height = view_size
+        x0, y0 = s.agent_loc - view_size // 2
+        board = s.board.view(wrapping_array)[y0:y0+view_size, x0:x0+view_size]
+        goals = s.goals.view(wrapping_array)[y0:y0+view_size, x0:x0+view_size]
+    else:
+        view_width, view_height = s.width, s.height
+        board = s.board
+        goals = s.goals
+    screen = np.empty((view_height+2, view_width+3), dtype=object)
     screen[:] = ' '
     screen[0] = screen[-1] = '-'
     screen[:,0] = screen[:,-2] = '|'
@@ -705,9 +717,9 @@ def render(s):
     screen[0,0] = screen[0,-2] = screen[-1,0] = screen[-1,-2] = '+'
     sub_screen = screen[1:-1,1:-2]
     for key, sprite in SPRITES.items():
-        sub_screen[(s.board == OBJECT_TYPES[key]) & (s.goals < 0)] = sprite[0]
-        sub_screen[(s.board == OBJECT_TYPES[key]) & (s.goals == 0)] = sprite[1]
-        sub_screen[(s.board == OBJECT_TYPES[key]) & (s.goals > 0)] = sprite[2]
+        sub_screen[(board == OBJECT_TYPES[key]) & (goals < 0)] = sprite[0]
+        sub_screen[(board == OBJECT_TYPES[key]) & (goals == 0)] = sprite[1]
+        sub_screen[(board == OBJECT_TYPES[key]) & (goals > 0)] = sprite[2]
     # Clear the screen and move cursor to the start
     sys.stdout.write("\x1b[H\x1b[J")
     sys.stdout.write("Score: \x1b[1m%i\x1b[0m\n" % s.points)
@@ -722,10 +734,10 @@ def render(s):
     sys.stdout.flush()
 
 
-def play(game_state):
+def play(game_state, view_size):
     os.system('clear')
     while True:
-        render(game_state)
+        render(game_state, view_size)
         key = getch()
         if key == INTERRUPT_KEY:
             print("")
@@ -741,9 +753,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--async')
     parser.add_argument('--temperature', type=float, default=0.01)
+    parser.add_argument('--board', type=int, default=20, help="board size")
+    parser.add_argument('--view', type=int, default=0, help=
+        "view size. Defaults to zero, in which case the view isn't centered.")
     args = parser.parse_args()
     if args.async:
+        AsyncGame.width = AsyncGame.height = args.board
         game = AsyncGame(args.async, 1/max(1e-6, args.temperature))
     else:
+        GameOfLife.width = GameOfLife.height = args.board
         game = GameOfLife()
-    play(game)
+    play(game, args.view)
