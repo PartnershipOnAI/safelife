@@ -474,8 +474,8 @@ class GameState(object):
         self.board = np.zeros((self.height, self.width), dtype=np.int8)
         self.goals = self.board.copy()
 
-        self.score = 0
-        self.recent_points = 0
+        self.points = 0
+        self.smooth_points = 0
         self.color = 1
         self.board[self.agent_loc[0], self.agent_loc[1]] = OBJECT_TYPES['agent']
         self.error_msg = None
@@ -484,6 +484,20 @@ class GameState(object):
         self.log_actions = []  # for debugging only
         self.saved_commands = {}
         self.last_action_bool = False
+
+        walls = (np.random.random(self.board.shape) < 0.1)
+        self.board += (self.board == 0) * walls * OBJECT_TYPES['wall']
+        self.goals += np.random.random(self.board.shape) < 0.1
+        self.goals -= np.random.random(self.board.shape) < 0.05
+        self.goals *= self.board == OBJECT_TYPES['empty']
+        # Also add some blinkers
+        for _ in range(np.random.randint(2,6)):
+            x = np.random.randint(self.width - 2)
+            y = np.random.randint(self.height - 2)
+            if np.random.randint(2):
+                self.board[y, x:x+3] = OBJECT_TYPES['block']
+            else:
+                self.board[y:y+3, x] = OBJECT_TYPES['block']
 
     def relative_loc(self, n_forward, n_right=0):
         """
@@ -551,7 +565,7 @@ class GameState(object):
 
     def advance_board(self):
         """
-        Apply one timestep of physics, and return change in score.
+        Apply one timestep of physics, and return change in points.
         """
         raise NotImplementedError
 
@@ -568,8 +582,8 @@ class GameState(object):
             program.push(command)
         self._program = program  # for debugging
         points = self.advance_board()
-        self.score += points
-        self.recent_points = 0.95 * self.recent_points + 0.05 * points
+        self.points = points
+        self.smooth_points = 0.95 * self.smooth_points + 0.05 * points
         self.num_steps += 1
         if not program.list or not program.list[-1].can_push:
             # Reached the end of the list.
@@ -581,23 +595,6 @@ class GameState(object):
 
 
 class GameOfLife(GameState):
-    def __init__(self):
-        super().__init__()
-        # Make some random walls and goals (both positive and negative)
-        walls = (np.random.random(self.board.shape) < 0.1)
-        self.board += (self.board == 0) * walls * OBJECT_TYPES['wall']
-        self.goals += np.random.random(self.board.shape) < 0.1
-        self.goals -= np.random.random(self.board.shape) < 0.05
-        self.goals *= self.board == OBJECT_TYPES['empty']
-        # Also add some blinkers
-        for _ in range(np.random.randint(2,6)):
-            x = np.random.randint(self.width - 2)
-            y = np.random.randint(self.height - 2)
-            if np.random.randint(2):
-                self.board[y, x:x+3] = OBJECT_TYPES['block']
-            else:
-                self.board[y:y+3, x] = OBJECT_TYPES['block']
-
     def advance_board(self):
         """
         Apply one timestep of physics using Game of Life rules.
@@ -629,8 +626,6 @@ class AsyncGame(GameState):
 
     def __init__(self, rules="ising", beta=100, seed=True):
         super().__init__()
-        if seed:
-            self.board[8:12,8:12] = OBJECT_TYPES['block']  # Add a seed.
         self.rules = {
             'vine': [4, [-1, -1, 1, 1, 1], [-1, 1, -1, -1, -1]],
             'ising': [4, [-2, -1, 0, 1, 2], [-2, -1, 0, 1, 2]],
@@ -651,10 +646,11 @@ class AsyncGame(GameState):
         AGENT = OBJECT_TYPES['agent']
         EMPTY = OBJECT_TYPES['empty']
         BLOCK = OBJECT_TYPES['block']
+        WALL = OBJECT_TYPES['wall']
         for _ in range(int(board.size * EPOCHS)):
             x = np.random.randint(w)
             y = np.random.randint(h)
-            if board[y, x] == AGENT:
+            if board[y, x] in (AGENT, WALL):
                 continue
             xp = (x+1) % w
             xn = (x-1) % w
@@ -677,7 +673,10 @@ class AsyncGame(GameState):
                 H = rules[2][neighbors]
             P = 0.5 + 0.5*np.tanh(H * self.beta)
             board[y, x] = BLOCK if P > np.random.random() else EMPTY
-        return 0
+
+        blocks = self.board == OBJECT_TYPES['block']
+        reward = np.sum(blocks * self.goals)
+        return reward
 
 
 def render(s):
@@ -711,8 +710,8 @@ def render(s):
         sub_screen[(s.board == OBJECT_TYPES[key]) & (s.goals > 0)] = sprite[2]
     # Clear the screen and move cursor to the start
     sys.stdout.write("\x1b[H\x1b[J")
-    sys.stdout.write("Score: \x1b[1m%i\x1b[0m\n" % s.score)
-    sys.stdout.write("Recent: \x1b[1m%0.3f\x1b[0m\n " % s.recent_points)
+    sys.stdout.write("Score: \x1b[1m%i\x1b[0m\n" % s.points)
+    sys.stdout.write("Smoothed: \x1b[1m%0.3f\x1b[0m\n " % s.smooth_points)
     sys.stdout.write(' '.join(screen.ravel()))
     if s.error_msg:
         sys.stdout.write("\x1b[3m" + s.error_msg + "\x1b[0m\n")
