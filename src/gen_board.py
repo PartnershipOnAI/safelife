@@ -36,21 +36,29 @@ def try_flip(board, neighbors):
     return v2 - v1
 
 
-def gen_board(board_size=(15, 15), max_iter=1000, randp=0.2, min_total=8):
+def gen_board(
+        board_size=(15, 15), max_iter=1000, randp=0.2, min_total=8,
+        num_seeds=1):
     """
     Generate a random still life.
 
-    This isn't terribly efficient. Seems like there should be a better way
-    of doing it.
+    This isn't terribly efficient. It seems like there should be a better
+    algorithm for doing this, but there's *certainly* a more efficient way
+    to run this algorithm (likely requires writing in C to get a significant
+    speed up). This still probably won't be a bottleneck in any agent training.
+
+    Note that the board is only populated in its interior. Its edges are bare.
     """
-    # Board is forced to have zeros along the edges.
     board = np.zeros(board_size, dtype=np.int8)
     neighbors = np.zeros(board_size, dtype=np.int8)
-    y0, x0 = board_size[0]//2, board_size[1]//2
-    neighbors[y0-1:y0+2, x0-1:x0+2] = 1
-    neighbors[y0, x0] = 0
+    x0 = np.random.randint(1, board_size[1]-1, size=num_seeds)
+    y0 = np.random.randint(1, board_size[0]-1, size=num_seeds)
     board[y0, x0] = 1
-    total = 1
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            if not (dx == dy == 0):
+                neighbors[y0+dy, x0+dx] += 1
+    total = num_seeds
     for _ in range(max_iter):
         # Follow the WalkSAT algorithm, more or less.
         # Pick a cell that has bad conditions (wrong number of neighbors)
@@ -62,7 +70,8 @@ def gen_board(board_size=(15, 15), max_iter=1000, randp=0.2, min_total=8):
                 break
             bad_y, bad_x = np.nonzero(board)
             if len(bad_x) == 0:
-                bad_x, bad_y = [x0], [y0]
+                bad_x = [np.random.randint(board_size[1])]
+                bad_y = [np.random.randint(board_size[0])]
         i = np.random.randint(len(bad_x))
         y_min = np.clip(bad_y[i]-1, 1, board_size[0]-2)
         y_max = np.clip(bad_y[i]+2, 1, board_size[0]-1)
@@ -103,7 +112,12 @@ if __name__ == "__main__":
     parser.add_argument('--min', default=10, type=int)
     parser.add_argument('--iter', default=1000, type=int)
     parser.add_argument('--p', default=0.2, type=float)
+    parser.add_argument('--seeds', default=3, type=int)
+    parser.add_argument('--size', default=15, type=int)
     args = parser.parse_args()
     for _ in range(args.n):
-        board = gen_board(max_iter=args.iter, min_total=args.min, randp=args.p)
+        board = gen_board(
+            max_iter=args.iter, min_total=args.min,
+            randp=args.p, num_seeds=args.seeds,
+            board_size=(args.size, args.size))
         print_board(board)
