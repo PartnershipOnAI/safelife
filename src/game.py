@@ -74,10 +74,11 @@ else can be swapped out. However, some of them are mutually dependent:
 import os
 import sys
 import numpy as np
-from scipy.signal import convolve2d
+import scipy.signal
 
 from getch import getch
 from array_utils import wrapping_array
+from gen_board import gen_board
 
 UP_ARROW_KEY = '\x1b[A'
 DOWN_ARROW_KEY = '\x1b[B'
@@ -116,22 +117,27 @@ MAGIC_WORDS = {
 }
 
 OBJECT_TYPES = {
-    'empty': np.array(0, dtype=np.int8),
-    'agent': np.array(1, dtype=np.int8),
-    'wall': np.array(2, dtype=np.int8),
-    'block': np.array(4, dtype=np.int8),
+    'empty': 0,
+    'agent': 1,
+    'block': 2,
+    'wall': 3,
+    'spawner': 5,
 }
+OBJECT_TYPES = {k: np.array(v, dtype=np.int8) for k,v in OBJECT_TYPES.items()}
+SPAWN_PROB = 0.3
+
 
 ACTIONS = {
     "LEFT",
     "RIGHT",
     "FORWARD",
     "BACKWARD",
-    "PUSH",
-    "PULL",
-    "ABSORB",
+    "PUSH",  # unused
+    "PULL",  # unused
+    "ABSORB",  # unused
     "CREATE",
     "DESTROY",
+    "WALL",  # create a wall object instead of a block
     "NULL",
 }
 
@@ -149,6 +155,7 @@ KEY_BINDINGS = {
     'q': "ABSORB",
     'c': "CREATE",
     'x': "DESTROY",
+    'e': "WALL",
     'i': "IFEMPTY",
     'r': "REPEAT",
     'p': "DEFINE",
@@ -163,6 +170,10 @@ COMMAND_WORDS = {
     cmd: MAGIC_WORDS[k] for k, cmd in KEY_BINDINGS.items()
     if k in MAGIC_WORDS
 }
+
+
+def convolve2d(*args, **kw):
+    return scipy.signal.convolve2d(*args, boundary='wrap', mode='same', **kw)
 
 
 def make_new_node(val):
@@ -469,37 +480,43 @@ class GameState(object):
     out_of_energy_msg = "You collapse from exhaustion."
     num_steps = 0
     default_energy = 100
+    edit_mode = False
 
-    def __init__(self):
+    def __init__(self, clear_board=False):
         self.agent_loc = np.array([0,0])
         self.orientation = 0  # 0 = UP, 1 = RIGHT, 2 = DOWN, 3 = LEFT
-        self.board = np.zeros((self.height, self.width), dtype=np.int8)
-        self.goals = self.board.copy()
 
         self.points = 0
         self.smooth_points = 0
         self.color = 1
-        self.board[self.agent_loc[0], self.agent_loc[1]] = OBJECT_TYPES['agent']
         self.error_msg = None
 
         self.commands = []
         self.log_actions = []  # for debugging only
         self.saved_commands = {}
         self.last_action_bool = False
+        if clear_board:
+            self.board = np.zeros((self.height, self.width), dtype=np.int8)
+            self.goals = self.board.copy()
+            self.board[0,0] = OBJECT_TYPES['agent']
+        else:
+            self.make_board()
+
+    def make_board(self):
+        self.board = gen_board(
+            board_size=(self.height, self.width),
+            min_total=self.width * self.height // 15,
+            num_seeds=self.width * self.height // 100,
+        ) * OBJECT_TYPES['block']
+        x, y = self.agent_loc
+        self.board[y, x] = OBJECT_TYPES['agent']
 
         walls = (np.random.random(self.board.shape) < 0.1)
         self.board += (self.board == 0) * walls * OBJECT_TYPES['wall']
+        self.goals = np.zeros_like(self.board)
         self.goals += np.random.random(self.board.shape) < 0.1
         self.goals -= np.random.random(self.board.shape) < 0.05
         self.goals *= self.board == OBJECT_TYPES['empty']
-        # Also add some blinkers
-        for _ in range(np.random.randint(2,6)):
-            x = np.random.randint(self.width - 2)
-            y = np.random.randint(self.height - 2)
-            if np.random.randint(2):
-                self.board[y, x:x+3] = OBJECT_TYPES['block']
-            else:
-                self.board[y:y+3, x] = OBJECT_TYPES['block']
 
     def relative_loc(self, n_forward, n_right=0):
         """
@@ -565,6 +582,35 @@ class GameState(object):
         self.log_actions.append(action)
         return 0
 
+    def execute_edit(self, key):
+        """
+        Like execute action, but allows for more powerful actions.
+        """
+        cell_types = {
+            'x': OBJECT_TYPES['empty'],
+            'c': OBJECT_TYPES['block'],
+            'w': OBJECT_TYPES['wall'],
+            's': OBJECT_TYPES['spawner'],
+        }
+        x, y = self.relative_loc(1)
+        if key == LEFT_ARROW_KEY:
+            self.orientation -= 1
+            self.orientation %= 4
+        elif key == RIGHT_ARROW_KEY:
+            self.orientation += 1
+            self.orientation %= 4
+        elif key == UP_ARROW_KEY:
+            self.move_agent(*self.relative_loc(1))
+        elif key == DOWN_ARROW_KEY:
+            self.move_agent(*self.relative_loc(-1))
+        elif key == 'g':
+            # Toggle the goal state
+            self.goals[y, x] += 2
+            self.goals[y, x] %= 3
+            self.goals[y, x] -= 1
+        elif key in cell_types:
+            self.board[y, x] = cell_types[key]
+
     def advance_board(self):
         """
         Apply one timestep of physics, and return change in points.
@@ -604,15 +650,15 @@ class GameOfLife(GameState):
         # We can advance the board using a pretty simple convolution.
         blocks = self.board == OBJECT_TYPES['block']
         cfilter = np.array([[2,2,2],[2,1,2],[2,2,2]])
-        conv = convolve2d(blocks, cfilter, boundary='wrap', mode='same')
-        new_blocks = (np.abs(conv - 6) <= 1) * OBJECT_TYPES['block']
+        new_blocks = (np.abs(convolve2d(blocks, cfilter) - 6) <= 1)
+        # Randomly add blocks around the spawners.
+        spawners = 0.5 * convolve2d(self.board == OBJECT_TYPES['spawner'], cfilter)
+        new_blocks |= np.random.random(self.board.shape) > (1 - SPAWN_PROB)**spawners
         # But don't change the board next to the agent or where there's a wall
         freezers = self.board == OBJECT_TYPES['agent']
-        walls = self.board == OBJECT_TYPES['wall']
-        frozen = walls | (
-            convolve2d(freezers, cfilter, boundary='wrap', mode='same') > 0)
+        frozen = (self.board % 2 == 1) | (convolve2d(freezers, cfilter) > 0)
         self.board *= frozen
-        self.board += ~frozen * new_blocks.astype(self.board.dtype)
+        self.board += (new_blocks & ~frozen) * OBJECT_TYPES['block']
 
         blocks = self.board == OBJECT_TYPES['block']
         reward = np.sum(blocks * self.goals)
@@ -626,8 +672,8 @@ class AsyncGame(GameState):
     Can be used to simulate e.g. a two-dimensional Ising model.
     """
 
-    def __init__(self, rules="ising", beta=100, seed=True):
-        super().__init__()
+    def __init__(self, rules="ising", beta=100, seed=True, **kw):
+        super().__init__(**kw)
         self.rules = {
             'vine': [4, [-1, -1, 1, 1, 1], [-1, 1, -1, -1, -1]],
             'ising': [4, [-2, -1, 0, 1, 2], [-2, -1, 0, 1, 2]],
@@ -649,10 +695,12 @@ class AsyncGame(GameState):
         EMPTY = OBJECT_TYPES['empty']
         BLOCK = OBJECT_TYPES['block']
         WALL = OBJECT_TYPES['wall']
+        SPAWNER = OBJECT_TYPES['spawner']
+        spawn = convolve2d(self.board == SPAWNER, np.ones((3,3)))
         for _ in range(int(board.size * EPOCHS)):
             x = np.random.randint(w)
             y = np.random.randint(h)
-            if board[y, x] in (AGENT, WALL):
+            if board[y, x] in (AGENT, WALL, SPAWNER):
                 continue
             xp = (x+1) % w
             xn = (x-1) % w
@@ -674,6 +722,7 @@ class AsyncGame(GameState):
             else:
                 H = rules[2][neighbors]
             P = 0.5 + 0.5*np.tanh(H * self.beta)
+            P = 1 - (1-P)*(1-SPAWN_PROB)**spawn[y, x]
             board[y, x] = BLOCK if P > np.random.random() else EMPTY
 
         blocks = self.board == OBJECT_TYPES['block']
@@ -698,6 +747,7 @@ def render(s, view_size):
         'empty': ('\x1b[31m*\x1b[0m', ' ', '\x1b[34m*\x1b[0m'),
         'wall': ('#', '#', '#'),
         'block': ('\x1b[31mz\x1b[0m', 'z', '\x1b[34mz\x1b[0m'),
+        'spawner': ('S', 'S', 'S'),
     }
 
     if view_size:
@@ -724,6 +774,8 @@ def render(s, view_size):
     sys.stdout.write("\x1b[H\x1b[J")
     sys.stdout.write("Score: \x1b[1m%i\x1b[0m\n" % s.points)
     sys.stdout.write("Smoothed: \x1b[1m%0.3f\x1b[0m\n " % s.smooth_points)
+    if s.edit_mode:
+        sys.stdout.write("\x1b[1m*** EDIT MODE ***\x1b[0m\n")
     sys.stdout.write(' '.join(screen.ravel()))
     if s.error_msg:
         sys.stdout.write("\x1b[3m" + s.error_msg + "\x1b[0m\n")
@@ -744,6 +796,14 @@ def play(game_state, view_size):
             return
         elif key == DELETE_KEY and game_state.commands:
             game_state.commands.pop()
+        elif key == '`':
+            # Toggle the paused status. This will allow the user to
+            # add/destroy blocks without advancing the game's physics.
+            game_state.edit_mode = not game_state.edit_mode
+        elif game_state.edit_mode:
+            # Execute action immediately.
+            # Useful for building structures, etc.
+            game_state.execute_edit(key)
         elif key in KEY_BINDINGS:
             game_state.step(KEY_BINDINGS[key])
 
@@ -756,11 +816,12 @@ if __name__ == "__main__":
     parser.add_argument('--board', type=int, default=20, help="board size")
     parser.add_argument('--view', type=int, default=0, help=
         "view size. Defaults to zero, in which case the view isn't centered.")
+    parser.add_argument('--clear', action="store_true")
     args = parser.parse_args()
     if args.async:
         AsyncGame.width = AsyncGame.height = args.board
-        game = AsyncGame(args.async, 1/max(1e-6, args.temperature))
+        game = AsyncGame(args.async, 1/max(1e-6, args.temperature), clear_board=args.clear)
     else:
         GameOfLife.width = GameOfLife.height = args.board
-        game = GameOfLife()
+        game = GameOfLife(clear_board=args.clear)
     play(game, args.view)

@@ -37,7 +37,7 @@ def try_flip(board, neighbors):
 
 
 def gen_board(
-        board_size=(15, 15), max_iter=1000, randp=0.2, min_total=8,
+        board_size=(15, 15), max_iter=10000, randp=0.2, min_total=8,
         num_seeds=1):
     """
     Generate a random still life.
