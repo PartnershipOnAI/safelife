@@ -30,10 +30,9 @@ Commands:
         DESTROY
         NULL
     Modifiers and control flow:
-        CHECK [action]
         REPEAT [command]
         BLOCK [commands] NULL
-        IFSUCCESS [command 1] [command 2]
+        IFEMPTY [command 1] [command 2]
         LOOP [commands] NULL/BREAK/CONTINUE
         DEFINE [name] [command]
         CALL [name]
@@ -43,9 +42,8 @@ there's no "finish spell" action. This makes it much easier to interact with
 the world, as many actions will have an immediate effect. In order chain
 actions together they must either be part of a `REPEAT`, `BLOCK`, or `LOOP`.
 
-The `IFSUCCESS` statement acts as the standard ternary operator, using the boolean
-success of the previous action as input. The `CHECK` operator does a dry run of
-an action, returning its would-be success value without causing other effects.
+The `IFEMPTY` statement branches execution based on whether or not the block
+in front of an agent is empty. We may want to add other if statements later.
 
 The `LOOP` statement doesn't have a conditional. Instead, it must be exited
 with a `BREAK` statement. The end of the loop can be `NULL`, `BREAK`, or
@@ -65,7 +63,6 @@ else can be swapped out. However, some of them are mutually dependent:
 - `DEFINE` and `CALL` must come together
 - `LOOP`, `BREAK`, and `CONTINUE` must all come together
 - `BLOCK` implies `NULL`
-- `CHECK` implies `IF...` (it's useless without it)
 - `IF...` should *probably* imply one of the block constructs, although it's
   possible to use it effectively with just `REPEAT`
 - `LOOP` generally implies `IF...`
@@ -79,6 +76,7 @@ import scipy.signal
 from .getch import getch
 from .array_utils import wrapping_array
 from .gen_board import gen_board
+from .syntax_tree import BlockNode
 
 UP_ARROW_KEY = '\x1b[A'
 DOWN_ARROW_KEY = '\x1b[B'
@@ -137,7 +135,6 @@ ACTIONS = {
     "ABSORB",  # unused
     "CREATE",
     "DESTROY",
-    "WALL",  # create a wall object instead of a block
     "NULL",
 }
 
@@ -152,10 +149,9 @@ KEY_BINDINGS = {
     's': "BACKWARD",
     '\r': "NULL",
     'z': "NULL",
-    'q': "ABSORB",
+    # 'q': "ABSORB",
     'c': "CREATE",
     'x': "DESTROY",
-    'e': "WALL",
     'i': "IFEMPTY",
     'r': "REPEAT",
     'p': "DEFINE",
@@ -174,301 +170,6 @@ COMMAND_WORDS = {
 
 def convolve2d(*args, **kw):
     return scipy.signal.convolve2d(*args, boundary='wrap', mode='same', **kw)
-
-
-def make_new_node(val):
-    if val in ACTIONS:
-        node_class = ActionNode
-    else:
-        node_class = {
-            "CHECK": CheckNode,
-            "REPEAT": RepeatNode,
-            "BLOCK": BlockNode,
-            "IFSUCCESS": IfSuccessNode,
-            "IFEMPTY": IfEmptyNode,
-            "LOOP": LoopNode,
-            "CONTINUE": ContinueNode,
-            "BREAK": BreakNode,
-            "DEFINE": DefineNode,
-            "CALL": CallNode,
-        }[val]
-    return node_class(val)
-
-
-class SyntaxNode(object):
-    """
-    Base class for building the parse tree.
-    """
-    can_push = True
-    default_name = None
-
-    def __init__(self, name=default_name):
-        self.name = name
-
-    def push(self, command):
-        """
-        Add a child command to this node of the tree.
-        """
-        raise NotImplementedError
-
-    def execute(self, state):
-        """
-        Execute the program defined by this node and any sub-nodes.
-
-        The `state` object should contain an instance of `GameState`, defined
-        below.
-        """
-        raise NotImplementedError
-
-    def __str__(self):
-        return "<%s>" % (self.name,)
-
-    def __repr__(self):
-        return str(self)
-
-
-class ActionNode(SyntaxNode):
-    """
-    Simple node that executes a single parameter-less action in the game state.
-    Has no sub-nodes.
-    """
-    can_push = False
-
-    def execute(self, state):
-        return state.execute_action(self.name)
-
-    def __str__(self):
-        return "<%s>" % (self.name,)
-
-
-class CheckNode(SyntaxNode):
-    """
-    Node that wraps the subsequent action in a dry run.
-
-    This can be used to set the state's `last_action_bool` flag without
-    actually executing the action. That flag can then be queried by an if node.
-    """
-    action = None
-
-    def push(self, val):
-        self.action = val
-        self.can_push = False
-
-    def execute(self, state):
-        return state.execute_action(self.action, dry_run=True)
-
-    def __str__(self):
-        return "<CHECK %s>" % (self.action,)
-
-
-class BlockNode(SyntaxNode):
-    """
-    Node to wrap multiple commands into a single block.
-
-    Necessary for control flow with more than single command.
-    Note that the `NULL` (or `BREAK` or `CONTINUE`) command must pushed onto
-    the node in order to exit the block.
-    """
-    def __init__(self, name="BLOCK"):
-        self.list = []
-
-    def push(self, val):
-        if self.list and self.list[-1].can_push:
-            self.list[-1].push(val)
-        elif val == 'NULL':
-            self.can_push = False
-        else:
-            self.list.append(make_new_node(val))
-            if val in ('BREAK', 'CONTINUE'):
-                self.can_push = False
-
-    def execute(self, state):
-        for node in self.list:
-            err = node.execute(state)
-            if err:
-                return err
-        return 0
-
-    def __str__(self):
-        return str(self.list)
-
-
-class DefineNode(SyntaxNode):
-    """
-    Binds a routine to a given name which can later be executed with `CallNode`.
-
-    Note that the definition starts off in block mode.
-    """
-    def __init__(self, name, var_name=None):
-        self.name = name
-        self.var_name = var_name
-        self.command = BlockNode()
-
-    def push(self, val):
-        if self.var_name is None:
-            self.var_name = val
-        elif self.command is None:
-            self.command = make_new_node(val)
-            self.can_push = self.command.can_push
-        else:
-            self.command.push(val)
-            self.can_push = self.command.can_push
-
-    def execute(self, state):
-        if self.var_name is None:
-            return "A name is missing..."
-        state.saved_commands[self.var_name] = self.command
-        return 0
-
-    def __str__(self):
-        return "<DEFINE %s %s>" % (self.var_name, self.command)
-
-
-class CallNode(SyntaxNode):
-    """
-    Executes a routine previously defined with `DefineNode`.
-    """
-    var_name = None
-
-    def push(self, val):
-        self.var_name = val
-        self.can_push = False
-
-    def execute(self, state):
-        state.energy -= 1
-        if self.var_name is None:
-            return "A name is missing..."
-        elif state.energy < 0:
-            return state.out_of_energy_msg
-        elif self.var_name in state.saved_commands:
-            return state.saved_commands[self.var_name].execute(state)
-        else:
-            return "'%s' has not been bound..." % \
-                COMMAND_WORDS.get(self.var_name, self.var_name)
-
-    def __str__(self):
-        return "<CALL %s>" % (self.var_name,)
-
-
-class RepeatNode(SyntaxNode):
-    """
-    Repeats the subsequent command upon execution.
-    """
-    default_name = "REPEAT"
-    command = None
-
-    def push(self, val):
-        if self.command is None:
-            self.command = make_new_node(val)
-        else:
-            self.command.push(val)
-        self.can_push = self.command.can_push
-
-    def execute(self, state):
-        if self.command is None:
-            return "A command is missing..."
-        return self.command.execute(state) or self.command.execute(state)
-
-    def __str__(self):
-        return "<REPEAT %s>" % (self.command,)
-
-
-class ContinueNode(SyntaxNode):
-    default_name = "CONTINUE"
-    flag = 1
-    can_push = False
-
-    def execute(self, state):
-        state.energy -= 1
-        if state.energy < 0:
-            return state.out_of_energy_msg
-        return self.flag
-
-
-class BreakNode(ContinueNode):
-    DEFAULT_NAME = "BREAK"
-    flag = 2
-
-
-class LoopNode(BlockNode):
-    """
-    Loops the following commands.
-
-    The loop is broken with either `NULL` or `BREAK`, and repeated with
-    `CONTINUE`.
-    """
-    def execute(self, state):
-        while True:
-            for node in self.list:
-                err = node.execute(state)
-                if err == ContinueNode.flag:
-                    break
-                if err == BreakNode.flag:
-                    return 0
-                if err:
-                    return err
-            else:
-                # Add an implicit BREAK at the end of the loop
-                return 0
-
-    def __str__(self):
-        return "<LOOP %s>" % (self.list)
-
-
-class IfNode(SyntaxNode):
-    """
-    Base class for branching nodes.
-    """
-    default_name = "IF"
-    yes_node = None
-    no_node = None
-
-    def get_bool(self, state):
-        raise NotImplementedError
-
-    def push(self, val):
-        if self.yes_node is None:
-            self.yes_node = make_new_node(val)
-        elif self.yes_node.can_push:
-            self.yes_node.push(val)
-        elif self.no_node is None:
-            self.no_node = make_new_node(val)
-            self.can_push = self.no_node.can_push
-        else:
-            self.no_node.push(val)
-            self.can_push = self.no_node.can_push
-
-    def execute(self, state):
-        if self.yes_node is None or self.no_node is None:
-            return "A command is missing..."
-        elif self.get_bool(state):
-            return self.yes_node.execute(state)
-        else:
-            return self.no_node.execute(state)
-
-    def __str__(self):
-        return "<%s %s %s>" % (self.default_name, self.yes_node, self.no_node)
-
-
-class IfSuccessNode(IfNode):
-    """
-    Branches conditioned on the state's `last_action_bool` flag.
-    """
-    default_name = "IFSUCCESS"
-
-    def get_bool(self, state):
-        return state.last_action_bool
-
-
-class IfEmptyNode(IfNode):
-    """
-    Branches conditioned on the status of the position in front of the agent.
-    """
-    default_name = "IFEMPTY"
-
-    def get_bool(self, state):
-        x, y = state.relative_loc(1)
-        return state.board[y, x] == OBJECT_TYPES['empty']
 
 
 class GameState(object):
@@ -492,8 +193,7 @@ class GameState(object):
 
         self.commands = []
         self.log_actions = []  # for debugging only
-        self.saved_commands = {}
-        self.last_action_bool = False
+        self.saved_programs = {}
         if clear_board:
             self.board = np.zeros((self.height, self.width), dtype=np.int8)
             self.goals = self.board.copy()
@@ -567,16 +267,15 @@ class GameState(object):
             self.board[self.agent_loc[1], self.agent_loc[0]] = 0
             self.board[y, x] = OBJECT_TYPES['agent']
             self.agent_loc = np.array([x, y])
-            self.last_action_bool = True
-        else:
-            self.last_action_bool = False
 
-    def execute_action(self, action, dry_run=False):
+    def execute_action(self, action):
         """
         Execute an individual action.
 
         Either returns 0 or an error message.
         """
+        if action in ("BREAK", "NULL"):
+            return 0  # don't use up any energy. Return right away.
         self.energy -= 1
         if self.energy < 0:
             return self.out_of_energy_msg
@@ -593,21 +292,30 @@ class GameState(object):
         elif action == "CREATE":
             x, y = self.relative_loc(1)
             if self.board[y, x] == OBJECT_TYPES['empty']:
-                self.last_action_bool = True
                 self.board[y, x] = OBJECT_TYPES['block']
-            else:
-                self.last_action_bool = False
         elif action == "DESTROY":
             x, y = self.relative_loc(1)
             if self.board[y, x] == OBJECT_TYPES['block']:
-                self.last_action_bool = True
                 self.board[y, x] = OBJECT_TYPES['empty']
-            else:
-                self.last_action_bool = False
 
         # placeholder
         self.log_actions.append(action)
         return 0
+
+    def define_subprogram(self, name, program):
+        self.saved_programs[name] = program
+        return 0
+
+    def call_subprogram(self, name):
+        if not name:
+            return "A name is missing..."
+        if name not in self.saved_programs:
+            magic_name = COMMAND_WORDS.get(name, name)
+            return "'%s' has not been bound..." % (magic_name,)
+        self.energy -= 1
+        if self.energy < 0:
+            return self.out_of_energy_msg
+        return self.saved_programs[name].execute(self)
 
     def execute_edit(self, key):
         """
@@ -645,6 +353,13 @@ class GameState(object):
                     self.error_msg = f"No such file or directory: '{err.filename}'"
         elif key in cell_types:
             self.board[y, x] = cell_types[key]
+
+    def check(self, condition):
+        x, y = self.relative_loc(1)
+        if condition == 'IFEMPTY':
+            return self.board[y, x] == OBJECT_TYPES['empty']
+        else:
+            raise ValueError("Unknown condition '%s'" % (condition,))
 
     def advance_board(self):
         """
@@ -849,7 +564,8 @@ if __name__ == "__main__":
     parser.add_argument('--async')
     parser.add_argument('--temperature', type=float, default=0.01)
     parser.add_argument('--board', type=int, default=20, help="board size")
-    parser.add_argument('--view', type=int, default=0, help="View size. "
+    parser.add_argument(
+        '--view', type=int, default=0, help="View size. "
         "Defaults to zero, in which case the view fixed on the whole board.")
     parser.add_argument('--clear', action="store_true")
     parser.add_argument('--load', help="Load game state from file.")
