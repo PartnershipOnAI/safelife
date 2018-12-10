@@ -76,9 +76,9 @@ import sys
 import numpy as np
 import scipy.signal
 
-from getch import getch
-from array_utils import wrapping_array
-from gen_board import gen_board
+from .getch import getch
+from .array_utils import wrapping_array
+from .gen_board import gen_board
 
 UP_ARROW_KEY = '\x1b[A'
 DOWN_ARROW_KEY = '\x1b[B'
