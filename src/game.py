@@ -475,8 +475,7 @@ class GameState(object):
     """
     Defines the game state and dynamics. Does NOT define rendering.
     """
-    width = 20
-    height = 20
+    default_board_size = (20, 20)
     out_of_energy_msg = "You collapse from exhaustion."
     num_steps = 0
     default_energy = 100
@@ -502,6 +501,18 @@ class GameState(object):
         else:
             self.make_board()
 
+    @property
+    def width(self):
+        if hasattr(self, 'board'):
+            return self.board.shape[1]
+        return self.default_board_size[1]
+
+    @property
+    def height(self):
+        if hasattr(self, 'board'):
+            return self.board.shape[0]
+        return self.default_board_size[0]
+
     def make_board(self):
         self.board = gen_board(
             board_size=(self.height, self.width),
@@ -517,6 +528,22 @@ class GameState(object):
         self.goals += np.random.random(self.board.shape) < 0.1
         self.goals -= np.random.random(self.board.shape) < 0.05
         self.goals *= self.board == OBJECT_TYPES['empty']
+
+    def save(self, name):
+        np.savez(
+            name,
+            board=self.board,
+            goals=self.goals,
+            agent_loc=self.agent_loc)
+
+    def load(self, name):
+        if not name.endswith('.npz'):
+            name += '.npz'
+        archive = np.load(name)
+        self.board = archive['board']
+        self.goals = archive['goals']
+        self.agent_loc = archive['agent_loc']
+        return archive  # In case subclasses want to extract more data
 
     def relative_loc(self, n_forward, n_right=0):
         """
@@ -590,7 +617,7 @@ class GameState(object):
             'x': OBJECT_TYPES['empty'],
             'c': OBJECT_TYPES['block'],
             'w': OBJECT_TYPES['wall'],
-            's': OBJECT_TYPES['spawner'],
+            'p': OBJECT_TYPES['spawner'],
         }
         x, y = self.relative_loc(1)
         if key == LEFT_ARROW_KEY:
@@ -608,6 +635,14 @@ class GameState(object):
             self.goals[y, x] += 2
             self.goals[y, x] %= 3
             self.goals[y, x] -= 1
+        elif key == 's':
+            save_name = input('\rsave as: \x1b[J')
+            if save_name:
+                try:
+                    self.save(save_name)
+                    self.error_msg = "Saved successfully."
+                except FileNotFoundError as err:
+                    self.error_msg = f"No such file or directory: '{err.filename}'"
         elif key in cell_types:
             self.board[y, x] = cell_types[key]
 
@@ -814,14 +849,16 @@ if __name__ == "__main__":
     parser.add_argument('--async')
     parser.add_argument('--temperature', type=float, default=0.01)
     parser.add_argument('--board', type=int, default=20, help="board size")
-    parser.add_argument('--view', type=int, default=0, help=
-        "view size. Defaults to zero, in which case the view isn't centered.")
+    parser.add_argument('--view', type=int, default=0, help="View size. "
+        "Defaults to zero, in which case the view fixed on the whole board.")
     parser.add_argument('--clear', action="store_true")
+    parser.add_argument('--load', help="Load game state from file.")
     args = parser.parse_args()
+    GameState.default_board_size = (args.board, args.board)
     if args.async:
-        AsyncGame.width = AsyncGame.height = args.board
         game = AsyncGame(args.async, 1/max(1e-6, args.temperature), clear_board=args.clear)
     else:
-        GameOfLife.width = GameOfLife.height = args.board
         game = GameOfLife(clear_board=args.clear)
+    if args.load:
+        game.load(args.load)
     play(game, args.view)
