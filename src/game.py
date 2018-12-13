@@ -125,6 +125,26 @@ OBJECT_TYPES = {k: np.array(v, dtype=np.int8) for k,v in OBJECT_TYPES.items()}
 SPAWN_PROB = 0.3
 
 
+class CellTypes(object):
+    alive = 1 << 0  # Cell obeys Game of Life rules.
+    agent = 1 << 1
+    movable = 1 << 2  # Can be pushed by agent.
+    destructible = 1 << 3
+    frozen = 1 << 4  # Does not evolve.
+    freezer = 1 << 5  # Freezes neighbor cells.
+    colors = 3 << 6  # Different cells can have different colors (two bits).
+    spawning = 1 << 8  # Generates new cells of the same color.
+    end_point = 1 << 9
+
+    empty = 0
+    player = agent | freezer
+    wall = frozen
+    crate = frozen | movable
+    spawner = frozen | spawning
+    goal = frozen | end_point
+    life = alive | destructible
+
+
 ACTIONS = {
     "LEFT",
     "RIGHT",
@@ -169,7 +189,8 @@ COMMAND_WORDS = {
 
 
 def convolve2d(*args, **kw):
-    return scipy.signal.convolve2d(*args, boundary='wrap', mode='same', **kw)
+    y = scipy.signal.convolve2d(*args, boundary='wrap', mode='same', **kw)
+    return y.astype(np.int16)
 
 
 class GameState(object):
@@ -198,9 +219,9 @@ class GameState(object):
         self.log_actions = []  # for debugging only
         self.saved_programs = {}
         if clear_board:
-            self.board = np.zeros((self.height, self.width), dtype=np.int8)
-            self.goals = self.board.copy()
-            self.board[0,0] = OBJECT_TYPES['agent']
+            self.board = np.zeros((self.height, self.width), dtype=np.int16)
+            self.goals = np.zeros((self.height, self.width), dtype=np.int16)
+            self.board[0,0] = CellTypes.player
         else:
             self.make_board()
 
@@ -217,27 +238,31 @@ class GameState(object):
         return self.default_board_size[0]
 
     def make_board(self):
-        self.board = gen_board(
+        board = gen_board(
             board_size=(self.height, self.width),
             min_total=self.width * self.height // 15,
             num_seeds=self.width * self.height // 100,
-        ) * OBJECT_TYPES['block']
+        )
+        self.board = (board * CellTypes.life).astype(np.int16)
         x, y = self.agent_loc
-        self.board[y, x] = OBJECT_TYPES['agent']
+        self.board[y, x] = CellTypes.player
 
-        walls = (np.random.random(self.board.shape) < 0.1)
-        self.board += (self.board == 0) * walls * OBJECT_TYPES['wall']
+        walls = (np.random.random(self.board.shape) < 0.05)
+        self.board += (self.board == 0) * walls * CellTypes.wall
+        crates = (np.random.random(self.board.shape) < 0.05)
+        self.board += (self.board == 0) * crates * CellTypes.crate
         self.goals = np.zeros_like(self.board)
         self.goals += np.random.random(self.board.shape) < 0.1
         self.goals -= np.random.random(self.board.shape) < 0.05
-        self.goals *= self.board == OBJECT_TYPES['empty']
+        self.goals *= self.board == CellTypes.empty
 
     def save(self, fname):
         np.savez(
             fname,
             board=self.board,
             goals=self.goals,
-            agent_loc=self.agent_loc)
+            agent_loc=self.agent_loc,
+            version=1)
 
     def load(self, fname):
         if not fname.endswith('.npz'):
@@ -245,7 +270,18 @@ class GameState(object):
         archive = np.load(fname)
         self.title = os.path.split(fname)[1][:-4]
         self.fname = fname[:-4]
-        self.board = archive['board']
+        version = archive['version'] if 'version' in archive else 0
+        board = archive['board']
+        if version == 0:
+            self.board = np.zeros(board.shape, dtype=np.int16)
+            self.board += (board == 1) * CellTypes.player
+            self.board += (board == 2) * CellTypes.life
+            self.board += (board == 3) * CellTypes.crate
+            self.board += (board == 5) * CellTypes.spawner
+        elif version == 1:
+            self.board = board
+        else:
+            raise ValueError(f"Unrecognized file version '{version}'")
         self.goals = archive['goals']
         self.agent_loc = archive['agent_loc']
         self.base_points = self.points
@@ -270,19 +306,19 @@ class GameState(object):
         """
         Move the agent to a new location if that location is empty.
         """
-        x, y = self.relative_loc(dy, dx)
+        x1, y1 = self.relative_loc(dy, dx)
         x0, y0 = self.agent_loc
-        if self.board[y, x] == OBJECT_TYPES['empty']:
-            self.board[y0, x0] = OBJECT_TYPES['empty']
-            self.board[y, x] = OBJECT_TYPES['agent']
-            self.agent_loc = np.array([x, y])
-        elif (dx, dy) == (0, 1) and self.board[y, x] == OBJECT_TYPES['wall']:
+        if self.board[y1, x1] == CellTypes.empty:
+            self.board[y1, x1] = self.board[y0, x0]
+            self.board[y0, x0] = CellTypes.empty
+            self.agent_loc = np.array([x1, y1])
+        elif (dx, dy) == (0, 1) and self.board[y1, x1] & CellTypes.movable:
             x2, y2 = self.relative_loc(+2)
-            if self.board[y2, x2] == OBJECT_TYPES['empty']:
-                self.board[y2, x2] = OBJECT_TYPES['wall']
-                self.board[y, x] = OBJECT_TYPES['agent']
-                self.board[y0, x0] = OBJECT_TYPES['empty']
-                self.agent_loc = np.array([x, y])
+            if self.board[y2, x2] == CellTypes.empty:
+                self.board[y2, x2] = self.board[y1, x1]
+                self.board[y1, x1] = self.board[y0, x0]
+                self.board[y0, x0] = CellTypes.empty
+                self.agent_loc = np.array([x1, y1])
 
     def execute_action(self, action):
         """
@@ -306,13 +342,15 @@ class GameState(object):
         elif action == "BACKWARD":
             self.move_agent(-1)
         elif action == "CREATE":
-            x, y = self.relative_loc(1)
-            if self.board[y, x] == OBJECT_TYPES['empty']:
-                self.board[y, x] = OBJECT_TYPES['block']
+            x0, y0 = self.agent_loc
+            x1, y1 = self.relative_loc(1)
+            if self.board[y1, x1] == CellTypes.empty:
+                self.board[y1, x1] = CellTypes.life | (
+                    self.board[y0, x0] & CellTypes.colors)
         elif action == "DESTROY":
-            x, y = self.relative_loc(1)
-            if self.board[y, x] == OBJECT_TYPES['block']:
-                self.board[y, x] = OBJECT_TYPES['empty']
+            x1, y1 = self.relative_loc(1)
+            if self.board[y1, x1] & CellTypes.destructible:
+                self.board[y1, x1] = CellTypes.empty
 
         # placeholder
         self.log_actions.append(action)
@@ -337,11 +375,12 @@ class GameState(object):
         """
         Like execute action, but allows for more powerful actions.
         """
-        cell_types = {
-            'x': OBJECT_TYPES['empty'],
-            'c': OBJECT_TYPES['block'],
-            'w': OBJECT_TYPES['wall'],
-            'p': OBJECT_TYPES['spawner'],
+        key_cell_map = {
+            'x': CellTypes.empty,
+            'c': CellTypes.life,
+            'w': CellTypes.wall,
+            'r': CellTypes.crate,
+            'p': CellTypes.spawner,
         }
         x, y = self.relative_loc(1)
         if key == LEFT_ARROW_KEY:
@@ -377,13 +416,13 @@ class GameState(object):
                 self.error_msg = "Saved successfully."
             else:
                 self.error_msg = "Save aborted."
-        elif key in cell_types:
-            self.board[y, x] = cell_types[key]
+        elif key in key_cell_map:
+            self.board[y, x] = key_cell_map[key]
 
     def check(self, condition):
         x, y = self.relative_loc(1)
         if condition == 'IFEMPTY':
-            return self.board[y, x] == OBJECT_TYPES['empty']
+            return self.board[y, x] == CellTypes.empty
         else:
             raise ValueError("Unknown condition '%s'" % (condition,))
 
@@ -424,21 +463,27 @@ class GameOfLife(GameState):
         Apply one timestep of physics using Game of Life rules.
         """
         # We can advance the board using a pretty simple convolution.
-        blocks = self.board == OBJECT_TYPES['block']
+        board = self.board
+        alive = (board & CellTypes.alive) // CellTypes.alive
         cfilter = np.array([[2,2,2],[2,1,2],[2,2,2]])
-        new_blocks = (np.abs(convolve2d(blocks, cfilter) - 6) <= 1)
-        # Randomly add blocks around the spawners.
-        spawners = 0.5 * convolve2d(self.board == OBJECT_TYPES['spawner'], cfilter)
-        new_blocks |= np.random.random(self.board.shape) > (1 - SPAWN_PROB)**spawners
-        # But don't change the board next to the agent or where there's a wall
-        freezers = self.board == OBJECT_TYPES['agent']
-        frozen = (self.board % 2 == 1) | (convolve2d(freezers, cfilter) > 0)
-        self.board *= frozen
-        self.board += (new_blocks & ~frozen) * OBJECT_TYPES['block']
+        new_alive = (np.abs(convolve2d(alive, cfilter) - 6) <= 1)
 
-        blocks = self.board == OBJECT_TYPES['block']
-        reward = np.sum(blocks * self.goals)
-        return reward
+        # Randomly add alive cells around the spawners.
+        spawners = convolve2d(board & CellTypes.spawning, cfilter // 2)
+        spawners //= CellTypes.spawning
+        new_alive |= np.random.random(board.shape) > (1 - SPAWN_PROB)**spawners
+
+        # But don't change the board next to the agent or where there's a wall
+        frozen = board & CellTypes.frozen
+        frozen |= convolve2d(board & CellTypes.freezer, cfilter)
+        frozen = frozen > 0
+        board *= frozen
+        board += (new_alive & ~frozen) * CellTypes.life
+
+        # Calculate the points
+        alive = board & CellTypes.alive > 0
+        points = np.sum(alive * self.goals)
+        return points
 
 
 class AsyncGame(GameState):
@@ -514,16 +559,13 @@ def render(s, view_size):
     fast enough for our purposes.
     """
     SPRITES = {
-        'agent': ['\x1b[1m%s\x1b[0m' % {
-            0: "⋀",
-            1: ">",
-            2: "⋁",
-            3: "<",
-        }[s.orientation]] * 3,
-        'empty': ('\x1b[31m*\x1b[0m', ' ', '\x1b[34m*\x1b[0m'),
-        'wall': ('#', '#', '#'),
-        'block': ('\x1b[31mz\x1b[0m', 'z', '\x1b[34mz\x1b[0m'),
-        'spawner': ('S', 'S', 'S'),
+        CellTypes.agent: '\x1b[1m' + '⋀>⋁<'[s.orientation],
+        # CellTypes.empty: ('\x1b[31m*\x1b[0m', ' ', '\x1b[34m*\x1b[0m'),
+        CellTypes.crate: '%',
+        CellTypes.wall: '#',
+        CellTypes.goal: 'G',
+        CellTypes.alive: 'z',
+        CellTypes.spawning: 'S',
     }
 
     if view_size:
@@ -536,26 +578,33 @@ def render(s, view_size):
         board = s.board
         goals = s.goals
     screen = np.empty((view_height+2, view_width+3), dtype=object)
-    screen[:] = ' '
-    screen[0] = screen[-1] = '-'
-    screen[:,0] = screen[:,-2] = '|'
+    screen[:] = ''
+    screen[0] = screen[-1] = ' -'
+    screen[:,0] = screen[:,-2] = ' |'
     screen[:,-1] = '\n'
-    screen[0,0] = screen[0,-2] = screen[-1,0] = screen[-1,-2] = '+'
+    screen[0,0] = screen[0,-2] = screen[-1,0] = screen[-1,-2] = ' +'
     sub_screen = screen[1:-1,1:-2]
-    for key, sprite in SPRITES.items():
-        sub_screen[(board == OBJECT_TYPES[key]) & (goals < 0)] = sprite[0]
-        sub_screen[(board == OBJECT_TYPES[key]) & (goals == 0)] = sprite[1]
-        sub_screen[(board == OBJECT_TYPES[key]) & (goals > 0)] = sprite[2]
+    sub_screen += '\x1b[48;5;213m ' * (goals < 0).astype(object)
+    sub_screen += '\x1b[48;5;117m ' * (goals > 0).astype(object)
+    sub_screen += '\x1b[0m ' * (goals == 0).astype(object)
+    filled = np.zeros(sub_screen.shape, dtype=bool)
+    for cell, sprite in SPRITES.items():
+        # This isn't exactly fast, but oh well.
+        has_sprite = ((board & cell) == cell) & ~filled
+        filled |= has_sprite
+        sub_screen[has_sprite] += sprite
+    sub_screen[~filled] += ' '
+    sub_screen += '\x1b[0m'
     # Clear the screen and move cursor to the start
     sys.stdout.write("\x1b[H\x1b[J")
     if s.title:
         print("\x1b[1m%s\x1b[0m" % s.title)
     sys.stdout.write("Score: \x1b[1m%i\x1b[0m (\x1b[1m%0.3f\x1b[0m)\n" % (
         s.points, s.smooth_points))
-    sys.stdout.write("Steps: \x1b[1m%i\x1b[0m\n " % s.num_steps)
+    sys.stdout.write("Steps: \x1b[1m%i\x1b[0m\n" % s.num_steps)
     if s.edit_mode:
         sys.stdout.write("\x1b[1m*** EDIT MODE ***\x1b[0m\n")
-    sys.stdout.write(' '.join(screen.ravel()))
+    sys.stdout.write(''.join(screen.ravel()))
     if s.error_msg:
         sys.stdout.write("\x1b[3m" + s.error_msg + "\x1b[0m\n")
     print(' '.join(s.log_actions))
