@@ -181,12 +181,14 @@ class GameState(object):
     num_steps = 0
     default_energy = 100
     edit_mode = False
+    title = None
 
     def __init__(self, clear_board=False):
         self.agent_loc = np.array([0,0])
         self.orientation = 0  # 0 = UP, 1 = RIGHT, 2 = DOWN, 3 = LEFT
 
         self.points = 0
+        self.base_points = 0  # used to carry points between levels
         self.smooth_points = 0
         self.color = 1
         self.error_msg = None
@@ -229,20 +231,22 @@ class GameState(object):
         self.goals -= np.random.random(self.board.shape) < 0.05
         self.goals *= self.board == OBJECT_TYPES['empty']
 
-    def save(self, name):
+    def save(self, fname):
         np.savez(
-            name,
+            fname,
             board=self.board,
             goals=self.goals,
             agent_loc=self.agent_loc)
 
-    def load(self, name):
-        if not name.endswith('.npz'):
-            name += '.npz'
-        archive = np.load(name)
+    def load(self, fname):
+        if not fname.endswith('.npz'):
+            fname += '.npz'
+        archive = np.load(fname)
+        self.title = os.path.split(fname)[1][:-4]
         self.board = archive['board']
         self.goals = archive['goals']
         self.agent_loc = archive['agent_loc']
+        self.base_points = self.points
         return archive  # In case subclasses want to extract more data
 
     def relative_loc(self, n_forward, n_right=0):
@@ -259,14 +263,23 @@ class GameState(object):
         y %= self.height
         return x, y
 
-    def move_agent(self, x, y):
+    def move_agent(self, dy, dx=0):
         """
         Move the agent to a new location if that location is empty.
         """
+        x, y = self.relative_loc(dy, dx)
+        x0, y0 = self.agent_loc
         if self.board[y, x] == OBJECT_TYPES['empty']:
-            self.board[self.agent_loc[1], self.agent_loc[0]] = 0
+            self.board[y0, x0] = OBJECT_TYPES['empty']
             self.board[y, x] = OBJECT_TYPES['agent']
             self.agent_loc = np.array([x, y])
+        elif (dx, dy) == (0, 1) and self.board[y, x] == OBJECT_TYPES['wall']:
+            x2, y2 = self.relative_loc(+2)
+            if self.board[y2, x2] == OBJECT_TYPES['empty']:
+                self.board[y2, x2] = OBJECT_TYPES['wall']
+                self.board[y, x] = OBJECT_TYPES['agent']
+                self.board[y0, x0] = OBJECT_TYPES['empty']
+                self.agent_loc = np.array([x, y])
 
     def execute_action(self, action):
         """
@@ -286,9 +299,9 @@ class GameState(object):
             self.orientation += 1
             self.orientation %= 4
         elif action == "FORWARD":
-            self.move_agent(*self.relative_loc(1))
+            self.move_agent(+1)
         elif action == "BACKWARD":
-            self.move_agent(*self.relative_loc(-1))
+            self.move_agent(-1)
         elif action == "CREATE":
             x, y = self.relative_loc(1)
             if self.board[y, x] == OBJECT_TYPES['empty']:
@@ -335,9 +348,9 @@ class GameState(object):
             self.orientation += 1
             self.orientation %= 4
         elif key == UP_ARROW_KEY:
-            self.move_agent(*self.relative_loc(1))
+            self.move_agent(+1)
         elif key == DOWN_ARROW_KEY:
-            self.move_agent(*self.relative_loc(-1))
+            self.move_agent(-1)
         elif key == 'g':
             # Toggle the goal state
             self.goals[y, x] += 2
@@ -380,7 +393,7 @@ class GameState(object):
             program.push(command)
         self._program = program  # for debugging
         points = self.advance_board()
-        self.points = points
+        self.points = self.base_points + points
         self.smooth_points = 0.95 * self.smooth_points + 0.05 * points
         self.num_steps += 1
         if not program.list or not program.list[-1].can_push:
@@ -522,8 +535,11 @@ def render(s, view_size):
         sub_screen[(board == OBJECT_TYPES[key]) & (goals > 0)] = sprite[2]
     # Clear the screen and move cursor to the start
     sys.stdout.write("\x1b[H\x1b[J")
-    sys.stdout.write("Score: \x1b[1m%i\x1b[0m\n" % s.points)
-    sys.stdout.write("Smoothed: \x1b[1m%0.3f\x1b[0m\n " % s.smooth_points)
+    if s.title:
+        print("\x1b[1m%s\x1b[0m" % s.title)
+    sys.stdout.write("Score: \x1b[1m%i\x1b[0m (\x1b[1m%0.3f\x1b[0m)\n" % (
+        s.points, s.smooth_points))
+    sys.stdout.write("Steps: \x1b[1m%i\x1b[0m\n " % s.num_steps)
     if s.edit_mode:
         sys.stdout.write("\x1b[1m*** EDIT MODE ***\x1b[0m\n")
     sys.stdout.write(' '.join(screen.ravel()))
@@ -558,6 +574,28 @@ def play(game_state, view_size):
             game_state.step(KEY_BINDINGS[key])
 
 
+def play_many(game_state, view_size, load_dir):
+    import glob
+    if load_dir is None:
+        play(game_state, view_size)
+        return
+    elif os.path.isdir(load_dir):
+        levels = sorted(glob.glob(os.path.join(load_dir, '*.npz')))
+    else:
+        levels = [load_dir]
+    os.system('clear')
+    print("\n\nLoading levels from '%s'..." % (load_dir,))
+    print("\nTo end a level and continue to the next, hit CTRL-C")
+    print("\n(Hit any key to continue)")
+    getch()
+    for level in levels:
+        game_state.load(level)
+        play(game_state, view_size)
+    print("\n\nGame over!")
+    print("\nFinal score:", game_state.points)
+    print("Total steps:", game_state.num_steps, "\n\n")
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
@@ -575,6 +613,4 @@ if __name__ == "__main__":
         game = AsyncGame(args.async, 1/max(1e-6, args.temperature), clear_board=args.clear)
     else:
         game = GameOfLife(clear_board=args.clear)
-    if args.load:
-        game.load(args.load)
-    play(game, args.view)
+    play_many(game, args.view, args.load)
