@@ -73,7 +73,7 @@ import sys
 import numpy as np
 import scipy.signal
 
-from .getch import getch
+from .keyboard_input import getch
 from .array_utils import wrapping_array
 from .gen_board import gen_board
 from .syntax_tree import BlockNode
@@ -182,10 +182,11 @@ class GameState(object):
     default_energy = 100
     edit_mode = False
     title = None
+    fname = None
 
     def __init__(self, clear_board=False):
         self.agent_loc = np.array([0,0])
-        self.orientation = 0  # 0 = UP, 1 = RIGHT, 2 = DOWN, 3 = LEFT
+        self.orientation = 1  # 0 = UP, 1 = RIGHT, 2 = DOWN, 3 = LEFT
 
         self.points = 0
         self.base_points = 0  # used to carry points between levels
@@ -243,10 +244,12 @@ class GameState(object):
             fname += '.npz'
         archive = np.load(fname)
         self.title = os.path.split(fname)[1][:-4]
+        self.fname = fname[:-4]
         self.board = archive['board']
         self.goals = archive['goals']
         self.agent_loc = archive['agent_loc']
         self.base_points = self.points
+        self.orientation = 1
         return archive  # In case subclasses want to extract more data
 
     def relative_loc(self, n_forward, n_right=0):
@@ -356,7 +359,7 @@ class GameState(object):
             self.goals[y, x] += 2
             self.goals[y, x] %= 3
             self.goals[y, x] -= 1
-        elif key == 's':
+        elif key == 'S' or key == 's' and not self.fname:
             save_name = input('\rsave as: \x1b[J')
             if save_name:
                 try:
@@ -364,6 +367,16 @@ class GameState(object):
                     self.error_msg = "Saved successfully."
                 except FileNotFoundError as err:
                     self.error_msg = f"No such file or directory: '{err.filename}'"
+            else:
+                self.error_msg = "Save aborted."
+        elif key == 's':
+            sys.stdout.write(f"\rsave as '{self.fname}'? (y/n)\x1b[J")
+            confirm = getch()
+            if confirm == 'y':
+                self.save(self.fname)
+                self.error_msg = "Saved successfully."
+            else:
+                self.error_msg = "Save aborted."
         elif key in cell_types:
             self.board[y, x] = cell_types[key]
 
