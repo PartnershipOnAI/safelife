@@ -114,14 +114,6 @@ MAGIC_WORDS = {
     'z': 'zephyr',
 }
 
-OBJECT_TYPES = {
-    'empty': 0,
-    'agent': 1,
-    'block': 2,
-    'wall': 3,
-    'spawner': 5,
-}
-OBJECT_TYPES = {k: np.array(v, dtype=np.int8) for k,v in OBJECT_TYPES.items()}
 SPAWN_PROB = 0.3
 
 
@@ -130,14 +122,14 @@ class CellTypes(object):
     agent = 1 << 1
     movable = 1 << 2  # Can be pushed by agent.
     destructible = 1 << 3
-    frozen = 1 << 4  # Does not evolve.
-    freezer = 1 << 5  # Freezes neighbor cells.
+    frozen = 1 << 4  # Does not evolve (can't turn into a living cell).
+    freezing = 1 << 5  # Freezes neighbor cells. Does not imply frozen.
     colors = 3 << 6  # Different cells can have different colors (two bits).
     spawning = 1 << 8  # Generates new cells of the same color.
     end_point = 1 << 9
 
     empty = 0
-    player = agent | freezer
+    player = agent | freezing | frozen
     wall = frozen
     crate = frozen | movable
     spawner = frozen | spawning
@@ -286,6 +278,7 @@ class GameState(object):
         self.agent_loc = archive['agent_loc']
         self.base_points = self.points
         self.orientation = 1
+
         return archive  # In case subclasses want to extract more data
 
     def relative_loc(self, n_forward, n_right=0):
@@ -475,7 +468,7 @@ class GameOfLife(GameState):
 
         # But don't change the board next to the agent or where there's a wall
         frozen = board & CellTypes.frozen
-        frozen |= convolve2d(board & CellTypes.freezer, cfilter)
+        frozen |= convolve2d(board & CellTypes.freezing, cfilter // 2)
         frozen = frozen > 0
         board *= frozen
         board += (new_alive & ~frozen) * CellTypes.life
@@ -506,48 +499,40 @@ class AsyncGame(GameState):
         """
         Apply one timestep of physics.
         """
-        EPOCHS = 0.1
+        EPOCHS = 0.3
 
         board = self.board
         rules = self.rules
         w = self.width
         h = self.height
-        AGENT = OBJECT_TYPES['agent']
-        EMPTY = OBJECT_TYPES['empty']
-        BLOCK = OBJECT_TYPES['block']
-        WALL = OBJECT_TYPES['wall']
-        SPAWNER = OBJECT_TYPES['spawner']
-        spawn = convolve2d(self.board == SPAWNER, np.ones((3,3)))
+        if rules[0] == 4:
+            neighborhood = np.array([[0,1,0],[1,0,1],[0,1,0]])
+        elif rules[0] == 6:
+            neighborhood = np.array([[0,1,1],[1,0,1],[1,1,0]])
+        elif rules[0] == 8:
+            neighborhood = np.array([[1,1,1],[1,0,1],[1,1,1]])
         for _ in range(int(board.size * EPOCHS)):
             x = np.random.randint(w)
             y = np.random.randint(h)
-            if board[y, x] in (AGENT, WALL, SPAWNER):
+            if board[y, x] & CellTypes.frozen:
                 continue
-            xp = (x+1) % w
-            xn = (x-1) % w
-            yp = (y+1) % h
-            yn = (y-1) % h
-            neighbors = 0
-            neighbors += board[y, xp] == BLOCK
-            neighbors += board[y, xn] == BLOCK
-            neighbors += board[yn, x] == BLOCK
-            neighbors += board[yp, x] == BLOCK
-            if rules[0] > 4:
-                neighbors += board[yn, xp] == BLOCK
-                neighbors += board[yp, xn] == BLOCK
-            if rules[0] > 6:
-                neighbors += board[yn, xn] == BLOCK
-                neighbors += board[yp, xp] == BLOCK
-            if board[y, x] == BLOCK:
-                H = rules[1][neighbors]
+            neighbors = board.view(wrapping_array)[y-1:y+2, x-1:x+2] * neighborhood
+            alive_neighbors = np.sum(neighbors & CellTypes.alive > 0)
+            spawn_neighbors = np.sum(neighbors & CellTypes.spawning > 0)
+            frozen = np.sum(neighbors & CellTypes.freezing) > 0
+            if frozen:
+                continue
+            if board[y, x] & CellTypes.alive:
+                H = rules[1][alive_neighbors]
             else:
-                H = rules[2][neighbors]
-            P = 0.5 + 0.5*np.tanh(H * self.beta)
-            P = 1 - (1-P)*(1-SPAWN_PROB)**spawn[y, x]
-            board[y, x] = BLOCK if P > np.random.random() else EMPTY
+                H = rules[2][alive_neighbors]
 
-        blocks = self.board == OBJECT_TYPES['block']
-        reward = np.sum(blocks * self.goals)
+            P = 0.5 + 0.5*np.tanh(H * self.beta)
+            P = 1 - (1-P)*(1-SPAWN_PROB)**spawn_neighbors
+            board[y, x] = CellTypes.life if P > np.random.random() else CellTypes.empty
+
+        alive = (self.board & CellTypes.alive) > 0
+        reward = np.sum(alive * self.goals)
         return reward
 
 
@@ -560,12 +545,11 @@ def render(s, view_size):
     """
     SPRITES = {
         CellTypes.agent: '\x1b[1m' + '⋀>⋁<'[s.orientation],
-        # CellTypes.empty: ('\x1b[31m*\x1b[0m', ' ', '\x1b[34m*\x1b[0m'),
-        CellTypes.crate: '%',
-        CellTypes.wall: '#',
+        CellTypes.spawning: 'S',
         CellTypes.goal: 'G',
         CellTypes.alive: 'z',
-        CellTypes.spawning: 'S',
+        CellTypes.crate: '%',
+        CellTypes.wall: '#',
     }
 
     if view_size:
