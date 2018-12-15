@@ -207,8 +207,7 @@ class GameState(object):
         self.orientation = 1  # 0 = UP, 1 = RIGHT, 2 = DOWN, 3 = LEFT
 
         self.points = 0
-        self.base_points = 0  # used to carry points between levels
-        self.smooth_points = 0
+        self.delta_points = 0  # points gained or lost within a timestep
         self.color = 1
         self.error_msg = None
 
@@ -221,6 +220,7 @@ class GameState(object):
             self.board[0,0] = CellTypes.player
         else:
             self.make_board()
+        self.pristine = np.ones(self.board.shape, dtype=bool)
 
     @property
     def width(self):
@@ -284,6 +284,7 @@ class GameState(object):
         self.base_points = self.points
         self.orientation = 1
         self.game_over = False
+        self.pristine = np.ones(self.board.shape, dtype=bool)
 
         return archive  # In case subclasses want to extract more data
 
@@ -313,6 +314,7 @@ class GameState(object):
             self.agent_loc = np.array([x1, y1])
         elif (self.board[y1, x1] & CellTypes.exit_flag) and can_exit:
             self.game_over = True
+            self.delta_points += 3
         elif (dx, dy) == (0, 1) and self.board[y1, x1] & CellTypes.movable:
             x2, y2 = self.relative_loc(+2)
             if self.board[y2, x2] == CellTypes.empty:
@@ -455,7 +457,12 @@ class GameState(object):
 
     def step(self, action):
         assert action in COMMAND_WORDS
+        old_alive = self.board & CellTypes.alive > 0
+
         self.commands.append(action)
+        self.num_steps += 1
+        self.delta_points = 0  # can be changed by executing commands
+
         # It's somewhat inefficient to rebuild the program from scratch
         # when each action is added, but otherwise we'd have to handle
         # popping commands when the delete key is hit. Hardly a bottleneck.
@@ -463,17 +470,28 @@ class GameState(object):
         for command in self.commands:
             program.push(command)
         self._program = program  # for debugging
-        points = self.advance_board()
-        self.points = self.base_points + points
-        self.smooth_points = 0.95 * self.smooth_points + 0.05 * points
-        self.num_steps += 1
+
+        if not self.game_over:
+            self.advance_board()
+
+        # Execute the commands if they're syntactically complete
         if not program.list or not program.list[-1].can_push:
-            # Reached the end of the list.
             self.log_actions = []
             self.energy = self.default_energy
             err = program.execute(self)
             self.error_msg = "" if not err or err in (1,2) else err
             self.commands = []
+
+        # Now score the board
+        new_alive = self.board & CellTypes.alive > 0
+        delta_alive = 1 * new_alive - 1 * old_alive
+        self.delta_points += np.sum(delta_alive * self.goals)
+        # The first time you mess up a pristine cell, you lose double points
+        penalties = np.minimum(0, delta_alive * self.goals * self.pristine)
+        self.delta_points += np.sum(penalties)
+        self.pristine &= delta_alive == 0
+        self.points += self.delta_points
+        return self.delta_points
 
 
 class GameOfLife(GameState):
@@ -574,10 +592,6 @@ class AsyncGame(GameState):
             P = 1 - (1-P)*(1-SPAWN_PROB)**spawn_neighbors
             board[y, x] = CellTypes.life if P > np.random.random() else CellTypes.empty
 
-        alive = (self.board & CellTypes.alive) > 0
-        reward = np.sum(alive * self.goals)
-        return reward
-
 
 def render(s, view_size):
     """
@@ -636,8 +650,7 @@ def render(s, view_size):
     sys.stdout.write("\x1b[H\x1b[J")
     if s.title:
         print("\x1b[1m%s\x1b[0m" % s.title)
-    sys.stdout.write("Score: \x1b[1m%i\x1b[0m (\x1b[1m%0.3f\x1b[0m)\n" % (
-        s.points, s.smooth_points))
+    sys.stdout.write("Score: \x1b[1m%i\x1b[0m\n" % s.points)
     sys.stdout.write("Steps: \x1b[1m%i\x1b[0m\n" % s.num_steps)
     if s.edit_mode:
         sys.stdout.write("\x1b[1m*** EDIT MODE ***\x1b[0m\n")
