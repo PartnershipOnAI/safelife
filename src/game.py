@@ -124,17 +124,21 @@ class CellTypes(object):
     destructible = 1 << 3
     frozen = 1 << 4  # Does not evolve (can't turn into a living cell).
     freezing = 1 << 5  # Freezes neighbor cells. Does not imply frozen.
-    colors = 3 << 6  # Different cells can have different colors (two bits).
+    exit_flag = 1 << 6
     spawning = 1 << 8  # Generates new cells of the same color.
-    end_point = 1 << 9
+    color_r = 1 << 9
+    color_g = 1 << 10
+    color_b = 1 << 11
 
     empty = 0
     player = agent | freezing | frozen
     wall = frozen
     crate = frozen | movable
     spawner = frozen | spawning
-    goal = frozen | end_point
+    level_exit = frozen | exit_flag
     life = alive | destructible
+    colors = (color_r, color_g, color_b)
+    rainbow_color = color_r | color_g | color_b
 
 
 ACTIONS = {
@@ -196,6 +200,7 @@ class GameState(object):
     edit_mode = False
     title = None
     fname = None
+    game_over = False
 
     def __init__(self, clear_board=False):
         self.agent_loc = np.array([0,0])
@@ -278,6 +283,7 @@ class GameState(object):
         self.agent_loc = archive['agent_loc']
         self.base_points = self.points
         self.orientation = 1
+        self.game_over = False
 
         return archive  # In case subclasses want to extract more data
 
@@ -295,7 +301,7 @@ class GameState(object):
         y %= self.height
         return x, y
 
-    def move_agent(self, dy, dx=0):
+    def move_agent(self, dy, dx=0, can_exit=True):
         """
         Move the agent to a new location if that location is empty.
         """
@@ -305,10 +311,17 @@ class GameState(object):
             self.board[y1, x1] = self.board[y0, x0]
             self.board[y0, x0] = CellTypes.empty
             self.agent_loc = np.array([x1, y1])
+        elif (self.board[y1, x1] & CellTypes.exit_flag) and can_exit:
+            self.game_over = True
         elif (dx, dy) == (0, 1) and self.board[y1, x1] & CellTypes.movable:
             x2, y2 = self.relative_loc(+2)
             if self.board[y2, x2] == CellTypes.empty:
                 self.board[y2, x2] = self.board[y1, x1]
+                self.board[y1, x1] = self.board[y0, x0]
+                self.board[y0, x0] = CellTypes.empty
+                self.agent_loc = np.array([x1, y1])
+            elif self.board[y2, x2] & CellTypes.exit_flag:
+                # Push a block out of this level
                 self.board[y1, x1] = self.board[y0, x0]
                 self.board[y0, x0] = CellTypes.empty
                 self.agent_loc = np.array([x1, y1])
@@ -339,7 +352,7 @@ class GameState(object):
             x1, y1 = self.relative_loc(1)
             if self.board[y1, x1] == CellTypes.empty:
                 self.board[y1, x1] = CellTypes.life | (
-                    self.board[y0, x0] & CellTypes.colors)
+                    self.board[y0, x0] & CellTypes.rainbow_color)
         elif action == "DESTROY":
             x1, y1 = self.relative_loc(1)
             if self.board[y1, x1] & CellTypes.destructible:
@@ -374,7 +387,10 @@ class GameState(object):
             'w': CellTypes.wall,
             'r': CellTypes.crate,
             'p': CellTypes.spawner,
+            'e': CellTypes.level_exit,
         }
+        x0, y0 = self.relative_loc(0)
+        player_color = self.board[y0, x0] & CellTypes.rainbow_color
         x, y = self.relative_loc(1)
         if key == LEFT_ARROW_KEY:
             self.orientation -= 1
@@ -383,9 +399,9 @@ class GameState(object):
             self.orientation += 1
             self.orientation %= 4
         elif key == UP_ARROW_KEY:
-            self.move_agent(+1)
+            self.move_agent(+1, can_exit=False)
         elif key == DOWN_ARROW_KEY:
-            self.move_agent(-1)
+            self.move_agent(-1, can_exit=False)
         elif key == 'g':
             # Toggle the goal state
             self.goals[y, x] += 2
@@ -409,8 +425,18 @@ class GameState(object):
                 self.error_msg = "Saved successfully."
             else:
                 self.error_msg = "Save aborted."
+        elif key == 'l':  # that's a lowercase L
+            player_color += CellTypes.color_r
+            player_color &= CellTypes.rainbow_color
+            self.board[y0, x0] &= ~CellTypes.rainbow_color
+            self.board[y0, x0] |= player_color
+        elif key == 'n':
+            self.game_over = True
         elif key in key_cell_map:
-            self.board[y, x] = key_cell_map[key]
+            new_cell = key_cell_map[key]
+            if new_cell:
+                new_cell |= player_color
+            self.board[y, x] = new_cell
 
     def check(self, condition):
         x, y = self.relative_loc(1)
@@ -457,21 +483,38 @@ class GameOfLife(GameState):
         """
         # We can advance the board using a pretty simple convolution.
         board = self.board
-        alive = (board & CellTypes.alive) // CellTypes.alive
-        cfilter = np.array([[2,2,2],[2,1,2],[2,2,2]])
-        new_alive = (np.abs(convolve2d(alive, cfilter) - 6) <= 1)
+        alive = board & CellTypes.alive > 0
+        cfilter = np.array([[1,1,1],[1,0,1],[1,1,1]])
 
-        # Randomly add alive cells around the spawners.
-        spawners = convolve2d(board & CellTypes.spawning, cfilter // 2)
-        spawners //= CellTypes.spawning
-        new_alive |= np.random.random(board.shape) > (1 - SPAWN_PROB)**spawners
-
-        # But don't change the board next to the agent or where there's a wall
         frozen = board & CellTypes.frozen
-        frozen |= convolve2d(board & CellTypes.freezing, cfilter // 2)
+        frozen |= convolve2d(board & CellTypes.freezing, cfilter)
         frozen = frozen > 0
-        board *= frozen
-        board += (new_alive & ~frozen) * CellTypes.life
+
+        num_neighbors = convolve2d(alive, cfilter)
+        new_alive = (num_neighbors == 3) & ~alive & ~frozen
+        new_dead = ((num_neighbors < 2) | (num_neighbors > 3)) & alive & ~frozen
+
+        # A new cell must have at least two living parents with a particular
+        # color in order to inherit it.
+        new_cells = np.zeros_like(board) + CellTypes.life
+        for color in CellTypes.colors:
+            new_cells += color * (convolve2d(board & color > 0, cfilter) > 1)
+        new_cells *= new_alive
+        board *= ~(new_dead | new_alive)
+        board += new_cells
+
+        # Randomly add live cells around the spawners.
+        # Spawned cells contain colors of all spawners.
+        spawners = board & CellTypes.spawning > 0
+        spawn_num = convolve2d(spawners, cfilter)
+        new_alive = np.random.random(board.shape) > (1 - SPAWN_PROB)**spawn_num
+        new_alive *= (board & CellTypes.alive == 0) & ~frozen
+        new_cells = np.zeros_like(board) + CellTypes.life
+        for color in CellTypes.colors:
+            new_cells += color * (convolve2d(board & color > 0, cfilter) > 0)
+        new_cells *= new_alive
+        board *= ~new_alive
+        board += new_cells
 
         # Calculate the points
         alive = board & CellTypes.alive > 0
@@ -543,13 +586,14 @@ def render(s, view_size):
     This is not exactly a speedy rendering system, but it should be plenty
     fast enough for our purposes.
     """
+    CT = CellTypes
     SPRITES = {
-        CellTypes.agent: '\x1b[1m' + '⋀>⋁<'[s.orientation],
-        CellTypes.spawning: 'S',
-        CellTypes.goal: 'G',
-        CellTypes.alive: 'z',
-        CellTypes.crate: '%',
-        CellTypes.wall: '#',
+        CT.agent: '\x1b[1m' + '⋀>⋁<'[s.orientation],
+        CT.spawning: 'S',
+        CT.level_exit: 'X',
+        CT.alive: 'z',
+        CT.crate: '%',
+        CT.wall: '#',
     }
 
     if view_size:
@@ -568,9 +612,18 @@ def render(s, view_size):
     screen[:,-1] = '\n'
     screen[0,0] = screen[0,-2] = screen[-1,0] = screen[-1,-2] = ' +'
     sub_screen = screen[1:-1,1:-2]
-    sub_screen += '\x1b[48;5;213m ' * (goals < 0).astype(object)
-    sub_screen += '\x1b[48;5;117m ' * (goals > 0).astype(object)
-    sub_screen += '\x1b[0m ' * (goals == 0).astype(object)
+    sub_screen += '\x1b[48;5;175m ' * (goals < 0).astype(object)
+    sub_screen += '\x1b[48;5;116m ' * (goals > 0).astype(object)
+    sub_screen += '\x1b[48;5;7m ' * (goals == 0).astype(object)
+    colors = board & CT.rainbow_color
+    sub_screen += '\x1b[38;5;0m' * (colors == 0).astype(object)
+    sub_screen += '\x1b[38;5;1m' * (colors == CT.color_r).astype(object)
+    sub_screen += '\x1b[38;5;2m' * (colors == CT.color_g).astype(object)
+    sub_screen += '\x1b[38;5;12m' * (colors == CT.color_b).astype(object)
+    sub_screen += '\x1b[38;5;11m' * (colors == CT.color_r | CT.color_g).astype(object)
+    sub_screen += '\x1b[38;5;39m' * (colors == CT.color_g | CT.color_b).astype(object)
+    sub_screen += '\x1b[38;5;129m' * (colors == CT.color_r | CT.color_b).astype(object)
+    sub_screen += '\x1b[38;5;8m' * (colors == CT.rainbow_color).astype(object)
     filled = np.zeros(sub_screen.shape, dtype=bool)
     for cell, sprite in SPRITES.items():
         # This isn't exactly fast, but oh well.
@@ -600,12 +653,11 @@ def render(s, view_size):
 
 def play(game_state, view_size):
     os.system('clear')
-    while True:
+    while not game.game_over:
         render(game_state, view_size)
         key = getch()
         if key == INTERRUPT_KEY:
-            print("")
-            return
+            raise KeyboardInterrupt
         elif key == DELETE_KEY and game_state.commands:
             game_state.commands.pop()
         elif key == '`':
@@ -629,11 +681,6 @@ def play_many(game_state, view_size, load_dir):
         levels = sorted(glob.glob(os.path.join(load_dir, '*.npz')))
     else:
         levels = [load_dir]
-    os.system('clear')
-    print("\n\nLoading levels from '%s'..." % (load_dir,))
-    print("\nTo end a level and continue to the next, hit CTRL-C")
-    print("\n(Hit any key to continue)")
-    getch()
     for level in levels:
         game_state.load(level)
         play(game_state, view_size)
@@ -659,4 +706,7 @@ if __name__ == "__main__":
         game = AsyncGame(args.async, 1/max(1e-6, args.temperature), clear_board=args.clear)
     else:
         game = GameOfLife(clear_board=args.clear)
-    play_many(game, args.view, args.load)
+    try:
+        play_many(game, args.view, args.load)
+    except KeyboardInterrupt:
+        print("")
