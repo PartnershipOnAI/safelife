@@ -642,10 +642,12 @@ def render(s, view_size):
         x0, y0 = s.agent_loc - view_size // 2
         board = s.board.view(wrapping_array)[y0:y0+view_size, x0:x0+view_size]
         goals = s.goals.view(wrapping_array)[y0:y0+view_size, x0:x0+view_size]
+        pristine = s.pristine.view(wrapping_array)[y0:y0+view_size, x0:x0+view_size]
     else:
         view_width, view_height = s.width, s.height
         board = s.board
         goals = s.goals
+        pristine = s.pristine
     screen = np.empty((view_height+2, view_width+3), dtype=object)
     screen[:] = ''
     screen[0] = screen[-1] = ' -'
@@ -653,8 +655,10 @@ def render(s, view_size):
     screen[:,-1] = '\n'
     screen[0,0] = screen[0,-2] = screen[-1,0] = screen[-1,-2] = ' +'
     sub_screen = screen[1:-1,1:-2]
-    sub_screen += '\x1b[48;5;175m ' * (goals < 0).astype(object)
-    sub_screen += '\x1b[48;5;116m ' * (goals > 0).astype(object)
+    sub_screen += '\x1b[48;5;175m ' * ((goals < 0) & ~pristine).astype(object)
+    sub_screen += '\x1b[48;5;116m ' * ((goals > 0) & ~pristine).astype(object)
+    sub_screen += '\x1b[48;5;211m ' * ((goals < 0) & pristine).astype(object)
+    sub_screen += '\x1b[48;5;44m ' * ((goals > 0) & pristine).astype(object)
     sub_screen += '\x1b[48;5;7m ' * (goals == 0).astype(object)
     colors = board & CT.rainbow_color
     sub_screen += '\x1b[38;5;0m' * (colors == 0).astype(object)
