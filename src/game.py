@@ -219,11 +219,13 @@ class GameState(object):
     def __init__(self, clear_board=False):
         self.agent_loc = np.array([0,0])
         self.orientation = 1  # 0 = UP, 1 = RIGHT, 2 = DOWN, 3 = LEFT
+        self.rotate_actions = 0
 
         self.points = 0
         self.delta_points = 0  # points gained or lost within a timestep
         self.color = 1
         self.error_msg = None
+        self.energy = self.default_energy
 
         self.commands = []
         self.log_actions = []  # for debugging only
@@ -354,7 +356,7 @@ class GameState(object):
         if self.energy < 0:
             return self.out_of_energy_msg
         if action in ORIENTATION:
-            move_dir = ORIENTATION[action]
+            move_dir = (ORIENTATION[action] - self.rotate_actions) % 4
             if move_dir == self.orientation:
                 self.move_agent(+1)
             elif abs(move_dir - self.orientation) == 2:
@@ -377,7 +379,7 @@ class GameState(object):
         return 0
 
     def define_subprogram(self, name, program):
-        self.saved_programs[name] = program
+        self.saved_programs[name] = (self.orientation, program)
         return 0
 
     def call_subprogram(self, name):
@@ -389,7 +391,13 @@ class GameState(object):
         self.energy -= 1
         if self.energy < 0:
             return self.out_of_energy_msg
-        return self.saved_programs[name].execute(self)
+        orientation, program = self.saved_programs[name]
+        old_rotate = self.rotate_actions
+        self.rotate_actions = orientation - self.orientation
+        try:
+            return program.execute(self)
+        finally:
+            self.rotate_actions = old_rotate
 
     def execute_edit(self, key):
         """
