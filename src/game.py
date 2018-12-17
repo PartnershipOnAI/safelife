@@ -144,8 +144,8 @@ class CellTypes(object):
 ACTIONS = {
     "LEFT",
     "RIGHT",
-    "FORWARD",
-    "BACKWARD",
+    "UP",
+    "DOWN",
     "PUSH",  # unused
     "PULL",  # unused
     "ABSORB",  # unused
@@ -154,15 +154,29 @@ ACTIONS = {
     "NULL",
 }
 
+ORIENTATION = {
+    "UP": 0,
+    "RIGHT": 1,
+    "DOWN": 2,
+    "LEFT": 3,
+}
+
+KEY_ORIENTATION = {
+    UP_ARROW_KEY: 0,
+    RIGHT_ARROW_KEY: 1,
+    DOWN_ARROW_KEY: 2,
+    LEFT_ARROW_KEY: 3,
+}
+
 KEY_BINDINGS = {
     LEFT_ARROW_KEY: "LEFT",
     RIGHT_ARROW_KEY: "RIGHT",
-    UP_ARROW_KEY: "FORWARD",
-    DOWN_ARROW_KEY: "BACKWARD",
+    UP_ARROW_KEY: "UP",
+    DOWN_ARROW_KEY: "DOWN",
     'a': "LEFT",
     'd': "RIGHT",
-    'w': "FORWARD",
-    's': "BACKWARD",
+    'w': "UP",
+    's': "DOWN",
     '\r': "NULL",
     'z': "NULL",
     # 'q': "ABSORB",
@@ -339,16 +353,14 @@ class GameState(object):
         self.energy -= 1
         if self.energy < 0:
             return self.out_of_energy_msg
-        if action == "LEFT":
-            self.orientation -= 1
-            self.orientation %= 4
-        elif action == "RIGHT":
-            self.orientation += 1
-            self.orientation %= 4
-        elif action == "FORWARD":
-            self.move_agent(+1)
-        elif action == "BACKWARD":
-            self.move_agent(-1)
+        if action in ORIENTATION:
+            move_dir = ORIENTATION[action]
+            if move_dir == self.orientation:
+                self.move_agent(+1)
+            elif abs(move_dir - self.orientation) == 2:
+                self.move_agent(-1)
+            else:
+                self.orientation = move_dir
         elif action == "CREATE":
             x0, y0 = self.agent_loc
             x1, y1 = self.relative_loc(1)
@@ -394,16 +406,14 @@ class GameState(object):
         x0, y0 = self.relative_loc(0)
         player_color = self.board[y0, x0] & CellTypes.rainbow_color
         x, y = self.relative_loc(1)
-        if key == LEFT_ARROW_KEY:
-            self.orientation -= 1
-            self.orientation %= 4
-        elif key == RIGHT_ARROW_KEY:
-            self.orientation += 1
-            self.orientation %= 4
-        elif key == UP_ARROW_KEY:
-            self.move_agent(+1, can_exit=False)
-        elif key == DOWN_ARROW_KEY:
-            self.move_agent(-1, can_exit=False)
+        if key in KEY_ORIENTATION:
+            move_dir = KEY_ORIENTATION[key]
+            if move_dir == self.orientation:
+                self.move_agent(+1, can_exit=False)
+            elif abs(move_dir - self.orientation) == 2:
+                self.move_agent(-1, can_exit=False)
+            else:
+                self.orientation = move_dir
         elif key == 'g':
             # Toggle the goal state
             self.goals[y, x] += 2
