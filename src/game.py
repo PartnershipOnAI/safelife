@@ -215,6 +215,7 @@ class GameState(object):
     title = None
     fname = None
     game_over = False
+    use_absolute_directions = False
 
     def __init__(self, clear_board=False):
         self.agent_loc = np.array([0,0])
@@ -344,6 +345,26 @@ class GameState(object):
                 self.board[y0, x0] = CellTypes.empty
                 self.agent_loc = np.array([x1, y1])
 
+    def move_direction(self, direction):
+        """
+        Either moves or rotates the agent.
+        """
+        if self.use_absolute_directions:
+            # Agent moves (or turns) in the specified absolute direction
+            if direction == self.orientation:
+                self.move_agent(+1)
+            elif abs(direction - self.orientation) == 2:
+                self.move_agent(-1)
+            else:
+                self.orientation = direction
+        else:
+            # Agent moves or turns relative to their current orientation
+            if direction % 2 == 0:
+                self.move_agent(1 - direction)
+            else:
+                self.orientation += 2 - direction
+                self.orientation %= 4
+
     def execute_action(self, action):
         """
         Execute an individual action.
@@ -356,13 +377,7 @@ class GameState(object):
         if self.energy < 0:
             return self.out_of_energy_msg
         if action in ORIENTATION:
-            move_dir = (ORIENTATION[action] - self.rotate_actions) % 4
-            if move_dir == self.orientation:
-                self.move_agent(+1)
-            elif abs(move_dir - self.orientation) == 2:
-                self.move_agent(-1)
-            else:
-                self.orientation = move_dir
+            self.move_direction(ORIENTATION[action])
         elif action == "CREATE":
             x0, y0 = self.agent_loc
             x1, y1 = self.relative_loc(1)
@@ -415,13 +430,7 @@ class GameState(object):
         player_color = self.board[y0, x0] & CellTypes.rainbow_color
         x, y = self.relative_loc(1)
         if key in KEY_ORIENTATION:
-            move_dir = KEY_ORIENTATION[key]
-            if move_dir == self.orientation:
-                self.move_agent(+1, can_exit=False)
-            elif abs(move_dir - self.orientation) == 2:
-                self.move_agent(-1, can_exit=False)
-            else:
-                self.orientation = move_dir
+            self.move_direction(KEY_ORIENTATION[key])
         elif key == 'g':
             # Toggle the goal state
             self.goals[y, x] += 2
@@ -730,9 +739,11 @@ if __name__ == "__main__":
         '--view', type=int, default=0, help="View size. "
         "Defaults to zero, in which case the view fixed on the whole board.")
     parser.add_argument('--clear', action="store_true")
+    parser.add_argument('--absolute_directions', action="store_true")
     parser.add_argument('--load', help="Load game state from file.")
     args = parser.parse_args()
     GameState.default_board_size = (args.board, args.board)
+    GameState.use_absolute_directions = args.absolute_directions
     if args.async:
         game = AsyncGame(args.async, 1/max(1e-6, args.temperature), clear_board=args.clear)
     else:
