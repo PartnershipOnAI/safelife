@@ -139,6 +139,8 @@ class CellTypes(object):
     life = alive | destructible
     colors = (color_r, color_g, color_b)
     rainbow_color = color_r | color_g | color_b
+    ice_cube = frozen | freezing | movable
+    plant = frozen | alive | movable
 
 
 ACTIONS = {
@@ -425,6 +427,8 @@ class GameState(object):
             'r': CellTypes.crate,
             'p': CellTypes.spawner,
             'e': CellTypes.level_exit,
+            'i': CellTypes.ice_cube,
+            't': CellTypes.plant,
         }
         x0, y0 = self.relative_loc(0)
         player_color = self.board[y0, x0] & CellTypes.rainbow_color
@@ -461,6 +465,12 @@ class GameState(object):
             self.board[y0, x0] |= player_color
         elif key == 'n':
             self.game_over = True
+        elif key == 'f':
+            self.board[y0, x0] ^= CellTypes.freezing
+            if self.board[y0, x0] & CellTypes.freezing:
+                self.error_msg = "Agent freezing power: \x1b[1mon\x1b[0m"
+            else:
+                self.error_msg = "Agent freezing power: \x1b[1moff\x1b[0m"
         elif key in key_cell_map:
             new_cell = key_cell_map[key]
             if new_cell:
@@ -632,6 +642,8 @@ def render(s, view_size):
         CT.agent: '\x1b[1m' + '⋀>⋁<'[s.orientation],
         CT.spawning: 'S',
         CT.level_exit: 'X',
+        CT.plant: '&',
+        CT.ice_cube: '=',
         CT.alive: 'z',
         CT.crate: '%',
         CT.wall: '#',
@@ -675,7 +687,9 @@ def render(s, view_size):
         has_sprite = ((board & cell) == cell) & ~filled
         filled |= has_sprite
         sub_screen[has_sprite] += sprite
-    sub_screen[~filled] += ' '
+    empty = board == 0
+    sub_screen[empty & ~filled] += ' '
+    sub_screen[~empty & ~filled] += '?'
     sub_screen += '\x1b[0m'
     # Clear the screen and move cursor to the start
     sys.stdout.write("\x1b[H\x1b[J")
