@@ -1,6 +1,7 @@
-# RL Safety Benchmarks
+# RL Safety Benchmarks: SafetyNet
 
 (more to come soon)
+
 
 ## Running the game
 
