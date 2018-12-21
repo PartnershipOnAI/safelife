@@ -647,7 +647,8 @@ class GameOfLife(GameState):
         # color in order to inherit it.
         new_cells = np.zeros_like(board) + CellTypes.life
         for color in CellTypes.colors:
-            new_cells += color * (convolve2d(board & color > 0, cfilter) > 1)
+            live_colors = (board & color > 0) & (board & CellTypes.alive > 0)
+            new_cells += color * (convolve2d(live_colors, cfilter) > 1)
         new_cells *= new_alive
         board *= ~(new_dead | new_alive)
         board += new_cells
@@ -660,7 +661,8 @@ class GameOfLife(GameState):
         new_alive *= (board & CellTypes.alive == 0) & ~frozen
         new_cells = np.zeros_like(board) + CellTypes.life
         for color in CellTypes.colors:
-            new_cells += color * (convolve2d(board & color > 0, cfilter) > 0)
+            spawn_colors = (board & color > 0) & (board & CellTypes.spawning > 0)
+            new_cells += color * (convolve2d(spawn_colors, cfilter) > 0)
         new_cells *= new_alive
         board *= ~new_alive
         board += new_cells
