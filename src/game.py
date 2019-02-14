@@ -195,6 +195,24 @@ KEY_BINDINGS = {
     'k': "BLOCK",
 }
 
+ACTION_COST = {
+    "LEFT": 0,
+    "RIGHT": 0,
+    "UP": 1,
+    "DOWN": 1,
+    "NULL": 1,
+    "CREATE": 1,
+    "DESTROY": 1,
+    "IFEMPTY": 0,
+    "REPEAT": 0,
+    "DEFINE": 0,
+    "CALL": 1,
+    "LOOP": 0,
+    "CONTINUE": 1,
+    "BREAK": 1,
+    "BLOCK": 0,
+}
+
 COMMAND_WORDS = {
     cmd: MAGIC_WORDS[k] for k, cmd in KEY_BINDINGS.items()
     if k in MAGIC_WORDS
@@ -241,6 +259,10 @@ class GameState(object):
             self.make_board()
         self.pristine = np.ones(self.board.shape, dtype=bool)
 
+        self.action_cost = ACTION_COST.copy()
+        if self.use_absolute_directions:
+            self.action_cost['LEFT'] = self.action_cost['RIGHT'] = 1
+
     @property
     def width(self):
         if hasattr(self, 'board'):
@@ -275,6 +297,10 @@ class GameState(object):
         self.orig_agent_loc = self.agent_loc.copy()
 
     def save(self, fname):
+        if not fname.endswith('.npz'):
+            fname += '.npz'
+        self.title = os.path.split(fname)[1][:-4]
+        self.fname = fname[:-4]
         np.savez(
             fname,
             board=self.board,
@@ -474,8 +500,11 @@ class GameState(object):
             self.board[y0, x0] |= player_color
         elif key == 'n':
             self.game_over = True
-        elif key == 'b':
-            self.reset_board()
+        elif key == 'L':
+            if self.fname:
+                self.load(self.fname)
+            else:
+                self.reset_board()
         elif key == 'f':
             self.board[y0, x0] ^= CellTypes.freezing
             if self.board[y0, x0] & CellTypes.freezing:
@@ -508,8 +537,6 @@ class GameState(object):
         old_alive = self.board & CellTypes.alive > 0
 
         self.commands.append(action)
-        self.num_steps += 1
-        self.num_sub_steps += 1
         self.delta_points = 0  # can be changed by executing commands
 
         # It's somewhat inefficient to rebuild the program from scratch
@@ -521,7 +548,10 @@ class GameState(object):
         self._program = program  # for debugging
 
         if not self.game_over:
-            self.advance_board()
+            for _ in range(self.action_cost.get(action, 1)):
+                self.num_steps += 1
+                self.num_sub_steps += 1
+                self.advance_board()
 
         # Execute the commands if they're syntactically complete
         if not program.list or not program.list[-1].can_push:
