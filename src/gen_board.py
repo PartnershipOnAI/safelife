@@ -4,6 +4,8 @@ Generate a random board with still lifes.
 
 import numpy as np
 
+from .game_physics import CellTypes
+
 
 _ring = np.array([[1,1,1],[1,0,1],[1,1,1]], dtype=np.int8)
 _dot = 1 - _ring
@@ -36,7 +38,7 @@ def try_flip(board, neighbors):
     return v2 - v1
 
 
-def gen_board(
+def gen_still_life(
         board_size=(15, 15), max_iter=10000, randp=0.2, min_total=8,
         num_seeds=1):
     """
@@ -99,6 +101,32 @@ def gen_board(
     return board
 
 
+def gen_board(board_size=(15, 15)):
+    area = board_size[0] * board_size[1]
+    board = gen_still_life(board_size, min_total=area // 15, num_seeds=area // 100)
+    board = (board * CellTypes.life).astype(np.int16)
+    board[0,0] = CellTypes.player | CellTypes.color_r
+    walls = (np.random.random(board.shape) < 0.05)
+    board += (board == 0) * walls * CellTypes.wall
+    crates = (np.random.random(board.shape) < 0.05)
+    board += (board == 0) * crates * CellTypes.crate
+
+    goals = np.zeros_like(board)
+    goals += np.random.random(board.shape) < 0.1
+    goals -= np.random.random(board.shape) < 0.05
+
+    x0, y0 = np.nonzero(board == CellTypes.empty)
+    k = np.random.randint(len(x0))
+    board[x0[k], y0[k]] = CellTypes.level_exit | CellTypes.color_r
+    goals[x0[k], y0[k]] = 0
+
+    return {
+        'board': board,
+        'goals': goals,
+        'agent_loc': (0,0),
+    }
+
+
 def print_board(board):
     board = np.pad(board, [(0,0), (0,1)], 'constant', constant_values=2)
     s = np.array([' .', ' x', ' \n'])
@@ -116,7 +144,7 @@ if __name__ == "__main__":
     parser.add_argument('--size', default=15, type=int)
     args = parser.parse_args()
     for _ in range(args.n):
-        board = gen_board(
+        board = gen_still_life(
             max_iter=args.iter, min_total=args.min,
             randp=args.p, num_seeds=args.seeds,
             board_size=(args.size, args.size))

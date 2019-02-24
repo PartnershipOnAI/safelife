@@ -5,6 +5,16 @@ Module for slightly non-standard keyboard inputs.
 """
 
 
+class KEYS:
+    # keyboard constants
+    UP_ARROW = '\x1b[A'
+    DOWN_ARROW = '\x1b[B'
+    RIGHT_ARROW = '\x1b[C'
+    LEFT_ARROW = '\x1b[D'
+    INTERRUPT = '\x03'
+    DELETE = '\x7f'
+
+
 class _Getch:
     """
     Gets a single character from standard input.  Does not echo to the screen.

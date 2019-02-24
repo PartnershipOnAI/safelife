@@ -76,7 +76,7 @@ import numpy as np
 from .keyboard_input import getch
 from .array_utils import wrapping_array, earth_mover_distance
 from .array_utils import wrapped_convolution as convolve2d
-from .gen_board import gen_board
+from .gen_board import gen_still_life
 from .syntax_tree import BlockNode
 
 UP_ARROW_KEY = '\x1b[A'
@@ -125,7 +125,7 @@ class CellTypes(object):
     destructible = 1 << 3
     frozen = 1 << 4  # Does not evolve (can't turn into a living cell).
     freezing = 1 << 5  # Freezes neighbor cells. Does not imply frozen.
-    exit_flag = 1 << 6
+    exit = 1 << 6
     spawning = 1 << 8  # Generates new cells of the same color.
     color_r = 1 << 9
     color_g = 1 << 10
@@ -136,7 +136,7 @@ class CellTypes(object):
     wall = frozen
     crate = frozen | movable
     spawner = frozen | spawning
-    level_exit = frozen | exit_flag
+    level_exit = frozen | exit
     life = alive | destructible
     colors = (color_r, color_g, color_b)
     rainbow_color = color_r | color_g | color_b
@@ -276,7 +276,7 @@ class GameState(object):
         return self.default_board_size[0]
 
     def make_board(self):
-        board = gen_board(
+        board = gen_still_life(
             board_size=(self.height, self.width),
             min_total=self.width * self.height // 15,
             num_seeds=self.width * self.height // 100,
@@ -366,7 +366,7 @@ class GameState(object):
             self.board[y1, x1] = self.board[y0, x0]
             self.board[y0, x0] = CellTypes.empty
             self.agent_loc = np.array([x1, y1])
-        elif (self.board[y1, x1] & CellTypes.exit_flag) and can_exit:
+        elif (self.board[y1, x1] & CellTypes.exit) and can_exit:
             self.game_over = True
             self.delta_points += self.exit_points
         elif (dx, dy) == (0, 1) and self.board[y1, x1] & CellTypes.movable:
@@ -376,7 +376,7 @@ class GameState(object):
                 self.board[y1, x1] = self.board[y0, x0]
                 self.board[y0, x0] = CellTypes.empty
                 self.agent_loc = np.array([x1, y1])
-            elif self.board[y2, x2] & CellTypes.exit_flag:
+            elif self.board[y2, x2] & CellTypes.exit:
                 # Push a block out of this level
                 self.board[y1, x1] = self.board[y0, x0]
                 self.board[y0, x0] = CellTypes.empty
