@@ -5,4 +5,4 @@
 
 ## Running the game
 
-    python3 -m src.game --load=levels
+    python3 -m safety_net --load=levels
