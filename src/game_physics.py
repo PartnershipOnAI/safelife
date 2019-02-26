@@ -175,7 +175,7 @@ class GameState(object):
         self.file_name = file_name
         self._init_data = self.serialize()
         self.num_steps = 0
-        np.savez(file_name, self._init_data)
+        np.savez(file_name, **self._init_data)
 
     def revert(self):
         """Revert to the last saved state."""
@@ -213,7 +213,7 @@ class GameState(object):
 
     @property
     def title(self):
-        """The bare file name without path or extension"""
+        """The bare file name without path or extension."""
         if self.file_name is None:
             return None
         else:
@@ -250,7 +250,7 @@ class GameState(object):
         elif (board[y1, x1] & CellTypes.exit) and can_exit:
             # Don't actually move the agent, just mark as exited.
             self.game_over = True
-            reward = self.points_on_level_exit
+            reward += self.points_on_level_exit
         elif (dx, dy) == (0, 1) and board[y1, x1] & CellTypes.movable and can_push:
             x2, y2 = self.relative_loc(+2)
             if board[y2, x2] == CellTypes.empty:
@@ -362,12 +362,19 @@ class GameState(object):
             else:
                 return "Save aborted."
         elif command == 'SAVE':
-            confirm = input(f"\rsave as '{self.file_name}'? (y/n)\x1b[J")
-            if confirm.lower() in ('y', 'yes'):
+            from .keyboard_input import getch
+            print(f"\rsave as '{self.file_name}'? (y/n)\x1b[J ", end='')
+            confirm = getch()
+            if confirm in ('y', 'Y'):
                 self.save(self.file_name)
                 return "Saved successfully."
             else:
                 return "Save aborted."
+        elif command == "REVERT":
+            if hasattr(self, '_init_data'):
+                self.revert()
+            else:
+                return "No saved state; cannot revert."
         elif command == "END LEVEL":
             self.game_over = True
 
@@ -656,6 +663,10 @@ class AsyncGame(GameWithGoals):
     def advance_board(self):
         """
         Apply one timestep of physics using an asynchronous update.
+
+        Note that this is going to be quite slow. It should probably be
+        replaced by an implementation in C, especially if used for training
+        AI agents.
         """
         board = self.board
         rules = self.energy_rules

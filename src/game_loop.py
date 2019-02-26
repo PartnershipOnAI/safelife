@@ -1,3 +1,9 @@
+"""
+Code in this module is devoted to playing the game interactively. It defines
+the key bindings and the basic input->update game loop.
+"""
+
+
 import os
 import sys
 import glob
@@ -133,6 +139,7 @@ class GameLoop(object):
             output += render_board(game, self.view_size)
             output += ' '.join(program.action_log) + '\n'
             output += "%s\n" % (program.root,)
+            output += program.message + "\n"
             words = [COMMAND_WORDS.get(c, '_') for c in program.command_queue]
             output += "Command: " + ' '.join(words)
             sys.stdout.write(output)
@@ -149,7 +156,7 @@ class GameLoop(object):
                 self.editing = not self.editing
             elif self.editing and key in EDIT_KEYS:
                 # Execute action immediately.
-                game.execute_edit(EDIT_KEYS[key])
+                program.message = game.execute_edit(EDIT_KEYS[key])
             elif not self.editing and key in COMMAND_KEYS:
                 points, steps = program.add_command(COMMAND_KEYS[key])
                 self.total_points += points
