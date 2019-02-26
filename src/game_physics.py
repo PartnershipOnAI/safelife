@@ -17,9 +17,11 @@ from collections import defaultdict
 
 import numpy as np
 
-from .array_utils import wrapped_convolution as convolve2d
-from .array_utils import earth_mover_distance
-
+from .array_utils import (
+    wrapping_array,
+    wrapped_convolution as convolve2d,
+    earth_mover_distance,
+)
 
 ORIENTATION = {
     "UP": 0,
@@ -599,6 +601,90 @@ class GameOfLife(GameWithGoals):
 
 
 class AsyncGame(GameWithGoals):
-    def __init__(self, *args, **kw):
-        # fill this is in later, maybe
-        raise NotImplementedError
+    """
+    Game with asynchronous updates. Experimental!
+
+    Asynchronous game physics work by updating the board one cell at a time,
+    with many individual cell updates occurring for each board update.
+    The order is random, so the system is naturally stochastic. In addition,
+    a temperature parameter can be tuned to make the individual cell updates
+    stochastic.
+
+    Attributes
+    ----------
+    energy_rules : array of shape (2, num_neighbors + 1)
+        The energy difference between a cell living and dying given its current
+        state (live and dead, respectively) and the number of living neighbors
+        that it has. The number of neighbors should either be 4, 6, or 8 for
+        Von Neumann, hexagonal, and Moore neighborhoods respectively.
+    temperature : float
+        Higher temperatures lead to noisier systems, and are equivalent to
+        lowering the values in the energy rules. Zero temperature yields a
+        perfectly deterministic update per cell (although the cell update
+        ordering is still random).
+    cells_per_update : float
+        Number of cell updates to perform at each board update, expressed as a
+        fraction of the total board size. Can be more than 1.
+    """
+    energy_rule_sets = {
+        'conway': (
+            (-1, -1, +1, +1, -1, -1, -1, -1, -1),
+            (-1, -1, -1, +1, -1, -1, -1, -1, -1),
+        ),
+        'ising': (
+            (-2, -1, 0, +1, +2),
+            (-2, -1, 0, +1, +2),
+        ),
+        'vine': (
+            (-1, -1, +1, +1, +1),
+            (-1, +1, -1, -1, -1),
+        ),
+    }
+    energy_rules = energy_rule_sets['conway']
+    temperature = 0
+    cells_per_update = 0.3
+
+    def serialize(self):
+        data = super().serialize()
+        data['energy_rules'] = self.energy_rules
+        return data
+
+    def deserialize(self, data):
+        super().deserialize(data)
+        self.energy_rules = data['energy_rules']
+
+    def advance_board(self):
+        """
+        Apply one timestep of physics using an asynchronous update.
+        """
+        board = self.board
+        rules = self.energy_rules
+        h, w = board.shape
+        beta = 1.0 / max(1e-20, self.temperature)
+        if len(rules[0]) - 1 == 4:
+            neighborhood = np.array([[0,1,0],[1,0,1],[0,1,0]])
+        elif len(rules[0]) - 1 == 6:
+            neighborhood = np.array([[0,1,1],[1,0,1],[1,1,0]])
+        elif len(rules[0]) - 1 == 8:
+            neighborhood = np.array([[1,1,1],[1,0,1],[1,1,1]])
+        else:
+            raise RuntimeError("async rules must have length 5, 7, or 9")
+        for _ in range(int(board.size * self.cells_per_update)):
+            x = np.random.randint(w)
+            y = np.random.randint(h)
+            if board[y, x] & CellTypes.frozen:
+                continue
+            neighbors = board.view(wrapping_array)[y-1:y+2, x-1:x+2] * neighborhood
+            alive_neighbors = np.sum(neighbors & CellTypes.alive > 0)
+            spawn_neighbors = np.sum(neighbors & CellTypes.spawning > 0)
+            frozen = np.sum(neighbors & CellTypes.freezing) > 0
+            if frozen:
+                continue
+            if board[y, x] & CellTypes.alive:
+                H = rules[0][alive_neighbors]
+            else:
+                H = rules[1][alive_neighbors]
+
+            P = 0.5 + 0.5*np.tanh(H * beta)
+            P = 1 - (1-P)*(1-self.spawn_prob)**spawn_neighbors
+            board[y, x] = CellTypes.life if P > np.random.random() else CellTypes.empty
