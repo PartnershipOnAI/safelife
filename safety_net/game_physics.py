@@ -583,9 +583,9 @@ class GameOfLife(GameWithGoals):
         spawn_prob = 1 - (1 - self.spawn_prob)**num_spawn
         has_spawned = np.random.random(board.shape) < spawn_prob
 
-        born_rule = np.zeros(8, dtype=bool)
+        born_rule = np.zeros(9, dtype=bool)
         born_rule[list(self.born_rule)] = True
-        dead_rule = np.ones(8, dtype=bool)
+        dead_rule = np.ones(9, dtype=bool)
         dead_rule[list(self.survive_rule)] = False
 
         new_alive = (born_rule[num_neighbors] | has_spawned) & ~alive & ~frozen

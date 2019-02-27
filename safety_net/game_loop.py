@@ -103,6 +103,8 @@ class GameLoop(object):
     random_board = False  # Later this should be a difficulty slider
     load_from = None
     view_size = None
+    centered_view = False
+    fixed_orientation = False
 
     total_points = 0
     total_steps = 0
@@ -129,14 +131,14 @@ class GameLoop(object):
 
         while not game.game_over:
             output = "\x1b[H\x1b[J"
-            sys.stdout.write("\x1b[H\x1b[J")
             if game.title:
                 output += "\x1b[1m%s\x1b[0m\n" % game.title
             output += "Score: \x1b[1m%i\x1b[0m\n" % self.total_points
             output += "Steps: \x1b[1m%i\x1b[0m\n" % self.total_steps
             if self.editing:
                 output += "\x1b[1m*** EDIT MODE ***\x1b[0m\n"
-            output += render_board(game, self.view_size)
+            output += render_board(game,
+                self.centered_view, self.view_size, self.fixed_orientation)
             output += ' '.join(program.action_log) + '\n'
             output += "%s\n" % (program.root,)
             output += program.message + "\n"

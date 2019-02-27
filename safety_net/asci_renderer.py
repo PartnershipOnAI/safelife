@@ -50,15 +50,29 @@ def render_cell(cell, goal=None, pristine=False, orientation=0):
     return val
 
 
-def render_board(s, view_size):
+def render_board(s, centered_view=False, view_size=None, fixed_orientation=False):
     """
     Renders the game state `s`. Does not include scores, etc.
 
     This is not exactly a speedy rendering system, but it should be plenty
     fast enough for our purposes.
+
+    Parameters
+    ----------
+    view_size : (int width, int height)
+        If not None, specifies the size of the view centered on the agent.
+    fixed_orientation : bool
+        If true, the board is re-oriented such that the player is always
+        facing up.
     """
-    if view_size:
-        view_width, view_height = view_size
+    if centered_view or view_size or fixed_orientation:
+        if view_size is None:
+            view_size = s.board.shape
+        if fixed_orientation and s.orientation % 2 == 1:
+            # transpose the view
+            view_height, view_width = view_size
+        else:
+            view_width, view_height = view_size
         x0, y0 = s.agent_loc
         x0 -= view_width // 2
         y0 -= view_height // 2
@@ -77,5 +91,17 @@ def render_board(s, view_size):
     screen[:,0] = screen[:,-2] = ' |'
     screen[:,-1] = '\n'
     screen[0,0] = screen[0,-2] = screen[-1,0] = screen[-1,-2] = ' +'
-    screen[1:-1,1:-2] = render_cell(board, goals, pristine, s.orientation)
+    if fixed_orientation and s.orientation != 0:
+        cells = render_cell(board, goals, pristine).view(np.ndarray)
+        if s.orientation == 1:
+            cells = cells.T[::-1]
+        elif s.orientation == 2:
+            cells = cells[::-1, ::-1]
+        elif s.orientation == 3:
+            cells = cells.T[:, ::-1]
+        else:
+            raise RuntimeError("Unexpected orientation: %s" % (s.orientation,))
+        screen[1:-1,1:-2] = cells
+    else:
+        screen[1:-1,1:-2] = render_cell(board, goals, pristine, s.orientation)
     return ''.join(screen.ravel())
