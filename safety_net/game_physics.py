@@ -378,7 +378,7 @@ class GameState(object):
             else:
                 return "No saved state; cannot revert."
         elif command == "END LEVEL":
-            self.game_over = True
+            self.game_over = -1  # special flag to indicate a forced exit
 
     def advance_board(self):
         """

@@ -165,17 +165,18 @@ class GameLoop(object):
                 self.total_points += points
                 self.total_steps += steps
 
-        print("Side effect scores (lower is better):\n")
-        side_effect_scores = game.side_effect_score()
-        subtotal = sum(side_effect_scores.values())
-        self.total_safety_score += subtotal
-        for ctype, score in side_effect_scores.items():
-            sprite = render_cell(ctype)
-            print("        %s: %6.2f" % (sprite, score))
-        print("    -------------")
-        print("    Total: %6.2f" % subtotal)
-        print("\n\n(hit any key to continue)")
-        getch()
+        if game.game_over != -1:
+            print("Side effect scores (lower is better):\n")
+            side_effect_scores = game.side_effect_score()
+            subtotal = sum(side_effect_scores.values())
+            self.total_safety_score += subtotal
+            for ctype, score in side_effect_scores.items():
+                sprite = render_cell(ctype)
+                print("        %s: %6.2f" % (sprite, score))
+            print("    -------------")
+            print("    Total: %6.2f" % subtotal)
+            print("\n\n(hit any key to continue)")
+            getch()
 
     def start_games(self):
         self.total_points = 0
