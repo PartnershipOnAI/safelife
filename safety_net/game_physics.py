@@ -351,6 +351,8 @@ class GameState(object):
             player_color &= CellTypes.rainbow_color
             board[y0, x0] &= ~CellTypes.rainbow_color
             board[y0, x0] |= player_color
+        elif command == "TOGGLE FREEZING":
+            board[y0, x0] ^= CellTypes.freezing
         elif command == "SAVE AS" or command == "SAVE" and not self.file_name:
             save_name = input('\rsave as: \x1b[J')
             if save_name:

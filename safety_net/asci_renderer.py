@@ -29,8 +29,10 @@ def render_cell(cell, goal=None, pristine=False, orientation=0):
         CellTypes.rainbow_color: '\x1b[38;5;8m',
     }[cell & CellTypes.rainbow_color]
 
+    arrow = '⋀>⋁<'[orientation]
     SPRITES = {
-        CellTypes.agent: '\x1b[1m' + '⋀>⋁<'[orientation],
+        CellTypes.agent | CellTypes.freezing: '\x1b[1m' + arrow,
+        CellTypes.agent: arrow,
         CellTypes.spawning: 'S',
         CellTypes.level_exit: 'X',
         CellTypes.plant: '&',

@@ -85,10 +85,11 @@ EDIT_KEYS = {
     'e': "PUT EXIT",
     'i': "PUT ICECUBE",
     't': "PUT PLANT",
+    'l': "CHANGE COLOR",
+    'f': "TOGGLE FREEZING",
     's': "SAVE",
     'S': "SAVE AS",
     'R': "REVERT",
-    'l': "CHANGE COLOR",
     'Q': "END LEVEL",
 }
 TOGGLE_EDIT = '`'
@@ -158,7 +159,7 @@ class GameLoop(object):
                 self.editing = not self.editing
             elif self.editing and key in EDIT_KEYS:
                 # Execute action immediately.
-                program.message = game.execute_edit(EDIT_KEYS[key])
+                program.message = game.execute_edit(EDIT_KEYS[key]) or ""
             elif not self.editing and key in COMMAND_KEYS:
                 points, steps = program.add_command(COMMAND_KEYS[key])
                 self.total_points += points
