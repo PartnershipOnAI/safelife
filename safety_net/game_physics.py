@@ -90,6 +90,7 @@ class CellTypes(object):
     rainbow_color = color_r | color_g | color_b
     ice_cube = frozen | freezing | movable
     plant = frozen | alive | movable
+    powers = alive | freezing | spawning
 
 
 class GameState(object):
@@ -116,7 +117,13 @@ class GameState(object):
         Flag to indicate that the current game has ended.
     num_steps : int
         Number of steps taken since last reset.
-
+    can_toggle_powers : bool
+        If true, players can absorb special powers of indestructible blocks
+        by executing the "create" action on them. If they already have the
+        power, they instead lose it. Note that the "freezing" power effectively
+        cancels out the "alive" and "spawning" powers.
+    can_toggle_colors : bool
+        If true, players can also absorb the colors of indestructible blocks.
     """
     spawn_prob = 0.3
     orientation = 1
@@ -127,6 +134,9 @@ class GameState(object):
     game_over = False
     points_on_level_exit = +1
     num_steps = 0
+
+    can_toggle_powers = True
+    can_toggle_colors = False
 
     def __init__(self, board_size=(10,10)):
         if board_size is None:
@@ -314,6 +324,10 @@ class GameState(object):
             if board[y1, x1] == CellTypes.empty:
                 board[y1, x1] = CellTypes.life | (
                     board[y0, x0] & CellTypes.rainbow_color)
+            elif not (board[y1, x1] & CellTypes.destructible):
+                toggle_bits = CellTypes.powers * self.can_toggle_powers
+                toggle_bits |= CellTypes.rainbow_color * self.can_toggle_colors
+                board[y0, x0] ^= board[y1, x1] & toggle_bits
         elif action == "DESTROY":
             x1, y1 = self.relative_loc(1)
             if board[y1, x1] & CellTypes.destructible:
