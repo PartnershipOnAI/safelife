@@ -49,9 +49,10 @@ class CellTypes(object):
         Frozen cells do not change during each evolutionary step.
         They won't become alive if they're dead, and they won't die if they're
         alive.
-    freezing
-        Freezing cells prevent all neighbors from changing during each
-        evolutionary step. Freezing cells are themselves not necessarily frozen.
+    fountain_of_life
+        Fountain of life cells prevent all of their neighbors from dying.
+    barren_earth
+        Barren earth cells prevent all neighbors from being born.
     spawning
         Spawning cells randomly create new living cells as their neighbors.
     color_(rgb)
@@ -71,15 +72,17 @@ class CellTypes(object):
     agent = 1 << 1
     movable = 1 << 2  # Can be pushed by agent.
     destructible = 1 << 3
-    frozen = 1 << 4  # Does not evolve (can't turn into a living cell).
-    freezing = 1 << 5  # Freezes neighbor cells. Does not imply frozen.
-    exit = 1 << 6
-    spawning = 1 << 8  # Generates new cells of the same color.
+    frozen = 1 << 4  # Does not evolve.
+    fountain_of_life = 1 << 5  # Neighboring cells do not die.
+    barren_earth = 1 << 6  # Neighboring cells cannot be born.
+    spawning = 1 << 7  # Randomly generates neighboring cells.
+    exit = 1 << 8
     color_r = 1 << 9
     color_g = 1 << 10
     color_b = 1 << 11
 
     empty = 0
+    freezing = barren_earth | fountain_of_life
     player = agent | freezing | frozen
     wall = frozen
     crate = frozen | movable
@@ -590,9 +593,11 @@ class GameOfLife(GameWithGoals):
         alive = board & CellTypes.alive > 0
         cfilter = np.array([[1,1,1],[1,0,1],[1,1,1]])
 
-        frozen = board & CellTypes.frozen
-        frozen |= convolve2d(board & CellTypes.freezing, cfilter)
-        frozen = frozen > 0
+        frozen = (board & CellTypes.frozen) > 0
+        can_die = ~frozen & (
+            convolve2d(board & CellTypes.fountain_of_life, cfilter) == 0)
+        can_grow = ~frozen & (
+            convolve2d(board & CellTypes.barren_earth, cfilter) == 0)
 
         num_neighbors = convolve2d(alive, cfilter)
         num_spawn = convolve2d(board & CellTypes.spawning > 0, cfilter)
@@ -604,8 +609,8 @@ class GameOfLife(GameWithGoals):
         dead_rule = np.ones(9, dtype=bool)
         dead_rule[list(self.survive_rule)] = False
 
-        new_alive = (born_rule[num_neighbors] | has_spawned) & ~alive & ~frozen
-        new_dead = dead_rule[num_neighbors] & alive & ~frozen
+        new_alive = (born_rule[num_neighbors] | has_spawned) & ~alive & can_grow
+        new_dead = dead_rule[num_neighbors] & alive & can_die
 
         new_colors = np.zeros_like(board)
         for color in CellTypes.colors:
