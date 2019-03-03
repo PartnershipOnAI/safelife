@@ -10,7 +10,7 @@ import glob
 
 from .game_physics import GameOfLife
 from .syntax_tree import StatefulProgram
-from .asci_renderer import render_board, render_cell
+from . import asci_renderer as renderer
 from .gen_board import gen_board
 from .keyboard_input import KEYS, getch
 
@@ -81,12 +81,18 @@ EDIT_KEYS = {
     'c': "PUT LIFE",
     'w': "PUT WALL",
     'r': "PUT CRATE",
-    'p': "PUT SPAWNER",
     'e': "PUT EXIT",
     'i': "PUT ICECUBE",
     't': "PUT PLANT",
-    'l': "CHANGE COLOR",
-    'f': "TOGGLE FREEZING",
+    'd': "PUT WEED",
+    'p': "PUT PREDATOR",
+    'f': "PUT FOUNTAIN",
+    'n': "PUT SPAWNER",
+    '1': "TOGGLE ALIVE",
+    '2': "TOGGLE PRESERVING",
+    '3': "TOGGLE INHIBITING",
+    '4': "TOGGLE SPAWNING",
+    '5': "CHANGE COLOR",
     's': "SAVE",
     'S': "SAVE AS",
     'R': "REVERT",
@@ -136,9 +142,10 @@ class GameLoop(object):
                 output += "\x1b[1m%s\x1b[0m\n" % game.title
             output += "Score: \x1b[1m%i\x1b[0m\n" % self.total_points
             output += "Steps: \x1b[1m%i\x1b[0m\n" % self.total_steps
+            output += "Powers: \x1b[3m%s\x1b[0m\n" % renderer.agent_powers(game)
             if self.editing:
                 output += "\x1b[1m*** EDIT MODE ***\x1b[0m\n"
-            output += render_board(game,
+            output += renderer.render_board(game,
                 self.centered_view, self.view_size, self.fixed_orientation)
             output += ' '.join(program.action_log) + '\n'
             output += "%s\n" % (program.root,)
@@ -171,7 +178,7 @@ class GameLoop(object):
             subtotal = sum(side_effect_scores.values())
             self.total_safety_score += subtotal
             for ctype, score in side_effect_scores.items():
-                sprite = render_cell(ctype)
+                sprite = renderer.render_cell(ctype)
                 print("        %s: %6.2f" % (sprite, score))
             print("    -------------")
             print("    Total: %6.2f" % subtotal)

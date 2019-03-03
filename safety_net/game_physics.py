@@ -49,10 +49,10 @@ class CellTypes(object):
         Frozen cells do not change during each evolutionary step.
         They won't become alive if they're dead, and they won't die if they're
         alive.
-    fountain_of_life
-        Fountain of life cells prevent all of their neighbors from dying.
-    barren_earth
-        Barren earth cells prevent all neighbors from being born.
+    preserving
+        Preserving cells prevent all of their neighbors from dying.
+    inhibiting
+        Inhibiting cells prevent all neighbors from being born.
     spawning
         Spawning cells randomly create new living cells as their neighbors.
     color_(rgb)
@@ -73,8 +73,8 @@ class CellTypes(object):
     movable = 1 << 2  # Can be pushed by agent.
     destructible = 1 << 3
     frozen = 1 << 4  # Does not evolve.
-    fountain_of_life = 1 << 5  # Neighboring cells do not die.
-    barren_earth = 1 << 6  # Neighboring cells cannot be born.
+    preserving = 1 << 5  # Neighboring cells do not die.
+    inhibiting = 1 << 6  # Neighboring cells cannot be born.
     spawning = 1 << 7  # Randomly generates neighboring cells.
     exit = 1 << 8
     color_r = 1 << 9
@@ -82,7 +82,7 @@ class CellTypes(object):
     color_b = 1 << 11
 
     empty = 0
-    freezing = barren_earth | fountain_of_life
+    freezing = inhibiting | preserving
     player = agent | freezing | frozen
     wall = frozen
     crate = frozen | movable
@@ -93,6 +93,9 @@ class CellTypes(object):
     rainbow_color = color_r | color_g | color_b
     ice_cube = frozen | freezing | movable
     plant = frozen | alive | movable
+    fountain_of_life = preserving | frozen
+    predator = inhibiting | alive | movable | frozen
+    weed = preserving | alive | movable | frozen
     powers = alive | freezing | spawning
 
 
@@ -354,6 +357,15 @@ class GameState(object):
             'EXIT': CellTypes.level_exit,
             'ICECUBE': CellTypes.ice_cube,
             'PLANT': CellTypes.plant,
+            'FOUNTAIN': CellTypes.fountain_of_life,
+            'PREDATOR': CellTypes.predator,
+            'WEED': CellTypes.weed,
+        }
+        toggles = {
+            'ALIVE': CellTypes.alive,
+            'INHIBITING': CellTypes.inhibiting,
+            'PRESERVING': CellTypes.preserving,
+            'SPAWNING': CellTypes.spawning,
         }
         board = self.board
         x0, y0 = self.agent_loc
@@ -368,6 +380,8 @@ class GameState(object):
             player_color &= CellTypes.rainbow_color
             board[y0, x0] &= ~CellTypes.rainbow_color
             board[y0, x0] |= player_color
+        elif command.startswith("TOGGLE ") and command[7:] in toggles:
+            board[y0, x0] ^= toggles[command[7:]]
         elif command == "TOGGLE FREEZING":
             board[y0, x0] ^= CellTypes.freezing
         elif command == "SAVE AS" or command == "SAVE" and not self.file_name:
@@ -595,9 +609,9 @@ class GameOfLife(GameWithGoals):
 
         frozen = (board & CellTypes.frozen) > 0
         can_die = ~frozen & (
-            convolve2d(board & CellTypes.fountain_of_life, cfilter) == 0)
+            convolve2d(board & CellTypes.preserving, cfilter) == 0)
         can_grow = ~frozen & (
-            convolve2d(board & CellTypes.barren_earth, cfilter) == 0)
+            convolve2d(board & CellTypes.inhibiting, cfilter) == 0)
 
         num_neighbors = convolve2d(alive, cfilter)
         num_spawn = convolve2d(board & CellTypes.spawning > 0, cfilter)

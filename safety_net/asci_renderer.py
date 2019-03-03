@@ -29,27 +29,25 @@ def render_cell(cell, goal=None, pristine=False, orientation=0):
         CellTypes.rainbow_color: '\x1b[38;5;8m',
     }[cell & CellTypes.rainbow_color]
 
-    arrow = '⋀>⋁<'[orientation]
-    SPRITES = {
-        CellTypes.agent | CellTypes.freezing: '\x1b[1m' + arrow,
-        CellTypes.agent: arrow,
-        CellTypes.spawning: 'S',
-        CellTypes.level_exit: 'X',
-        CellTypes.plant: '&',
-        CellTypes.ice_cube: '=',
-        CellTypes.alive: 'z',
-        CellTypes.crate: '%',
-        CellTypes.wall: '#',
-    }
-    for sprite_val, sprite in SPRITES.items():
-        # This isn't exactly fast, but oh well.
-        if (cell & sprite_val) == sprite_val:
-            val += sprite
-            break
+    if cell & CellTypes.agent:
+        arrow = '⋀>⋁<'[orientation]
+        val += '\x1b[1m' + arrow
     else:
-        val += '?' if cell else ' '
-    val += '\x1b[0m'
-    return val
+        gray_cell = cell & ~CellTypes.rainbow_color
+        val += {
+            CellTypes.empty: ' ',
+            CellTypes.life: 'z',
+            CellTypes.wall: '#',
+            CellTypes.crate: '%',
+            CellTypes.plant: '&',
+            CellTypes.ice_cube: '=',
+            CellTypes.predator: '!',
+            CellTypes.weed: '@',
+            CellTypes.spawning: 'S',
+            CellTypes.level_exit: 'X',
+            CellTypes.fountain_of_life: '\x1b[1m+',
+        }.get(gray_cell, '?')
+    return val + '\x1b[0m'
 
 
 def render_board(s, centered_view=False, view_size=None, fixed_orientation=False):
@@ -107,3 +105,16 @@ def render_board(s, centered_view=False, view_size=None, fixed_orientation=False
     else:
         screen[1:-1,1:-2] = render_cell(board, goals, pristine, s.orientation)
     return ''.join(screen.ravel())
+
+
+def agent_powers(game):
+    x0, y0 = game.agent_loc
+    agent = game.board[y0, x0]
+    power_names = [
+        (CellTypes.alive, 'alive'),
+        (CellTypes.preserving, 'preserving'),
+        (CellTypes.inhibiting, 'inhibiting'),
+        (CellTypes.spawning, 'spawning'),
+    ]
+    powers = [txt for val, txt in power_names if agent & val]
+    return ', '.join(powers) or 'none'
