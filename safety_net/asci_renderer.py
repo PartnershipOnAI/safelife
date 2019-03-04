@@ -43,7 +43,7 @@ def render_cell(cell, goal=None, pristine=False, orientation=0):
             CellTypes.ice_cube: '=',
             CellTypes.predator: '!',
             CellTypes.weed: '@',
-            CellTypes.spawning: 'S',
+            CellTypes.spawner: 'S',
             CellTypes.level_exit: 'X',
             CellTypes.fountain_of_life: '\x1b[1m+',
         }.get(gray_cell, '?')

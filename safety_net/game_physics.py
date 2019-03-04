@@ -324,20 +324,19 @@ class GameState(object):
             pass
         elif action in ORIENTATION:
             reward = self.move_direction(ORIENTATION[action])
-        elif action == "CREATE":
+        elif action == "TOGGLE":
             x0, y0 = self.agent_loc
             x1, y1 = self.relative_loc(1)
-            if board[y1, x1] == CellTypes.empty:
-                board[y1, x1] = CellTypes.life | (
-                    board[y0, x0] & CellTypes.rainbow_color)
-            elif not (board[y1, x1] & CellTypes.destructible):
+            player_color = board[y0, x0] & CellTypes.rainbow_color
+            target_cell = board[y1, x1]
+            if target_cell == CellTypes.empty:
+                board[y1, x1] = CellTypes.life | player_color
+            elif target_cell & CellTypes.destructible:
+                board[y1, x1] = CellTypes.empty
+            else:
                 toggle_bits = CellTypes.powers * self.can_toggle_powers
                 toggle_bits |= CellTypes.rainbow_color * self.can_toggle_colors
                 board[y0, x0] ^= board[y1, x1] & toggle_bits
-        elif action == "DESTROY":
-            x1, y1 = self.relative_loc(1)
-            if board[y1, x1] & CellTypes.destructible:
-                board[y1, x1] = CellTypes.empty
         return reward
 
     def execute_edit(self, command):
@@ -374,7 +373,7 @@ class GameState(object):
             self.move_direction(ORIENTATION[command], can_exit=False, can_push=False)
         elif command.startswith("PUT ") and command[4:] in named_objects:
             x1, y1 = self.relative_loc(1)
-            board[y1, x1] = named_objects[command[4:]]
+            board[y1, x1] = named_objects[command[4:]] | player_color
         elif command == "CHANGE COLOR":
             player_color += CellTypes.color_r
             player_color &= CellTypes.rainbow_color
@@ -382,8 +381,6 @@ class GameState(object):
             board[y0, x0] |= player_color
         elif command.startswith("TOGGLE ") and command[7:] in toggles:
             board[y0, x0] ^= toggles[command[7:]]
-        elif command == "TOGGLE FREEZING":
-            board[y0, x0] ^= CellTypes.freezing
         elif command == "SAVE AS" or command == "SAVE" and not self.file_name:
             save_name = input('\rsave as: \x1b[J')
             if save_name:
@@ -604,17 +601,19 @@ class GameOfLife(GameWithGoals):
         # large boards.
         self.num_steps += 1
         board = self.board
-        alive = board & CellTypes.alive > 0
         cfilter = np.array([[1,1,1],[1,0,1],[1,1,1]])
 
-        frozen = (board & CellTypes.frozen) > 0
+        alive = board & CellTypes.alive > 0
+        spawning = board & CellTypes.spawning > 0
+        frozen = board & CellTypes.frozen > 0
+
         can_die = ~frozen & (
             convolve2d(board & CellTypes.preserving, cfilter) == 0)
         can_grow = ~frozen & (
             convolve2d(board & CellTypes.inhibiting, cfilter) == 0)
 
         num_neighbors = convolve2d(alive, cfilter)
-        num_spawn = convolve2d(board & CellTypes.spawning > 0, cfilter)
+        num_spawn = convolve2d(spawning, cfilter)
         spawn_prob = 1 - (1 - self.spawn_prob)**num_spawn
         has_spawned = np.random.random(board.shape) < spawn_prob
 
@@ -627,12 +626,14 @@ class GameOfLife(GameWithGoals):
         new_dead = dead_rule[num_neighbors] & alive & can_die
 
         new_colors = np.zeros_like(board)
+        color_weights = 1 * alive + 2 * spawning
         for color in CellTypes.colors:
             # For each of the colors, see if there are two or more neighbors
             # that have it. If so, any new cells (whether born or spawned)
             # will also get that color.
-            has_color = convolve2d(board & color > 0, cfilter) >= 2
-            new_colors += color * has_color
+            has_color = board & color > 0
+            new_color = convolve2d(has_color * color_weights, cfilter) >= 2
+            new_colors += color * new_color
 
         board *= ~(new_alive | new_dead)
         board += new_alive * (CellTypes.life + new_colors)
