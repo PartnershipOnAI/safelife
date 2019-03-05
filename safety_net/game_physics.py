@@ -77,9 +77,11 @@ class CellTypes(object):
     inhibiting = 1 << 6  # Neighboring cells cannot be born.
     spawning = 1 << 7  # Randomly generates neighboring cells.
     exit = 1 << 8
-    color_r = 1 << 9
-    color_g = 1 << 10
-    color_b = 1 << 11
+    color_bit = 9
+    color_r = 1 << color_bit
+    color_g = 1 << color_bit + 1
+    color_b = 1 << color_bit + 2
+
 
     empty = 0
     freezing = inhibiting | preserving
@@ -373,7 +375,9 @@ class GameState(object):
             self.move_direction(ORIENTATION[command], can_exit=False, can_push=False)
         elif command.startswith("PUT ") and command[4:] in named_objects:
             x1, y1 = self.relative_loc(1)
-            board[y1, x1] = named_objects[command[4:]] | player_color
+            board[y1, x1] = named_objects[command[4:]]
+            if board[y1, x1]:
+                board[y1, x1] |= player_color
         elif command == "CHANGE COLOR":
             player_color += CellTypes.color_r
             player_color &= CellTypes.rainbow_color
@@ -522,16 +526,36 @@ class GameWithGoals(GameState):
     ----------
     goals : ndarray
         Point value associated with each cell. Can be negative.
-    prior_states : ndarray
-        For each cell, mark whether it's been alive (2) or dead (1).
+    reward_table: ndarray
+        Lookup table that maps goals (rows) and cell colors (columns) to
+        reward values for individual cells. Colors are KRGYBMCW.
     """
     goals = None
-    prior_states = None
+
+    # No goal: All zero except for r (-1)
+    # Red: all -1 except for r (+1), ym (0)
+    # Blue: all +1 except for b (+2), r (-1), y (0)
+    # Green: all zero except for g (+2), r(-1), c (+1)
+    # Yellow: all zero except y (+1), k (-1)
+    # Cyan: all +1 except for c(+2), r(-1), ym (0)
+    # Magenta: all -1 except for m (+2), r (+1), y (0)
+    # White: all 0 except w (+1)
+    reward_table = np.array([
+        # k   r   g   y   b   m   c   w
+        [+0, -1, +0, +0, +0, +0, +0, +0],  # black / no goal
+        [-1, +1, -1, +0, -1, +0, -1, -1],  # red goal
+        [+0, -1, +2, +0, +0, +0, +1, +0],  # green goal
+        [-1, +0, +0, +1, +0, +0, +0, +0],  # yellow goal
+        [+1, -1, +1, +0, +2, +1, +1, +1],  # blue goal
+        [-1, +1, -1, +0, -1, +2, -1, -1],  # magenta goal
+        [+1, -1, +1, +0, +1, +0, +2, +1],  # cyan goal
+        [+0, +0, +0, +0, +0, +0, +0, +1],  # white / rainbow goal
+    ])
+    reward_table.setflags(write=False)
 
     def make_default_board(self, board_size):
         super().make_default_board(board_size)
-        self.goals = np.zeros(self.board.shape)
-        self.prior_states = np.zeros_like(self.board)
+        self.goals = np.zeros_like(self.board)
 
     def serialize(self):
         data = super().serialize()
@@ -541,35 +565,23 @@ class GameWithGoals(GameState):
     def deserialize(self, data):
         super().deserialize(data)
         self.goals = data['goals']
-        self.prior_states = 1 * (self.board & CellTypes.alive) + 1
-
-    def _update_prior_states(self):
-        self.prior_states |= 1 * (self.board & CellTypes.alive) + 1
-
-    def advance_board(self):
-        super().advance_board()
-        self._update_prior_states()
-
-    def execute_action(self, action):
-        reward = super().execute_action(action)
-        self._update_prior_states()
-        return reward
 
     def execute_edit(self, command):
-        if command == "TOGGLE GOAL":
+        if command == "CHANGE GOAL":
             x1, y1 = self.relative_loc(1)
-            g = self.goals[y1, x1]
-            self.goals[y1, x1] = +1 if g == 0 else -1 if g > 0 else 0
+            old_goal = self.goals[y1, x1]
+            self.goals[y1, x1] += CellTypes.color_r
+            self.goals[y1, x1] &= CellTypes.rainbow_color
+            return f"goal change: {bin(old_goal>>9)} -> {bin(self.goals[y1, x1]>>9)}"
         else:
             return super().execute_edit(command)
 
     def current_points(self):
-        goals = self.goals
-        alive = self.board & CellTypes.alive
-        always_alive = 1 - (self.prior_states & 1)
-        ever_alive = self.prior_states >> 1
-        weight = alive + always_alive * (goals > 0) + ever_alive * (goals < 0)
-        return np.sum(goals * weight)
+        goals = (self.goals & CellTypes.rainbow_color) >> CellTypes.color_bit
+        cell_colors = (self.board & CellTypes.rainbow_color) >> CellTypes.color_bit
+        alive = self.board & CellTypes.alive > 0
+        cell_points = self.reward_table[goals, cell_colors] * alive
+        return np.sum(cell_points)
 
 
 class GameOfLife(GameWithGoals):

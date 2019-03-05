@@ -92,6 +92,7 @@ EDIT_KEYS = {
     '3': "TOGGLE INHIBITING",
     '4': "TOGGLE SPAWNING",
     '5': "CHANGE COLOR",
+    'g': "CHANGE GOAL",
     's': "SAVE",
     'S': "SAVE AS",
     'R': "REVERT",

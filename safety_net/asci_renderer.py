@@ -1,33 +1,49 @@
 import numpy as np
 
 from .array_utils import wrapping_array
-from .game_physics import CellTypes
+from .game_physics import CellTypes, GameWithGoals
+
+
+background_colors = [
+    '\x1b[48;5;251m',  # black / empty
+    '\x1b[48;5;217m',  # red
+    '\x1b[48;5;114m',  # green
+    '\x1b[48;5;229m',  # yellow
+    '\x1b[48;5;117m',  # blue
+    '\x1b[48;5;183m',  # magenta
+    '\x1b[48;5;123m',  # cyan
+    '\x1b[48;5;255m',  # white
+]
+
+foreground_colors = [
+    '\x1b[38;5;0m',  # black
+    '\x1b[38;5;1m',  # red
+    '\x1b[38;5;2m',  # green
+    '\x1b[38;5;172m',  # yellow
+    '\x1b[38;5;12m',  # blue
+    '\x1b[38;5;129m',  # magenta
+    '\x1b[38;5;39m',  # cyan
+    '\x1b[38;5;244m',  # white / gray
+]
+
+
+def print_reward_table():
+    text = ""
+    rewards = GameWithGoals.reward_table
+    for r in range(8):
+        text += background_colors[r]
+        for c in range(8):
+            text += foreground_colors[c]
+            text += f"{rewards[r,c]:2d} "
+        text += '\x1b[0m\n'
+    print(text)
 
 
 @np.vectorize
-def render_cell(cell, goal=None, pristine=False, orientation=0):
-    if goal is None:
-        val = '\x1b[0m'
-    elif goal == 0:
-        val = '\x1b[48;5;7m '
-    elif goal < 0 and pristine:
-        val = '\x1b[48;5;211m '
-    elif goal < 0:
-        val = '\x1b[48;5;175m '
-    elif pristine:
-        val = '\x1b[48;5;44m '
-    else:
-        val = '\x1b[48;5;116m '
-    val += {
-        0: '\x1b[38;5;0m',
-        CellTypes.color_r: '\x1b[38;5;1m',
-        CellTypes.color_g: '\x1b[38;5;2m',
-        CellTypes.color_b: '\x1b[38;5;12m',
-        CellTypes.color_r | CellTypes.color_g: '\x1b[38;5;11m',
-        CellTypes.color_g | CellTypes.color_b: '\x1b[38;5;39m',
-        CellTypes.color_r | CellTypes.color_b: '\x1b[38;5;129m',
-        CellTypes.rainbow_color: '\x1b[38;5;8m',
-    }[cell & CellTypes.rainbow_color]
+def render_cell(cell, goal=0, orientation=0):
+    cell_color = (cell & CellTypes.rainbow_color) >> CellTypes.color_bit
+    goal_color = (goal & CellTypes.rainbow_color) >> CellTypes.color_bit
+    val = background_colors[goal_color] + foreground_colors[cell_color] + ' '
 
     if cell & CellTypes.agent:
         arrow = '⋀>⋁<'[orientation]
@@ -35,7 +51,7 @@ def render_cell(cell, goal=None, pristine=False, orientation=0):
     else:
         gray_cell = cell & ~CellTypes.rainbow_color
         val += {
-            CellTypes.empty: ' ',
+            CellTypes.empty: '.' if cell_color else ' ',
             CellTypes.life: 'z',
             CellTypes.wall: '#',
             CellTypes.crate: '%',
@@ -78,13 +94,10 @@ def render_board(s, centered_view=False, view_size=None, fixed_orientation=False
         y0 -= view_height // 2
         board = s.board.view(wrapping_array)[y0:y0+view_height, x0:x0+view_width]
         goals = s.goals.view(wrapping_array)[y0:y0+view_height, x0:x0+view_width]
-        prior_states = s.prior_states.view(wrapping_array)[y0:y0+view_height, x0:x0+view_width]
     else:
         view_width, view_height = s.width, s.height
         board = s.board
         goals = s.goals
-        prior_states = s.prior_states
-    pristine = prior_states < 3
     screen = np.empty((view_height+2, view_width+3), dtype=object)
     screen[:] = ''
     screen[0] = screen[-1] = ' -'
@@ -92,7 +105,7 @@ def render_board(s, centered_view=False, view_size=None, fixed_orientation=False
     screen[:,-1] = '\n'
     screen[0,0] = screen[0,-2] = screen[-1,0] = screen[-1,-2] = ' +'
     if fixed_orientation and s.orientation != 0:
-        cells = render_cell(board, goals, pristine).view(np.ndarray)
+        cells = render_cell(board, goals).view(np.ndarray)
         if s.orientation == 1:
             cells = cells.T[::-1]
         elif s.orientation == 2:
@@ -103,7 +116,7 @@ def render_board(s, centered_view=False, view_size=None, fixed_orientation=False
             raise RuntimeError("Unexpected orientation: %s" % (s.orientation,))
         screen[1:-1,1:-2] = cells
     else:
-        screen[1:-1,1:-2] = render_cell(board, goals, pristine, s.orientation)
+        screen[1:-1,1:-2] = render_cell(board, goals, s.orientation)
     return ''.join(screen.ravel())
 
 
@@ -118,3 +131,7 @@ def agent_powers(game):
     ]
     powers = [txt for val, txt in power_names if agent & val]
     return ', '.join(powers) or 'none'
+
+
+if __name__ == "__main__":
+    print_reward_table()
