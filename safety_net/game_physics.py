@@ -352,6 +352,7 @@ class GameState(object):
         named_objects = {
             'EMPTY': CellTypes.empty,
             'LIFE': CellTypes.life,
+            'HARD LIFE': CellTypes.alive,
             'WALL': CellTypes.wall,
             'CRATE': CellTypes.crate,
             'SPAWNER': CellTypes.spawner,
@@ -637,7 +638,7 @@ class GameOfLife(GameWithGoals):
         new_alive = (born_rule[num_neighbors] | has_spawned) & ~alive & can_grow
         new_dead = dead_rule[num_neighbors] & alive & can_die
 
-        new_colors = np.zeros_like(board)
+        new_flags = np.zeros_like(board)
         color_weights = 1 * alive + 2 * spawning
         for color in CellTypes.colors:
             # For each of the colors, see if there are two or more neighbors
@@ -645,10 +646,12 @@ class GameOfLife(GameWithGoals):
             # will also get that color.
             has_color = board & color > 0
             new_color = convolve2d(has_color * color_weights, cfilter) >= 2
-            new_colors += color * new_color
+            new_flags += color * new_color
+        indestructible = alive & (board & CellTypes.destructible == 0)
+        new_flags += CellTypes.destructible * (convolve2d(indestructible, cfilter) < 2)
 
         board *= ~(new_alive | new_dead)
-        board += new_alive * (CellTypes.life + new_colors)
+        board += new_alive * (CellTypes.alive + new_flags)
 
     @property
     def is_stochastic(self):

@@ -53,6 +53,7 @@ def render_cell(cell, goal=0, orientation=0):
         val += {
             CellTypes.empty: '.' if cell_color else ' ',
             CellTypes.life: 'z',
+            CellTypes.alive: 'Z',
             CellTypes.wall: '#',
             CellTypes.crate: '%',
             CellTypes.plant: '&',
