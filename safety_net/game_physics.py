@@ -200,8 +200,8 @@ class GameState(object):
         """Revert to the last saved state."""
         if hasattr(self, '_init_data'):
             self.deserialize(self._init_data)
-        else:
-            raise ValueError("No intial state to revert to.")
+            return True
+        return False
 
     @classmethod
     def load(cls, file_name, auto_cls=True):
@@ -340,6 +340,9 @@ class GameState(object):
                 toggle_bits = CellTypes.powers * self.can_toggle_powers
                 toggle_bits |= CellTypes.rainbow_color * self.can_toggle_colors
                 board[y0, x0] ^= board[y1, x1] & toggle_bits
+        elif action == "RESTART":
+            reward = -5
+            self.game_over = -2
         return reward
 
     def execute_edit(self, command):
@@ -412,9 +415,7 @@ class GameState(object):
             else:
                 return "Save aborted."
         elif command == "REVERT":
-            if hasattr(self, '_init_data'):
-                self.revert()
-            else:
+            if not self.revert():
                 return "No saved state; cannot revert."
         elif command == "END LEVEL":
             self.game_over = -1  # special flag to indicate a forced exit

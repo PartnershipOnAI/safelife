@@ -42,6 +42,7 @@ MAGIC_WORDS = {
     'x': 'xam',
     'y': 'yonder',
     'z': 'zephyr',
+    'R': 'seppuku',
 }
 
 COMMAND_KEYS = {
@@ -64,6 +65,7 @@ COMMAND_KEYS = {
     'u': "CONTINUE",
     'b': "BREAK",
     'k': "BLOCK",
+    'R': "RESTART",
 }
 
 COMMAND_WORDS = {
@@ -174,6 +176,9 @@ class GameLoop(object):
                 points, steps = program.add_command(COMMAND_KEYS[key])
                 self.total_points += points
                 self.total_steps += steps
+            if game.game_over == -2:
+                # Level should be restarted.
+                game.revert()
 
         if game.game_over != -1:
             print("Side effect scores (lower is better):\n")
