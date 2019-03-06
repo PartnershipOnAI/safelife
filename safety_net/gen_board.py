@@ -104,16 +104,18 @@ def gen_still_life(
 def gen_board(board_size=(15, 15)):
     area = board_size[0] * board_size[1]
     board = gen_still_life(board_size, min_total=area // 15, num_seeds=area // 100)
-    board = (board * CellTypes.life).astype(np.int16)
-    board[0,0] = CellTypes.player | CellTypes.color_r
+    board = board.astype(np.int16)
+    board *= CellTypes.life + CellTypes.color_g
+    board[0,0] = CellTypes.player
     walls = (np.random.random(board.shape) < 0.05)
     board += (board == 0) * walls * CellTypes.wall
     crates = (np.random.random(board.shape) < 0.05)
     board += (board == 0) * crates * CellTypes.crate
 
+    random = np.random.random(board.shape)
     goals = np.zeros_like(board)
-    goals += np.random.random(board.shape) < 0.1
-    goals -= np.random.random(board.shape) < 0.05
+    goals += (random < 0.05) * CellTypes.color_r
+    goals += (random > 0.9) * CellTypes.color_b
 
     x0, y0 = np.nonzero(board == CellTypes.empty)
     k = np.random.randint(len(x0))
