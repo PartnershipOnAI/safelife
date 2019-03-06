@@ -94,6 +94,8 @@ EDIT_KEYS = {
     '4': "TOGGLE SPAWNING",
     '5': "CHANGE COLOR",
     'g': "CHANGE GOAL",
+    '%': "CHANGE COLOR FULL CYCLE",
+    'G': "CHANGE GOAL FULL CYCLE",
     's': "SAVE",
     'S': "SAVE AS",
     'R': "REVERT",

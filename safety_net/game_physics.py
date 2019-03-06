@@ -380,8 +380,13 @@ class GameState(object):
             board[y1, x1] = named_objects[command[4:]]
             if board[y1, x1]:
                 board[y1, x1] |= player_color
-        elif command == "CHANGE COLOR":
-            player_color += CellTypes.color_r
+        elif command.startswith("CHANGE COLOR"):
+            if command.endswith("FULL CYCLE"):
+                player_color += CellTypes.color_r
+            elif player_color:
+                player_color <<= 1
+            else:
+                player_color = CellTypes.color_r
             player_color &= CellTypes.rainbow_color
             board[y0, x0] &= ~CellTypes.rainbow_color
             board[y0, x0] |= player_color
@@ -569,10 +574,15 @@ class GameWithGoals(GameState):
         self.goals = data['goals']
 
     def execute_edit(self, command):
-        if command == "CHANGE GOAL":
+        if command.startswith("CHANGE GOAL"):
             x1, y1 = self.relative_loc(1)
             old_goal = self.goals[y1, x1]
-            self.goals[y1, x1] += CellTypes.color_r
+            if command.endswith("FULL CYCLE"):
+                self.goals[y1, x1] += CellTypes.color_r
+            elif self.goals[y1, x1]:
+                self.goals[y1, x1] <<= 1
+            else:
+                self.goals[y1, x1] = CellTypes.color_r
             self.goals[y1, x1] &= CellTypes.rainbow_color
             return f"goal change: {bin(old_goal>>9)} -> {bin(self.goals[y1, x1]>>9)}"
         else:

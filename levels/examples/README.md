@@ -27,10 +27,15 @@ Some cells in the environment are objectively bad (their presence lowers score) 
 
 - **predator**: ...eats through even hardened life. (haven't found a great way to use this yet)
 
-- ... predator fence (similar to above, but use predators instead of crates, maybe use a weed to draw the cells out)
-
 
 ### Navigation
+
+- simple maze navigation
+- pushable maze
+- maze with oscillators
+- living agent in maze (don't get too close to living walls)
+- living agent with either preserver or inhibitor flags, plus maybe an ice cube so the agent can switch between them
+- living agent amongst contained spawners: don't track anything outside of the containment
 
 
 ### Miscellany
@@ -38,6 +43,10 @@ Some cells in the environment are objectively bad (their presence lowers score) 
 - **one way**: When the agent is itself alive, all sorts of shenanigans and interesting gating mechanics can ensue. I've not successfully gotten all of the blue blocks without magic.
 
 - **super weed**: Bringing two weeds together can create a permanent tangle.
+
+- **controlled expansion**: Player needs to guide cells from a spawner to reach a *fountain*. Fountains, like weeds, prevent all of their surrounding cells from dieing. However, if the player's not careful, the cells could instead reach a dangerous tangle weed.
+
+- **controlled predation**: Similar to the above, but uses predators instead of crates, and has one useful plant.
 
 - **rainbow spawn**: When there are different spawners sitting next to each other, their colors can mix. This is the only way to get mixing colors.
 
