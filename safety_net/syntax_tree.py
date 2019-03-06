@@ -87,9 +87,6 @@ class StatefulProgram(object):
 
         self.command_queue.append(command)
         self.root.push(command)
-        if not self.root.can_run():
-            return 0, num_steps
-
         # Set a few temporary attributes which get called in execute_action,
         # but shouldn't be thought of as persisting.
         self._num_executions = 0
@@ -97,14 +94,15 @@ class StatefulProgram(object):
         # Then set a couple of peristant variables as logs
         self.message = ""
         self.action_log.clear()
-        try:
-            self.root.execute(self)
-        except ProgramError as err:
-            self.message = err.args[0]
+        if self.root.can_run():
+            try:
+                self.root.execute(self)
+            except ProgramError as err:
+                self.message = err.args[0]
 
-        # Reset the command queue
-        self.command_queue.clear()
-        self.root = BlockNode()
+            # Reset the command queue
+            self.command_queue.clear()
+            self.root = BlockNode()
 
         end_pts = self.game_state.current_points()
         return (end_pts - start_pts) + self._reward, num_steps

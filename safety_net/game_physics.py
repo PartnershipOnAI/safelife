@@ -61,8 +61,8 @@ class CellTypes(object):
         that created them.
     agent
         Special flag to mark the cell as being occupied by an agent.
-        Mostly used for rendering, as the actual location of the agent is stored
-        separately.
+        Mostly used for rendering (both to humans and machines), as the actual
+        location of the agent is stored separately.
     exit
         Special flag to mark a level's exit. The environment typically stops
         once an agent reaches the exit.
@@ -82,10 +82,11 @@ class CellTypes(object):
     color_g = 1 << color_bit + 1
     color_b = 1 << color_bit + 2
 
-
     empty = 0
     freezing = inhibiting | preserving
-    player = agent | freezing | frozen
+    # Note that the player is marked as "destructible" so that they never
+    # contribute to producing indestructible cells.
+    player = agent | freezing | frozen | destructible
     wall = frozen
     crate = frozen | movable
     spawner = frozen | spawning
