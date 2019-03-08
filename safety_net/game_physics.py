@@ -208,8 +208,9 @@ class GameState(object):
         """Load game state from disk."""
         data = np.load(file_name)
         if auto_cls and 'class' in data:
-            mod_name = '.'.join(str(data['class']).split('.')[:-1])
-            cls_name = str(data['class']).split('.')[-1]
+            cls_components = str(data['class']).split('.')
+            mod_name = '.'.join(cls_components[:-1])
+            cls_name = cls_components[-1]
             try:
                 mod = import_module(mod_name)
             except ModuleNotFoundError:
