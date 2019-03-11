@@ -137,6 +137,7 @@ class GameState(object):
     spawn_prob = 0.3
     orientation = 1
     agent_loc = (0, 0)
+    edit_loc = None
     board = None
     file_name = None
     use_absolute_directions = False
@@ -346,6 +347,17 @@ class GameState(object):
             self.game_over = -2
         return reward
 
+    @property
+    def is_editing(self):
+        return self.edit_loc is not None
+
+    @is_editing.setter
+    def is_editing(self, val):
+        if val:
+            self.edit_loc = self.edit_loc = self.agent_loc
+        else:
+            self.edit_loc = None
+
     def execute_edit(self, command):
         """
         Edit the board. Returns an error or success message, or None.
@@ -376,11 +388,22 @@ class GameState(object):
         }
         board = self.board
         x0, y0 = self.agent_loc
+        x1, y1 = self.edit_loc
         player_color = board[y0, x0] & CellTypes.rainbow_color
         if command in ORIENTATION:
-            self.move_direction(ORIENTATION[command], can_exit=False, can_push=False)
-        elif command.startswith("PUT ") and command[4:] in named_objects:
-            x1, y1 = self.relative_loc(1)
+            direction = ORIENTATION[command]
+            if direction % 2 == 0:
+                dx, dy = 0, direction - 1
+            else:
+                dx, dy = 2 - direction, 0
+            self.edit_loc = ((x1 + dx) % self.width, (y1 + dy) % self.height)
+        elif command == "PUT AGENT" and self.agent_loc != self.edit_loc:
+            board[y1, x1] = board[y0, x0]
+            board[y0, x0] = 0
+            self.agent_loc = self.edit_loc
+        elif (command.startswith("PUT ") and command[4:] in named_objects and
+                self.agent_loc != self.edit_loc):
+            x1, y1 = self.edit_loc
             board[y1, x1] = named_objects[command[4:]]
             if board[y1, x1]:
                 board[y1, x1] |= player_color

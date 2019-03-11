@@ -7,6 +7,7 @@ the key bindings and the basic input->update game loop.
 import os
 import sys
 import glob
+import numpy as np
 
 from .game_physics import GameOfLife
 from .syntax_tree import StatefulProgram
@@ -79,6 +80,7 @@ EDIT_KEYS = {
     KEYS.UP_ARROW: "UP",
     KEYS.DOWN_ARROW: "DOWN",
     'x': "PUT EMPTY",
+    'a': "PUT AGENT",
     'z': "PUT LIFE",
     'Z': "PUT HARD LIFE",
     'w': "PUT WALL",
@@ -140,6 +142,7 @@ class GameLoop(object):
     def play(self, game):
         os.system('clear')
         program = StatefulProgram(game)
+        game.is_editing = self.editing
 
         while not game.game_over:
             output = "\x1b[H\x1b[J"
@@ -169,6 +172,7 @@ class GameLoop(object):
                 # Toggle the edit status. This will allow the user to
                 # add/destroy blocks without advancing the game's physics.
                 self.editing = not self.editing
+                game.is_editing = self.editing
             elif self.editing and key in EDIT_KEYS:
                 # Execute action immediately.
                 program.message = game.execute_edit(EDIT_KEYS[key]) or ""

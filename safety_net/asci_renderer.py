@@ -40,10 +40,12 @@ def print_reward_table():
 
 
 @np.vectorize
-def render_cell(cell, goal=0, orientation=0):
+def render_cell(cell, goal=0, orientation=0, edit_color=None):
     cell_color = (cell & CellTypes.rainbow_color) >> CellTypes.color_bit
     goal_color = (goal & CellTypes.rainbow_color) >> CellTypes.color_bit
-    val = background_colors[goal_color] + foreground_colors[cell_color] + ' '
+    val = background_colors[goal_color]
+    val += ' ' if edit_color is None else foreground_colors[edit_color] + '•'
+    val += foreground_colors[cell_color]
 
     if cell & CellTypes.agent:
         arrow = '⋀>⋁<'[orientation]
@@ -118,6 +120,13 @@ def render_board(s, centered_view=False, view_size=None, fixed_orientation=False
         screen[1:-1,1:-2] = cells
     else:
         screen[1:-1,1:-2] = render_cell(board, goals, s.orientation)
+    if s.is_editing:
+        x0, y0 = s.agent_loc
+        x1, y1 = s.edit_loc
+        color = (board[y0, x0] & CellTypes.rainbow_color) >> CellTypes.color_bit
+        val = render_cell(board[y1, x1], goals[y1, x1], s.orientation,
+                          edit_color=color)
+        screen[y1+1, x1+1] = str(val)
     return ''.join(screen.ravel())
 
 
