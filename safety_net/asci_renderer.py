@@ -58,13 +58,14 @@ def render_cell(cell, goal=0, orientation=0, edit_color=None):
             CellTypes.alive: 'Z',
             CellTypes.wall: '#',
             CellTypes.crate: '%',
-            CellTypes.plant: '&',
+            CellTypes.plant: 't',
+            CellTypes.tree: 'T',
             CellTypes.ice_cube: '=',
             CellTypes.predator: '!',
             CellTypes.weed: '@',
             CellTypes.spawner: 'S',
             CellTypes.level_exit: 'X',
-            CellTypes.fountain_of_life: '\x1b[1m+',
+            CellTypes.fountain: '\x1b[1m+',
         }.get(gray_cell, '?')
     return val + '\x1b[0m'
 

@@ -68,16 +68,26 @@ class CellTypes(object):
         once an agent reaches the exit.
     """
 
-    alive = 1 << 0  # Cell obeys Game of Life rules.
-    agent = 1 << 1
-    movable = 1 << 2  # Can be pushed by agent.
-    destructible = 1 << 3
-    frozen = 1 << 4  # Does not evolve.
-    preserving = 1 << 5  # Neighboring cells do not die.
-    inhibiting = 1 << 6  # Neighboring cells cannot be born.
-    spawning = 1 << 7  # Randomly generates neighboring cells.
-    exit = 1 << 8
+    alive_bit = 0  # Cell obeys Game of Life rules.
+    agent_bit = 1
+    movable_bit = 2  # Can be pushed by agent.
+    destructible_bit = 3
+    frozen_bit = 4  # Does not evolve.
+    preserving_bit = 5  # Neighboring cells do not die.
+    inhibiting_bit = 6  # Neighboring cells cannot be born.
+    spawning_bit = 7  # Randomly generates neighboring cells.
+    exit_bit = 8
     color_bit = 9
+
+    alive = 1 << alive_bit
+    agent = 1 << agent_bit
+    movable = 1 << movable_bit
+    destructible = 1 << destructible_bit
+    frozen = 1 << frozen_bit
+    preserving = 1 << preserving_bit
+    inhibiting = 1 << inhibiting_bit
+    spawning = 1 << spawning_bit
+    exit = 1 << exit_bit
     color_r = 1 << color_bit
     color_g = 1 << color_bit + 1
     color_b = 1 << color_bit + 2
@@ -96,7 +106,8 @@ class CellTypes(object):
     rainbow_color = color_r | color_g | color_b
     ice_cube = frozen | freezing | movable
     plant = frozen | alive | movable
-    fountain_of_life = preserving | frozen
+    tree = frozen | alive
+    fountain = preserving | frozen
     predator = inhibiting | alive | movable | frozen
     weed = preserving | alive | movable | frozen
     powers = alive | freezing | spawning
@@ -376,7 +387,8 @@ class GameState(object):
             'EXIT': CellTypes.level_exit,
             'ICECUBE': CellTypes.ice_cube,
             'PLANT': CellTypes.plant,
-            'FOUNTAIN': CellTypes.fountain_of_life,
+            'TREE': CellTypes.tree,
+            'FOUNTAIN': CellTypes.fountain,
             'PREDATOR': CellTypes.predator,
             'WEED': CellTypes.weed,
         }
@@ -650,7 +662,7 @@ class GameOfLife(GameWithGoals):
         # large boards.
         self.num_steps += 1
         board = self.board
-        cfilter = np.array([[1,1,1],[1,0,1],[1,1,1]])
+        cfilter = np.array([[1,1,1],[1,0,1],[1,1,1]], dtype=np.int16)
 
         alive = board & CellTypes.alive > 0
         spawning = board & CellTypes.spawning > 0

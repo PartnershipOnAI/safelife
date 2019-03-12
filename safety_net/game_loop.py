@@ -88,6 +88,7 @@ EDIT_KEYS = {
     'e': "PUT EXIT",
     'i': "PUT ICECUBE",
     't': "PUT PLANT",
+    'T': "PUT TREE",
     'd': "PUT WEED",
     'p': "PUT PREDATOR",
     'f': "PUT FOUNTAIN",
