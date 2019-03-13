@@ -1,97 +1,55 @@
+import random
 import numpy as np
-from scipy import ndimage
+from scipy import ndimage, signal
 
 from .game_physics import CellTypes
 
 
-def partition_board(board, alpha=1, max_regions=10):
-    """
-    Partition the board into contiguous regions using a Dirichlet process.
+def gen_regions(shape, alpha=1.5, max_regions=10, use_diag=False):
+    ring = np.array([[1,1,1],[1,0,1],[1,1,1]], dtype=np.int16)
+    if use_diag:
+        adjacent = np.array([
+            [-1,0,1,-1,1,-1,0,1],
+            [-1,-1,-1,0,0,1,1,1]], dtype=np.int16).T
+    else:
+        adjacent = np.array([
+            [-1,0,0,1],
+            [0,-1,1,0]], dtype=np.int16).T
+    nearby = np.meshgrid([-2,-1,0,1,2], [-2,-1,0,1,2])
 
-    Parameters
-    ----------
-    regions : ndarray of dtype int or tuple
-        Integer of the starting regions.
-    alpha : float
-        Concentration parameter. Larger value means more regions.
-    max_regions : int
-
-    Returns
-    -------
-    board : ndarray
-        Each board cell is an integer associated with its region. All regions
-    """
-    # The first pass at this isn't meant to be speedy.
-    # It could be made a lot faster by using smarter data structures, or by
-    # implementing in C.
-    # 15x15 board takes about 15ms
-    shape = board.shape
-    neighborhood = np.array([[0,1,0],[1,0,1],[0,1,0]])
-    reg, inv, count = np.unique(board, return_inverse=True, return_counts=True)
-    if reg[0] < 0:
-        raise ValueError("Board regions must be non-negative integers.")
-    if reg[0] > 0:
-        # All regions are already filled. Our job is done.
-        return board.copy()
-    board = inv.reshape(board.shape)  # Makes sure that numbers don't skip.
-    perimeters = [
-        set(np.flatnonzero(board == 0).tolist())
-    ]
-    for n in range(1, len(reg)):
-        idx = np.flatnonzero(
-            (board == 0) &
-            ndimage.convolve(board == n, neighborhood, mode='wrap'))
-        perimeters.append(set(idx.tolist()))
-    board = board.ravel()
-    while perimeters[0]:
+    board = np.zeros(shape, dtype=np.int16)
+    perimeters = [{
+        (i, j) for i, j in zip(*np.nonzero(board == 0))
+    }]
+    exclusions = [set()]
+    while sum(len(p) for p in perimeters) > 0:
         weights = [len(p) for p in perimeters]
-        weights[0] = alpha if len(weights) < max_regions else 0
+        weights[0] = min(alpha, weights[0]) if len(weights) < max_regions else 1e-10
         weights /= np.sum(weights)
         k = np.random.choice(len(perimeters), p=weights)
-        idx = np.random.choice(list(perimeters[k]))
+        i, j = random.sample(perimeters[k], 1)[0]
+        perimeters[0].discard((i, j))
+        perimeters[k].discard((i, j))
+        if (i, j) in exclusions[k]:
+            continue
+        exclusions[0].add((i,j))
+        exclusions[k].add((i,j))
+        b = board[(i+nearby[0]) % shape[0], (j+nearby[1]) % shape[1]]
+        b[2,2] = k or -1
+        num_neighbors = signal.convolve2d(b != 0, ring, mode='valid')
+        num_foreign = signal.convolve2d((b > 0) & (b != k), ring, mode='valid')
+        if ((num_foreign > 0) & (num_neighbors > 2)).any() or num_foreign[1,1] > 0:
+            continue
+        # Add to the board
         if k == 0:
             k = len(perimeters)
             perimeters.append(set())
-        board[idx] = k
-        for perim in perimeters:
-            perim.discard(idx)
-        r, c = idx // shape[1], idx % shape[0]
-        i1 = c + ((r + 1) % shape[0]) * shape[1]
-        i2 = c + ((r - 1) % shape[0]) * shape[1]
-        i3 = (c + 1) % shape[1] + r * shape[1]
-        i4 = (c - 1) % shape[1] + r * shape[1]
-        for i in [i1, i2, i3, i4]:
-            if board[i] > 0:
-                continue
-            perimeters[k].add(i)
-    return board.reshape(shape)
-
-
-def discard_boundaries(board, full=True):
-    """
-    Zero out regions at their boundaries.
-
-    This is designed such that any pattern that's constrained to the interior
-    of its region will never be able to affect a pattern that's constrained
-    to the interior of another region. If the interiors went all the way to the
-    edges, then there could be communication that goes across the edge.
-
-    The Moore neighborhood is a little more aggressive than it needs to be,
-    while the Von Neumann neighborhood is a little bit less aggressive.
-    Should probably just stick with the
-    """
-    von_neumann = [[0,1,0],[1,0,1],[0,1,0]]
-    moore = [[1,1,1],[1,0,1],[1,1,1]]
-    neighborhood = moore if full else von_neumann
-    bmin = ndimage.minimum_filter(board, footprint=neighborhood, mode='wrap')
-    bmax = ndimage.maximum_filter(board, footprint=neighborhood, mode='wrap')
-    return np.where(bmax == bmin, bmax, 0)
-
-
-# ------------------
-
-_ring = np.array([[1,1,1],[1,0,1],[1,1,1]], dtype=np.int16)
-_dot = 1 - _ring
+            exclusions.append(set())
+        board[i, j] = k
+        for i2, j2 in (adjacent + (i, j)) % shape:
+            if board[i2, j2] == 0:
+                perimeters[k].add((i2, j2))
+    return board
 
 
 def check_violations(alive, neighbors, preserved, inhibited):
@@ -266,8 +224,7 @@ def _main():
     from .game_physics import GameOfLife
     # just for testing
     shape = (25, 25)
-    regions = partition_board(np.zeros(shape, dtype=np.int16), alpha=3)
-    regions = discard_boundaries(regions, False)
+    regions = gen_regions(shape)
     mask = regions == 1
     board = np.zeros(shape, dtype=np.int16)
     board = gen_still_life(board, mask)
