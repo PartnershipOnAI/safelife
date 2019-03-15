@@ -58,7 +58,7 @@ def render_cell(cell, goal=0, orientation=0, edit_color=None):
             CellTypes.alive: 'Z',
             CellTypes.wall: '#',
             CellTypes.crate: '%',
-            CellTypes.plant: 't',
+            CellTypes.plant: '&',
             CellTypes.tree: 'T',
             CellTypes.ice_cube: '=',
             CellTypes.predator: '!',
