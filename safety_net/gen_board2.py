@@ -3,7 +3,7 @@ import numpy as np
 from scipy import ndimage, signal
 from scipy.interpolate import interp1d
 
-from .game_physics import CellTypes
+from .game_physics import CellTypes, GameOfLife
 
 
 def gen_regions(shape, alpha=1.5, max_regions=10, use_diag=False):
@@ -53,6 +53,63 @@ def gen_regions(shape, alpha=1.5, max_regions=10, use_diag=False):
     return board
 
 
+def build_fence(mask, shuffle=True):
+    """
+    Create a fence around unmasked regions such nothing inside the regions
+    can escape.
+
+    Note that this is a little bit more aggressive than it strictly needs
+    to be.
+
+    Parameters
+    ----------
+    mask : ndarray, dtype int
+        Binary array denoting regions around which to build fences (1) and
+        everything else.
+
+    Returns
+    -------
+    fence : ndarray, dtype int
+        Binary array indicating fence locations.
+    """
+    mask = mask.astype(np.int32)
+    _i = np.array([-1,-1,-1,0,0,0,1,1,1], dtype=np.int32)
+    _j = np.array([-1,0,1,-1,0,1,-1,0,1], dtype=np.int32)
+    neighbors = ndimage.convolve(mask, np.ones((3,3)), mode='wrap')
+    fence = np.zeros_like(mask)
+    edge_i, edge_j = np.nonzero(mask * neighbors % 9)
+    neighbors *= (1 - mask)
+    if edge_i.size == 0:
+        return fence
+
+    # First pass. Add in fence where needed.
+    if shuffle:
+        k = np.random.permutation(len(edge_i))
+        edge_i = edge_i[k]
+        edge_j = edge_j[k]
+    for i, j in zip(edge_i, edge_j):
+        n_i = (i + _i) % mask.shape[0]
+        n_j = (j + _j) % mask.shape[1]
+        if (neighbors[n_i, n_j] >= 3).any():
+            neighbors[n_i, n_j] -= 1
+            fence[i, j] += 1
+
+    # Second pass. Remove fence where unneeded.
+    fence_i, fence_j = np.nonzero(fence)
+    if shuffle:
+        k = np.random.permutation(len(fence_i))
+        fence_i = fence_i[k]
+        fence_j = fence_j[k]
+    for i, j in zip(fence_i, fence_j):
+        n_i = (i + _i) % mask.shape[0]
+        n_j = (j + _j) % mask.shape[1]
+        if (neighbors[n_i, n_j] < 2).all():
+            neighbors[n_i, n_j] += 1
+            fence[i, j] -= 1
+
+    return fence
+
+
 def check_violations(alive, neighbors, preserved, inhibited):
     """
     Number of violations on each cell.
@@ -94,14 +151,14 @@ class GenLifeParams(object):
         is the logarithmic penalty. That is, increasing a penalty by 1
         decreases that cell's likelihood by a factor of e.
     """
-    temperature = 0.1
+    temperature = 0.7
     max_iter = 100
-    min_fill = 0.1
+    min_fill = 0.3
 
     penalty_params = {
-        CellTypes.empty: [(0, -2,), (0.5, 0), (.9, 0), (1, 5)],
+        CellTypes.empty: [(0, -2,), (5, 0), (10, 10)],
         CellTypes.life: [(0, 0), (1, 0)],
-        CellTypes.wall: [(0, 1), (0.05, 4)],
+        # CellTypes.wall: [(0, 1), (0.05, 4)],
         CellTypes.plant: [(0, 1), (0.05, 3)],
         # CellTypes.weed: [(0, 3), (0.05, 10)],
         # CellTypes.predator: [(0, 3), (0.05, 10)],
@@ -316,18 +373,46 @@ def gen_still_life(board, mask=None, params=GenLifeParams()):
     return board
 
 
-def _main():
+def gen_game(board_shape=(33, 33)):
+    """
+    Randomly generate a new game.
+
+    Still to do:
+
+    - Make different regions different
+    - Change the input parameters for gen_still_life
+    - Make only some of the areas fenced
+    - Add goals of different colors / types
+    - Add spawners
+    - Two pass still life: build one still life on top of another
+      (important for growing and pruning goals)
+    """
+    regions = gen_regions(board_shape)
+    fences = build_fence(regions > 0)
+    mask = (regions > 0) & (fences == 0)
+    board = gen_still_life(fences * CellTypes.wall, mask)
+    i, j = np.nonzero(regions == 0)
+    k1, k2 = np.random.choice(len(i), size=2, replace=True)
+    board[i[k1], j[k1]] = CellTypes.player
+    board[i[k2], j[k2]] = CellTypes.level_exit | CellTypes.color_r
+    game = GameOfLife()
+    game.deserialize({
+        'board': board,
+        'goals': (regions == 0) * CellTypes.rainbow_color,
+        'agent_loc': (j[k1], i[k1]),
+    })
+    return game
+
+
+def _main(play=True):
     from .asci_renderer import render_board
-    from .game_physics import GameOfLife
-    # just for testing
-    shape = (25, 25)
-    regions = gen_regions(shape)
-    mask = regions == 1
-    board = np.zeros(shape, dtype=np.int16)
-    board = gen_still_life(board, mask)
-    state = GameOfLife()
-    state.deserialize({'board': board, 'goals': (regions & 7) << CellTypes.color_bit})
-    print(render_board(state))
+    from .game_loop import GameLoop
+    if play:
+        game_loop = GameLoop()
+        game_loop.centered_view = True
+        game_loop.play(gen_game())
+    else:
+        print(render_board(gen_game()))
 
 
 if __name__ == "__main__":

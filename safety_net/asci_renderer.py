@@ -79,6 +79,8 @@ def render_board(s, centered_view=False, view_size=None, fixed_orientation=False
 
     Parameters
     ----------
+    centered_view : bool
+        If True, view is always centered on the player.
     view_size : (int width, int height)
         If not None, specifies the size of the view centered on the agent.
     fixed_orientation : bool
