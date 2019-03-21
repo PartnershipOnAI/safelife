@@ -12,7 +12,7 @@ import numpy as np
 from .game_physics import GameOfLife
 from .syntax_tree import StatefulProgram
 from . import asci_renderer as renderer
-from .gen_board import gen_board
+from .gen_board import gen_game
 from .keyboard_input import KEYS, getch
 
 
@@ -114,8 +114,9 @@ class GameLoop(object):
     Play the game interactively. For humans.
     """
     game_cls = GameOfLife
-    board_size = (10, 10)
-    random_board = False  # Later this should be a difficulty slider
+    board_size = (25, 25)
+    random_board = False
+    difficulty = 1  # for random boards
     load_from = None
     view_size = None
     centered_view = False
@@ -134,9 +135,7 @@ class GameLoop(object):
             yield self.game_cls.load(self.load_from)
         elif self.random_board:
             while True:
-                game = self.game_cls(board_size=None)
-                game.deserialize(gen_board(self.board_size))
-                yield game
+                yield gen_game(self.board_size, self.difficulty)
         else:
             yield self.game_cls(board_size=self.board_size)
 

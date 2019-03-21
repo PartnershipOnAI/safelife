@@ -70,6 +70,15 @@ def render_cell(cell, goal=0, orientation=0, edit_color=None):
     return val + '\x1b[0m'
 
 
+def render_plain_board(board, goals=0):
+    """
+    Just render the board itself. Doesn't require game state.
+    """
+    screen = render_cell(board, goals).astype(object)
+    screen[:, -1] += '\n'
+    return ''.join(screen.ravel())
+
+
 def render_board(s, centered_view=False, view_size=None, fixed_orientation=False):
     """
     Renders the game state `s`. Does not include scores, etc.
