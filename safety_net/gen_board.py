@@ -532,9 +532,9 @@ def gen_region(board, goals, mask, fences, difficulty):
     elif region_type == "fountain":
         fountain_mask = fence_mask * (np.random.random(board.shape) < 0.04)
         fountain_neighbor = ndimage.maximum_filter(fountain_mask, size=3, mode='wrap')
-        board += fountain_mask * CellTypes.fountain
         color = np.random.choice([
             CellTypes.color_r, CellTypes.color_g, CellTypes.color_b])
+        board += fountain_mask * (CellTypes.fountain + color)
         goals += (mask & fountain_neighbor & ~fountain_mask) * color
     elif region_type == "oscillator":
         raise NotImplemented
