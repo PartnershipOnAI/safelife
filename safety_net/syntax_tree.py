@@ -15,8 +15,8 @@ and all of their effects.
 """
 
 COMMAND_COST = {
-    "LEFT": 0,
-    "RIGHT": 0,
+    "TURN LEFT": 0,
+    "TURN RIGHT": 0,
     "UP": 1,
     "DOWN": 1,
     "NULL": 1,

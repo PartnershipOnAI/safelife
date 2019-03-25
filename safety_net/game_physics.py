@@ -28,6 +28,8 @@ ORIENTATION = {
     "RIGHT": 1,
     "DOWN": 2,
     "LEFT": 3,
+    "FORWARD": 4,
+    "BACKWARD": 6,
 }
 
 
@@ -129,9 +131,6 @@ class GameState(object):
         Probability for spawning new live cells next to spawners.
     file_name : str
         Path to .npz file where the state is to be saved.
-    use_absolute_directions : bool
-        If True, agent moves according to cardinal directions.
-        If False, agent moves according to relative directions.
     points_on_level_exit : float
     game_over : bool
         Flag to indicate that the current game has ended.
@@ -151,12 +150,11 @@ class GameState(object):
     edit_loc = None
     board = None
     file_name = None
-    use_absolute_directions = False
     game_over = False
     points_on_level_exit = +1
     num_steps = 0
 
-    can_toggle_powers = True
+    can_toggle_powers = False
     can_toggle_colors = False
 
     def __init__(self, board_size=(10,10)):
@@ -298,33 +296,6 @@ class GameState(object):
                 self.agent_loc = (x1, y1)
         return reward
 
-    def move_direction(self, direction, **kwargs):
-        """
-        Either moves or rotates the agent. Returns reward.
-
-        Parameters
-        ----------
-        direction : int
-            0 = up / forward, 1 = right, 2 = down / backward, 3 = left
-        """
-        reward = 0
-        if self.use_absolute_directions:
-            # Agent moves (or turns) in the specified absolute direction
-            if direction == self.orientation:
-                reward = self.move_agent(+1, **kwargs)
-            elif abs(direction - self.orientation) == 2:
-                reward = self.move_agent(-1, **kwargs)
-            else:
-                self.orientation = direction
-        else:
-            # Agent moves or turns relative to their current orientation
-            if direction % 2 == 0:
-                reward = self.move_agent(1 - direction, **kwargs)
-            else:
-                self.orientation += 2 - direction
-                self.orientation %= 4
-        return reward
-
     def execute_action(self, action):
         """
         Execute an individual action and return the associated reward.
@@ -338,9 +309,22 @@ class GameState(object):
         reward = 0
         if self.game_over:
             pass
-        elif action in ORIENTATION:
-            reward = self.move_direction(ORIENTATION[action])
-        elif action == "TOGGLE":
+        elif action.startswith("MOVE "):
+            direction = ORIENTATION[action[5:]]
+            if direction < 4:
+                self.orientation = direction
+                reward = self.move_agent(1)
+            else:
+                # Relative direction. Either forward (4) or backward (6)
+                reward = self.move_agent(5 - direction)
+        elif action.startswith("TURN "):
+            direction = ORIENTATION[action[5:]]
+            self.orientation += 2 - direction
+            self.orientation %= 4
+        elif action.startswith("TOGGLE"):
+            if len(action) > 6:
+                # Toggle in a particular direction
+                self.orientation = ORIENTATION[action[7:]]
             x0, y0 = self.agent_loc
             x1, y1 = self.relative_loc(1)
             player_color = board[y0, x0] & CellTypes.rainbow_color
@@ -402,8 +386,8 @@ class GameState(object):
         x0, y0 = self.agent_loc
         x1, y1 = self.edit_loc
         player_color = board[y0, x0] & CellTypes.rainbow_color
-        if command in ORIENTATION:
-            direction = ORIENTATION[command]
+        if command.startswith("MOVE "):
+            direction = ORIENTATION[command[5:]]
             if direction % 2 == 0:
                 dx, dy = 0, direction - 1
             else:
