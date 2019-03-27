@@ -177,7 +177,7 @@ class GameState(object):
             "orientation": self.orientation,
             "agent_loc": self.agent_loc,
             "board": self.board.copy(),
-            "class": f"{cls.__module__}.{cls.__name__}"
+            "class": "%s.%s" % (cls.__module__, cls.__name__)
         }
 
     def deserialize(self, data):
@@ -422,12 +422,12 @@ class GameState(object):
                     self.save(save_name)
                     return "Saved successfully."
                 except FileNotFoundError as err:
-                    return f"No such file or directory: '{err.filename}'"
+                    return "No such file or directory: '%s'" % (err.filename,)
             else:
                 return "Save aborted."
         elif command == 'SAVE':
             from .keyboard_input import getch
-            print(f"\rsave as '{self.file_name}'? (y/n)\x1b[J ", end='')
+            print("\rsave as '" + self.file_name + "'? (y/n)\x1b[J ", end='')
             confirm = getch()
             if confirm in ('y', 'Y'):
                 self.save(self.file_name)
@@ -605,7 +605,10 @@ class GameWithGoals(GameState):
             else:
                 self.goals[y1, x1] = CellTypes.color_r
             self.goals[y1, x1] &= CellTypes.rainbow_color
-            return f"goal change: {bin(old_goal>>9)} -> {bin(self.goals[y1, x1]>>9)}"
+            return "goal change: {old_goal} -> {new_goal}".format(
+                old_goal=bin(old_goal >> 9),
+                new_goal=bin(self.goals[y1, x1] >> 9)
+            )
         else:
             return super().execute_edit(command)
 

@@ -34,7 +34,7 @@ def print_reward_table():
         text += background_colors[r]
         for c in range(8):
             text += foreground_colors[c]
-            text += f"{rewards[r,c]:2d} "
+            text += "{:2d} ".format(rewards[r,c])
         text += '\x1b[0m\n'
     print(text)
 
