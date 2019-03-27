@@ -7,7 +7,6 @@ the key bindings and the basic input->update game loop.
 import os
 import sys
 import glob
-import numpy as np
 
 from .game_physics import GameOfLife
 from .syntax_tree import StatefulProgram

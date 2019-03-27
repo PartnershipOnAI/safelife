@@ -74,14 +74,14 @@ def render_cell(cell, goal=0, orientation=0):
 
 
 render_cell = np.vectorize(
-    render_cell, signature="(),()->({s},{s},3)".format(s=SPRITE_SIZE))
+    render_cell, signature="(),(),()->({s},{s},3)".format(s=SPRITE_SIZE))
 
 
 def render_board(board, goals=0, orientation=0):
     """
     Just render the board itself. Doesn't require game state.
     """
-    data = render_cell(board, goals)
+    data = render_cell(board, goals, orientation)
     data = np.hstack(tuple(data))
     data = np.hstack(tuple(data))
     return data
