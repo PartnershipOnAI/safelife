@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+
+"""
+Main entry point for starting a training job.
+"""
+
+import os
+import sys
+import argparse
+import subprocess
+
+safety_dir = os.path.abspath(os.path.join(__file__, '../'))
+sys.path.insert(1, safety_dir)  # ensure current directory is on the path
+
+parser = argparse.ArgumentParser()
+parser.add_argument('run_name', help="a name for the new run")
+parser.add_argument('--no_install', action="store_true")
+args = parser.parse_args()
+
+# Install dependencies if they aren't already there
+if not args.no_install:
+    reqs_file = os.path.join(safety_dir, "requirements.txt")
+    subprocess.run("sudo apt-get install ffmpeg --yes".split())
+    subprocess.run(["sudo", "pip3", "install", "-r", reqs_file])
+
+# Start tensorboard
+data_dir = os.path.join(safety_dir, 'data')
+tb_proc = subprocess.Popen(["tensorboard", "--logdir", data_dir])
+
+# Start training!
+def train(logdir):
+    from agents.agent_network import GameOfLifePPO
+    if os.path.exists(logdir):
+        print("Error! Run data already exists. Aborting.")
+        return
+    model = GameOfLifePPO(logdir=logdir)
+    model.train(1e7)
+
+try:
+    train(logdir=os.path.join(data_dir, args.run_name))
+finally:
+    tb_proc.kill()

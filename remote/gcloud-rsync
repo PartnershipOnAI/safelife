@@ -1,0 +1,3 @@
+#!/bin/bash
+# Use just like regular rsync, but use the gcloud instance name as the remote.
+exec rsync --rsh $(dirname $0)/gcloud-ssh "$@"

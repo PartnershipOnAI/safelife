@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+
+import os
+import argparse
+import datetime
+import subprocess
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('instance_name', help="name of the gcloud instance")
+parser.add_argument('run_name', help="a name for the new run")
+parser.add_argument('--port', default='6006')
+args = parser.parse_args()
+
+full_name = datetime.date.today().isoformat() + '-' + args.run_name
+
+# Copy over the data
+safety_dir = os.path.abspath(os.path.join(__file__, '../../'))
+ssh_cmd = os.path.abspath(os.path.join(__file__, '../gcloud-ssh'))
+
+result = subprocess.run([
+    'rsync', '--rsh', ssh_cmd, '-r', '--exclude=/data',
+    safety_dir + '/', args.instance_name + ':~/' + full_name])
+if result.returncode != 0:
+    exit(result.returncode)
+
+# Start the job
+result = subprocess.run([
+    ssh_cmd, args.instance_name, '-L', args.port + ':localhost:6006',
+    f"ln -s ~/{full_name} ~/current_run; "
+    f"~/current_run/start-job {args.run_name}; "
+    "sudo shutdown +10"  # shutdown in 10 minutes; gives time to recover from error
+])

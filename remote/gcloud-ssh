@@ -1,0 +1,4 @@
+#! /bin/sh
+host="$1"
+shift
+exec gcloud compute ssh "$host" -- "$@"
