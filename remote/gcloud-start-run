@@ -27,7 +27,7 @@ if result.returncode != 0:
 # Start the job
 result = subprocess.run([
     ssh_cmd, args.instance_name, '-L', args.port + ':localhost:6006',
-    f"ln -s ~/{full_name} ~/current_run; "
+    f"rm ~/current_run; ln -s ~/{full_name} ~/current_run; "
     f"~/current_run/start-job {args.run_name}; "
     "sudo shutdown +10"  # shutdown in 10 minutes; gives time to recover from error
 ])

@@ -35,7 +35,7 @@ class GameOfLifePPO(ppo.PPO):
     vf_coef = 1.0
     max_gradient_norm = 1.0
     eps_clip = 0.1
-    reward_clip = 1.0
+    reward_clip = 10.0
 
     def __init__(self, **kwargs):
         super().__init__(GameOfLifeEnv, **kwargs)

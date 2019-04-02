@@ -33,8 +33,8 @@ class GameOfLifeEnv(gym.Env):
     num_steps = 0
     goal_points = 0.05  # deemphasize level exit points
 
-    def __init__(self, board_size=12, view_size=15, output_channels=(0,1,14)):
-        # For now, default to only 3 channels: life, agent, and goal.
+    def __init__(self, board_size=12, view_size=15, output_channels=(0,1,8,14)):
+        # For now, default to only 4 channels: life, agent, exit, and goal.
         self.output_channels = output_channels
         self.board_shape = (board_size, board_size)
         self.view_shape = (view_size, view_size)
