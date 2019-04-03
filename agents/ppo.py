@@ -7,14 +7,17 @@ It should probably be replaced with OpenAI baselines.
 
 import os
 import shutil
+import logging
 from types import SimpleNamespace
 from collections import deque, namedtuple
 from functools import wraps
 
 import numpy as np
 import tensorflow as tf
-import gym
-import gym.wrappers
+
+from .wrappers import VideoMonitor, AutoResetWrapper
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_LOGDIR = os.path.join(__file__, '../../data/tmp')
 DEFAULT_LOGDIR = os.path.abspath(DEFAULT_LOGDIR)
@@ -63,47 +66,6 @@ def shuffle_arrays(*data):
     # that overhead can be large.
     idx = np.random.permutation(len(data[0]))
     return [[x[i] for i in idx] for x in data]
-
-
-class AutoResetWrapper(gym.Wrapper):
-    """
-    A top-level wrapper that automatically resets an environment when done
-    and does some basic logging of episode rewards.
-    """
-    def __init__(self, env):
-        super().__init__(env)
-        self._state = None
-        self.num_episodes = -1
-
-    @property
-    def state(self):
-        if self._state is None:
-            self._state = self.reset()
-        return self._state
-
-    def _reset(self):
-        self.episode_length = 0
-        self.episode_reward = 0.0
-        self.num_episodes += 1
-        return self.env.reset()
-
-    def _step(self, action):
-        obs, reward, done, info = self.env.step(action)
-        self.episode_length += 1
-        self.episode_reward += reward
-        info['episode_reward'] = self.episode_reward
-        info['episode_length'] = self.episode_length
-        info['num_episodes'] = self.num_episodes
-        if done and info.get('game_over', True):
-            info['game_over'] = True
-            obs = self.reset()
-        elif done:
-            info['game_over'] = False
-            self.env.reset()
-        else:
-            info['game_over'] = False
-        self._state = obs
-        return obs, reward, done, info
 
 
 def relu_policy(p, t, p0, A, eps=1e-12):
@@ -162,7 +124,7 @@ class PPO(object):
     use_logit_target = False
     scale_target_by_advantages = False
 
-    video_freq = 100
+    video_freq = 20
 
     _params_loaded = False
 
@@ -189,10 +151,11 @@ class PPO(object):
             envs = [envs() for _ in range(self.num_env)]
         else:
             envs = list(envs)
-        envs[0] = gym.wrappers.Monitor(
-            envs[0], logdir, force=True,
-            video_callable=lambda t: t % self.video_freq == 0)
-        self.envs = [AutoResetWrapper(env) for env in envs]
+        self.envs = []
+        for env in envs:
+            env = VideoMonitor(env, logdir, self.next_video_name)
+            env = AutoResetWrapper(env)
+            self.envs.append(env)
 
         self.op = SimpleNamespace()
         self.num_steps = 0
@@ -334,7 +297,7 @@ class PPO(object):
                 mask.append(not done)
                 actions.append(action)
                 old_policy.append(policy[action])
-                if info['game_over']:
+                if done:
                     self.log_episode(info)
         self.recent_states += states
 
@@ -370,6 +333,11 @@ class PPO(object):
 
         return states, actions, old_policy, rewards, advantages, values
 
+    def next_video_name(self):
+        num_episodes = sum(env.num_episodes for env in self.envs)
+        if num_episodes % self.video_freq == 0:
+            return "video_{}-{:0.3g}".format(num_episodes, self.num_steps)
+
     def train_batch(self, steps_per_env=20, batch_size=32, epochs=3):
         op = self.op
         session = self.session
@@ -396,9 +364,14 @@ class PPO(object):
 
     def log_episode(self, info):
         summary = tf.Summary()
+        num_episodes = sum(env.num_episodes for env in self.envs)
         summary.value.add(tag='episode/reward', simple_value=info['episode_reward'])
         summary.value.add(tag='episode/length', simple_value=info['episode_length'])
+        summary.value.add(tag='episode/completed', simple_value=num_episodes)
         self.logger.add_summary(summary, self.num_steps)
+        logger.info(
+            "Episode %i: length=%i, reward=%0.1f",
+            num_episodes, info['episode_length'], info['episode_reward'])
 
     def train(self, total_steps, report_every=2000, save_every=2000, **kw):
         t = 0
@@ -418,3 +391,4 @@ class PPO(object):
                 self.logger.add_summary(summary, self.num_steps)
                 self.recent_states.clear()
                 self.training_stats.clear()
+        logger.info("FINISHED TRAINING")
