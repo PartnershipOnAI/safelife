@@ -41,7 +41,12 @@ class GameOfLifePPO(ppo.PPO):
         super().__init__(GameOfLifeEnv, **kwargs)
 
     def build_logits_and_values(self, img_in):
-        y = tf.cast(img_in, tf.float32)
+        if self.envs[0].unwrapped.output_channels:
+            y = tf.cast(img_in, tf.float32)
+        else:
+            # Make one-hot vectors of the binary input space.
+            bits = 1 << np.arange(15).astype(np.uint16)
+            y = tf.bitwise.bitwise_and(img_in[...,None], bits) / bits
         self.op.layer1 = y = tf.layers.conv2d(
             y, filters=32, kernel_size=5, strides=1,
             activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
@@ -54,7 +59,11 @@ class GameOfLifePPO(ppo.PPO):
             y, filters=64, kernel_size=3, strides=2,
             activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
         )
-        self.op.layer4 = y = tf.layers.dense(
+        self.op.layer4 = y = tf.layers.conv2d(
+            y, filters=64, kernel_size=3, strides=2,
+            activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
+        )
+        self.op.layer5 = y = tf.layers.dense(
             tf.layers.flatten(y), units=512,
             activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
         )
@@ -75,6 +84,7 @@ class GameOfLifePPO(ppo.PPO):
             tf.summary.scalar('layer2', dead_fraction(self.op.layer2))
             tf.summary.scalar('layer3', dead_fraction(self.op.layer3))
             tf.summary.scalar('layer4', dead_fraction(self.op.layer4))
+            tf.summary.scalar('layer5', dead_fraction(self.op.layer5))
 
         return logits, values
 

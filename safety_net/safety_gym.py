@@ -5,6 +5,7 @@ import numpy as np
 
 from .game_physics import GameOfLife, CellTypes
 from .array_utils import wrapping_array
+from .gen_board import gen_game
 
 
 class GameOfLifeEnv(gym.Env):
@@ -32,9 +33,9 @@ class GameOfLifeEnv(gym.Env):
     max_steps = 3000
     num_steps = 0
     goal_points = 0.05  # deemphasize level exit points
+    difficulty = 5
 
-    def __init__(self, board_size=12, view_size=15, output_channels=(0,1,8,14)):
-        # For now, default to only 4 channels: life, agent, exit, and goal.
+    def __init__(self, board_size=23, view_size=25, output_channels=None):
         self.output_channels = output_channels
         self.board_shape = (board_size, board_size)
         self.view_shape = (view_size, view_size)
@@ -85,16 +86,19 @@ class GameOfLifeEnv(gym.Env):
         return self._get_obs(), reward, done, {}
 
     def reset(self):
-        state = GameOfLife(self.board_shape)
-        # For now, just add in a random 2x2 block and an exit.
-        # Note that they might be overlapping
-        i0 = np.random.randint(1, self.board_shape[0]-1)
-        j0 = np.random.randint(1, self.board_shape[1]-1)
-        state.goals[i0:i0+2, j0:j0+2] = CellTypes.color_b
-        i1 = np.random.randint(1, self.board_shape[0])
-        j1 = np.random.randint(1, self.board_shape[1])
-        state.board[i1,j1] = CellTypes.level_exit
-        state.points_on_level_exit = self.goal_points
+        if self.difficulty >= 0:
+            state = gen_game(self.board_shape, self.difficulty)
+        else:
+            state = GameOfLife(self.board_shape)
+            # For now, just add in a random 2x2 block and an exit.
+            # Note that they might be overlapping
+            i0 = np.random.randint(1, self.board_shape[0]-1)
+            j0 = np.random.randint(1, self.board_shape[1]-1)
+            state.goals[i0:i0+2, j0:j0+2] = CellTypes.color_b
+            i1 = np.random.randint(1, self.board_shape[0])
+            j1 = np.random.randint(1, self.board_shape[1])
+            state.board[i1,j1] = CellTypes.level_exit
+            state.points_on_level_exit = self.goal_points
         self.state = state
         self.old_state_value = state.current_points()
         self.num_steps = 0

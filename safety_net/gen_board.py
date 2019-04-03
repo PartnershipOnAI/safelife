@@ -406,11 +406,11 @@ def gen_region(board, goals, mask, fences, difficulty):
         "build": 2,
         "destroy": dscale([2,2,10], [0,1,2]),
         "append": dscale([3,3,10], [0,1,2]),
-        "grow": dscale([4,4,10], [0,1,2]),
-        "prune": dscale([5,5,10], [0,1,2]),
+        "prune": dscale([4,4,10], [0,1,2]),
         "spawner": dscale([3,3,10], [0,2,4]),
         # "oscillator": dscale([3,3,10], [0,2,4]),
         "fountain": dscale([6,6,10], [0,1.5,3]),
+        "grow": dscale([7,7,10], [0,2,3]),
     }
     region_type = np.random.choice(
         list(region_type_weights.keys()),
