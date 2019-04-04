@@ -8,25 +8,62 @@ import os
 import sys
 import argparse
 import subprocess
+import shutil
 import logging.config
 
-safety_dir = os.path.abspath(os.path.join(__file__, '../'))
-sys.path.insert(1, safety_dir)  # ensure current directory is on the path
 
 parser = argparse.ArgumentParser()
-parser.add_argument('run_name', help="a name for the new run")
-parser.add_argument('--no_install', action="store_true")
+parser.add_argument('run_name', nargs='?', help="a name for the new run")
+parser.add_argument('--install', action="store_true")
+parser.add_argument('--shutdown', action="store_true", help=""
+    "Shut down the system when the job is complete.")
 args = parser.parse_args()
 
-data_dir = os.path.join(safety_dir, 'data')
-logdir = os.path.join(data_dir, args.run_name)
-logfile = os.path.join(logdir, 'training.log')
 
-os.makedirs(logdir, exist_ok=True)
-if not os.path.exists(logfile):
-    open(logfile, 'w').close()  # write an empty file
+# Setup the directories
+
+safety_dir = os.path.realpath(os.path.join(__file__, '../'))
+data_base_dir = os.path.join(safety_dir, 'data')
+active_run_file = os.path.join(safety_dir, 'data/active_run.txt')
+sys.path.insert(1, safety_dir)  # ensure current directory is on the path
+
+# If the run name isn't suppied, get it from 'active_run.txt'
+# This is basically just used to restart after crashes.
+if not args.run_name:
+    try:
+        with open(active_run_file) as f:
+            run_name = f.read().strip()
+        print("Setting `run_name` from `active_run.txt`")
+    except:
+        print("No run name was supplied. Aborting.")
+        exit()
+else:
+    run_name = args.run_name
+os.makedirs(data_base_dir, exist_ok=True)
+with open(active_run_file, 'w') as f:
+    f.write(run_name)
+
+data_dir = os.path.join(safety_dir, 'data', run_name)
+if os.path.exists(data_dir) and args.run_name is not None:
+    print("The directory '{}' already exists.\n"
+          "Would you like to overwrite the old data, append to it, or abort?")
+    response = None
+    while response not in ('overwrite', 'append', 'abort'):
+        response = input("(overwrite / append / abort) > ")
+    if response == 'overwrite':
+        shutil.rmtree(data_dir)
+    elif response == 'abort':
+        print("Aborting.")
+        exit()
+
+os.makedirs(data_dir, exist_ok=True)
+logfile = os.path.join(data_dir, 'training.log')
+
 
 # Setup logging
+
+if not os.path.exists(logfile):
+    open(logfile, 'w').close()  # write an empty file
 logging.config.dictConfig({
     'version': 1,
     'disable_existing_loggers': False,
@@ -70,20 +107,29 @@ logging.config.dictConfig({
 
 
 # Install dependencies if they aren't already there
-if not args.no_install:
+
+if args.install:
     reqs_file = os.path.join(safety_dir, "requirements.txt")
     subprocess.run("sudo apt-get install ffmpeg --yes".split())
     subprocess.run(["sudo", "pip3", "install", "-r", reqs_file])
 
 
 # Start tensorboard
-tb_proc = subprocess.Popen(["tensorboard", "--logdir", data_dir])
+
+tb_proc = subprocess.Popen(["tensorboard", "--logdir", data_base_dir])
 
 
 # Start training!
+
 try:
     from agents.agent_network import GameOfLifePPO
-    model = GameOfLifePPO(logdir=logdir)
+    model = GameOfLifePPO(logdir=data_dir)
     model.train(1e7)
 finally:
     tb_proc.kill()
+    if os.path.exists(active_run_file):
+        os.remove(active_run_file)
+    if args.shutdown:
+        # Shutdown in 3 minutes.
+        # Enough time to recover if it crashed at the start.
+        subprocess.run("sudo shutdown +3".split())

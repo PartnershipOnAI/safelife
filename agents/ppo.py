@@ -6,7 +6,6 @@ It should probably be replaced with OpenAI baselines.
 """
 
 import os
-import shutil
 import logging
 from types import SimpleNamespace
 from collections import deque, namedtuple
@@ -398,16 +397,15 @@ class PPO(object):
             "Episode %i: length=%i, reward=%0.1f",
             self.num_episodes, info['episode_length'], info['episode_reward'])
 
-    def train(self, total_steps, report_every=2000, save_every=2000, **kw):
-        t = 0
-        n_saves = 0
+    def train(self, total_steps, report_every=2000, save_every=5000, **kw):
+        last_save = self.num_steps - 1
         self.recent_states = deque(maxlen=report_every)
         self.training_stats = deque(maxlen=report_every)
-        while t < total_steps:
-            t += self.train_batch(**kw)
-            if (1+n_saves) * save_every <= t:
-                n_saves += 1
+        while self.num_steps < total_steps:
+            self.train_batch(**kw)
+            if last_save // save_every < self.num_steps // save_every:
                 self.save_checkpoint()
+                last_save = self.num_steps
             if len(self.recent_states) >= report_every:
                 summary = self.session.run(self.op.summary, feed_dict={
                     self.op.states: list(self.recent_states),

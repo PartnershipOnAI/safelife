@@ -2,7 +2,7 @@
 
 This is pretty straightforward. I want to keep a few different instances on hand and reuse them. The instances should be shutdown between use, but I should only need to do the whole creation and installation once.
 
-    gcloud compute instances create $INSTANCE --image-family tf-1-13-gpu --image-project ml-images --boot-disk-size=200GB  --accelerator type=nvidia-tesla-k80 --maintenance-policy TERMINATE --restart-on-failure
+    gcloud compute instances create $INSTANCE --image-family tf-1-13-gpu --image-project ml-images --boot-disk-size=200GB  --accelerator type=nvidia-tesla-k80 --maintenance-policy TERMINATE --restart-on-failure --metadata startup-script="~/current_run/start-job --shutdown"
 
 where `$INSTANCE` should be of the form `safety-gpu-n`. Note that we needed to request a quota increase to access Google's GPU (default quota is zero).
 
@@ -12,6 +12,7 @@ where `$INSTANCE` should be of the form `safety-gpu-n`. Note that we needed to r
 The instances will be devoted to this project, so I'm not going to worry about setting up virtual environments to prevent dependency conflicts. The file structure will look like this:
 
     ~/2019-01-01-RUN_NAME/  [copy of the safety-benchmark folder]
+    ~/2019-01-01-RUN_NAME/data/active_run.txt  [to recover from crashes]
     ~/2019-01-01-RUN_NAME/data/RUN_NAME/  [the logdir for each run]
     ~/current_run  [link to whatever is currently running]
 

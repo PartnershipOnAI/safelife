@@ -47,6 +47,7 @@ class GameOfLifePPO(ppo.PPO):
             # Make one-hot vectors of the binary input space.
             bits = 1 << np.arange(15).astype(np.uint16)
             y = tf.bitwise.bitwise_and(img_in[...,None], bits) / bits
+        self.op.layer0 = y
         self.op.layer1 = y = tf.layers.conv2d(
             y, filters=32, kernel_size=5, strides=1,
             activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),

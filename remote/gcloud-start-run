@@ -24,10 +24,12 @@ result = subprocess.run([
 if result.returncode != 0:
     exit(result.returncode)
 
-# Start the job
+# Start the job. Use tmux to prevent it from dying on hangup.
+# Note that if this session is already running, tmux should prevent us from
+# running it again.
 result = subprocess.run([
     ssh_cmd, args.instance_name, '-L', args.port + ':localhost:6006',
-    f"rm ~/current_run; ln -s ~/{full_name} ~/current_run; "
-    f"~/current_run/start-job {args.run_name}; "
-    "sudo shutdown +10"  # shutdown in 10 minutes; gives time to recover from error
+    f"ln -nsf ~/{full_name} ~/current_run; "
+    f"tmux new-session -s {args.run_name} "
+    f"~/{full_name}/start-job {args.run_name} --install --shutdown"
 ])

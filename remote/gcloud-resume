@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+
+import os
+import argparse
+import subprocess
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('instance_name', help="name of the gcloud instance")
+parser.add_argument('run_name', help="a name for the new run")
+parser.add_argument('--port', default='6006')
+args = parser.parse_args()
+
+ssh_cmd = os.path.abspath(os.path.join(__file__, '../gcloud-ssh'))
+subprocess.run([
+    ssh_cmd, args.instance_name, '-L', args.port + ':localhost:6006',
+    f"tmux attach -t {args.run_name} "
+])
