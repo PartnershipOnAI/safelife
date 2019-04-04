@@ -8,6 +8,7 @@ import os
 import sys
 import argparse
 import subprocess
+import logging.config
 
 safety_dir = os.path.abspath(os.path.join(__file__, '../'))
 sys.path.insert(1, safety_dir)  # ensure current directory is on the path
@@ -17,26 +18,72 @@ parser.add_argument('run_name', help="a name for the new run")
 parser.add_argument('--no_install', action="store_true")
 args = parser.parse_args()
 
+data_dir = os.path.join(safety_dir, 'data')
+logdir = os.path.join(data_dir, args.run_name)
+logfile = os.path.join(logdir, 'training.log')
+
+os.makedirs(logdir, exist_ok=True)
+if not os.path.exists(logfile):
+    open(logfile, 'w').close()  # write an empty file
+
+# Setup logging
+logging.config.dictConfig({
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'simple': {
+            'format': '{levelname:8s} {message}',
+            'style': '{',
+        },
+        'dated': {
+            'format': '{asctime} {levelname} ({filename}:{lineno}) {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'level': 'INFO',
+            'stream': 'ext://sys.stdout',
+            'formatter': 'simple',
+        },
+        'logfile': {
+            'class': 'logging.FileHandler',
+            'level': 'INFO',
+            'formatter': 'dated',
+            'filename': logfile,
+        }
+    },
+    'loggers': {
+        'agents': {
+            'level': 'INFO',
+            'propagate': False,
+            'handlers': ['console', 'logfile'],
+        }
+    },
+    'root': {
+        'level': 'WARNING',
+        'handlers': ['console', 'logfile'],
+    }
+})
+
+
 # Install dependencies if they aren't already there
 if not args.no_install:
     reqs_file = os.path.join(safety_dir, "requirements.txt")
     subprocess.run("sudo apt-get install ffmpeg --yes".split())
     subprocess.run(["sudo", "pip3", "install", "-r", reqs_file])
 
+
 # Start tensorboard
-data_dir = os.path.join(safety_dir, 'data')
 tb_proc = subprocess.Popen(["tensorboard", "--logdir", data_dir])
 
+
 # Start training!
-def train(logdir):
+try:
     from agents.agent_network import GameOfLifePPO
-    if os.path.exists(logdir):
-        print("Error! Run data already exists. Aborting.")
-        return
     model = GameOfLifePPO(logdir=logdir)
     model.train(1e7)
-
-try:
-    train(logdir=os.path.join(data_dir, args.run_name))
 finally:
     tb_proc.kill()

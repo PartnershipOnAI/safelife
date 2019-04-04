@@ -136,29 +136,16 @@ class PPO(object):
             else:
                 raise ValueError("Unrecognized parameter: '%s'" % (key,))
 
-        if os.path.exists(logdir):
-            response = ""
-            while response.lower() not in ('y', 'n', 'yes', 'no'):
-                print("logdir '%s' already exists." % logdir)
-                try:
-                    response = input("Delete it? (yes/no) ")
-                except EOFError:
-                    response = 'no'
-            if response.lower().startswith('y'):
-                shutil.rmtree(logdir)
-
         if callable(envs):
             envs = [envs() for _ in range(self.num_env)]
         else:
             envs = list(envs)
-        self.envs = []
-        for env in envs:
-            env = VideoMonitor(env, logdir, self.next_video_name)
-            env = AutoResetWrapper(env)
-            self.envs.append(env)
+        envs[0] = VideoMonitor(envs[0], logdir, self.next_video_name)
+        self.envs = [AutoResetWrapper(env) for env in envs]
 
         self.op = SimpleNamespace()
         self.num_steps = 0
+        self.num_episodes = 0
         self.build_graph()
         self.session = tf.Session()
         self.session.run(tf.global_variables_initializer())
@@ -167,6 +154,43 @@ class PPO(object):
         self.save_path = os.path.join(logdir, 'model')
         self.recent_states = deque(maxlen=1)
         self.training_stats = deque(maxlen=1)
+        self.restore_checkpoint(logdir)
+
+    def save_checkpoint(self):
+        logger.info("Saving new checkpoint. %i episodes, %i steps.",
+                    self.num_episodes, self.num_steps)
+        self.op.num_steps.load(self.num_steps, self.session)
+        self.op.num_episodes.load(self.num_episodes, self.session)
+        self.saver.save(self.session, self.save_path, self.num_steps)
+
+    def restore_checkpoint(self, logdir):
+        """
+        Resume training from the specified directory.
+
+        If the directory is empty, don't load.
+        """
+        # Annoyingly, tf.train.latest_checkpoint fails if the directory
+        # has changed. Instead, load up from the current directory so that
+        # we're able to rerun training locally that was started remotely.
+        import re
+        checkpoint_path = os.path.join(logdir, 'checkpoint')
+        if not os.path.exists(checkpoint_path):
+            return
+        with open(checkpoint_path) as checkpoint_file:
+            line = checkpoint_file.readline()
+        match = re.match(r'.*"(.+)"', line)
+        if not match:
+            return
+        last_checkpoint = os.path.split(match.group(1))[1]
+        last_checkpoint = os.path.join(logdir, last_checkpoint)
+        try:
+            self.saver.restore(self.session, last_checkpoint)
+        except ValueError:
+            return
+        self.num_steps, self.num_episodes = self.session.run(
+            [self.op.num_steps, self.op.num_episodes])
+        logger.info("Restoring old checkpoint. %i episodes, %i steps.",
+                    self.num_episodes, self.num_steps)
 
     def build_graph(self):
         op = self.op
@@ -180,6 +204,8 @@ class PPO(object):
         op.old_value = tf.placeholder(tf.float32, [None], name="old_value")
         op.learning_rate = tf.constant(self.learning_rate, name="learning_rate")
         op.eps_clip = tf.constant(self.eps_clip, name="eps_clip")
+        op.num_steps = tf.get_variable('num_steps', initializer=tf.constant(0))
+        op.num_episodes = tf.get_variable('num_episodes', initializer=tf.constant(0))
 
         with tf.name_scope("policy"):
             op.logits, op.v = self.build_logits_and_values(op.states)
@@ -334,9 +360,8 @@ class PPO(object):
         return states, actions, old_policy, rewards, advantages, values
 
     def next_video_name(self):
-        num_episodes = sum(env.num_episodes for env in self.envs)
-        if num_episodes % self.video_freq == 0:
-            return "video_{}-{:0.3g}".format(num_episodes, self.num_steps)
+        if self.num_episodes % self.video_freq == 0:
+            return "video_{}-{:0.3g}".format(self.num_episodes, self.num_steps)
 
     def train_batch(self, steps_per_env=20, batch_size=32, epochs=3):
         op = self.op
@@ -363,15 +388,15 @@ class PPO(object):
         return steps_per_env * num_env
 
     def log_episode(self, info):
+        self.num_episodes += 1
         summary = tf.Summary()
-        num_episodes = sum(env.num_episodes for env in self.envs)
         summary.value.add(tag='episode/reward', simple_value=info['episode_reward'])
         summary.value.add(tag='episode/length', simple_value=info['episode_length'])
-        summary.value.add(tag='episode/completed', simple_value=num_episodes)
+        summary.value.add(tag='episode/completed', simple_value=self.num_episodes)
         self.logger.add_summary(summary, self.num_steps)
         logger.info(
             "Episode %i: length=%i, reward=%0.1f",
-            num_episodes, info['episode_length'], info['episode_reward'])
+            self.num_episodes, info['episode_length'], info['episode_reward'])
 
     def train(self, total_steps, report_every=2000, save_every=2000, **kw):
         t = 0
@@ -382,7 +407,7 @@ class PPO(object):
             t += self.train_batch(**kw)
             if (1+n_saves) * save_every <= t:
                 n_saves += 1
-                self.saver.save(self.session, self.save_path, self.num_steps)
+                self.save_checkpoint()
             if len(self.recent_states) >= report_every:
                 summary = self.session.run(self.op.summary, feed_dict={
                     self.op.states: list(self.recent_states),

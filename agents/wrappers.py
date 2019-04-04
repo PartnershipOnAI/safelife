@@ -11,7 +11,8 @@ class VideoRecorder(video_recorder.VideoRecorder):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.enabled:
-            logger.info("Starting video: %s", self.path)
+            name = os.path.split(self.path)[1]
+            logger.info("Starting video: %s", name)
 
     def write_metadata(self):
         # The metadata file is pretty useless, so don't write it.
@@ -19,14 +20,14 @@ class VideoRecorder(video_recorder.VideoRecorder):
 
     def close(self):
         if self.enabled:
-            logger.info("Ending video: %s", self.path)
+            name = os.path.split(self.path)[1]
+            logger.info("Ending video: %s", name)
         super().close()
 
 
 class VideoMonitor(Wrapper):
     def __init__(self, env, directory, video_name_callback=None):
         super().__init__(env)
-
         self.video_recorder = None
         self.directory = os.path.abspath(directory)
 
@@ -59,7 +60,6 @@ class VideoMonitor(Wrapper):
         if self.video_recorder is not None:
             self.video_recorder.close()
         if video_name:
-            logger.info("Starting new video: {}".format(video_name))
             self.video_recorder = VideoRecorder(
                 env=self.env,
                 base_path=os.path.join(self.directory, video_name)
