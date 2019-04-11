@@ -570,7 +570,7 @@ class GameWithGoals(GameState):
     # White: all 0 except w (+1)
     reward_table = np.array([
         # k   r   g   y   b   m   c   w
-        [+0, -1, +0, +0, +0, +0, +0, +0],  # black / no goal
+        [+0,-.5, +0, +0, +0, +0, +0, +0],  # black / no goal
         [-1, +1, -1, +0, -1, +0, -1, -1],  # red goal
         [+0, -1, +2, +0, +0, +0, +1, +0],  # green goal
         [-1, +0, +0, +1, +0, +0, +0, +0],  # yellow goal

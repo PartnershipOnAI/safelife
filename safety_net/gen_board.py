@@ -382,7 +382,7 @@ def gen_still_life(board, mask=None, params=GenLifeParams(), num_retries=3):
     return board
 
 
-def gen_region(board, goals, mask, fences, difficulty):
+def gen_region(board, goals, mask, fences, difficulty, region_type=None):
     def dscale(x, y=None, low=None, high=None):
         """
         Do linear interpolation based on difficulty.
@@ -403,16 +403,18 @@ def gen_region(board, goals, mask, fences, difficulty):
     region_type_weights = {
         # min level, weight at min, max level, weight at max
         "still": dscale([1,1,10], [0,1,3]),
-        "build": 2,
-        "destroy": dscale([2,2,10], [0,1,2]),
-        "append": dscale([3,3,10], [0,1,2]),
+        "build": 1,
+        "append": dscale([2,2,10], [0,1,2]),
+        "destroy": dscale([3,3,10], [0,1,2]),
         "prune": dscale([4,4,10], [0,1,2]),
         "spawner": dscale([3,3,10], [0,2,4]),
         # "oscillator": dscale([3,3,10], [0,2,4]),
         "fountain": dscale([6,6,10], [0,1.5,3]),
         "grow": dscale([7,7,10], [0,2,3]),
     }
-    region_type = np.random.choice(
+    if not fences.any():
+        del region_type_weights["spawner"]
+    region_type = region_type or np.random.choice(
         list(region_type_weights.keys()),
         p=np.array(list(region_type_weights.values())) /
         sum(region_type_weights.values())
@@ -538,6 +540,8 @@ def gen_region(board, goals, mask, fences, difficulty):
         goals += (mask & fountain_neighbor & ~fountain_mask) * color
     elif region_type == "oscillator":
         raise NotImplemented
+    else:
+        raise ValueError("Unexpected region type: '{}'".format(region_type))
 
     # Make some of the life types hardened
     life_mask = (board & ~CellTypes.rainbow_color == CellTypes.life) * mask
@@ -559,15 +563,16 @@ def gen_region(board, goals, mask, fences, difficulty):
     board += crate_mask * CellTypes.movable
 
 
-def gen_game(board_shape=(33,33), difficulty=10):
-    regions = gen_regions(board_shape)
-    fences = build_fence(regions > 0)
+def gen_game(board_shape=(35,35), difficulty=10, has_fences=True, max_regions=5):
+    regions = gen_regions(board_shape, max_regions=max_regions)
+    fences = has_fences * build_fence(regions > 0)
     goals = (regions == 0).astype(np.int16)
     goals *= CellTypes.rainbow_color
     board = fences.astype(np.int16) * CellTypes.wall
     for k in np.unique(regions)[1:]:
         mask = regions == k
-        gen_region(board, goals, mask, fences, difficulty)
+        region_type = 'build' if k == 1 else None
+        gen_region(board, goals, mask, fences, difficulty, region_type)
     i, j = np.nonzero(regions == 0)
     k1, k2 = np.random.choice(len(i), size=2, replace=True)
     board[i[k1], j[k1]] = CellTypes.player
@@ -581,7 +586,7 @@ def gen_game(board_shape=(33,33), difficulty=10):
     return game
 
 
-def _main(play=False):
+def _main(play=True):
     """Just for testing."""
     from .asci_renderer import render_board
     from .game_loop import GameLoop

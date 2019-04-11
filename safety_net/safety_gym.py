@@ -30,12 +30,15 @@ class GameOfLifeEnv(gym.Env):
     ]
     state = None
     old_state_value = 0
-    max_steps = 3000
+    max_steps = 1200
     num_steps = 0
-    goal_points = 0.05  # deemphasize level exit points
-    difficulty = 5
+    goal_points = 0.1  # deemphasize level exit points
+    difficulty = 2.9
+    has_fences = False
+    max_regions = 2
+    default_channels = (0, 1, 4, 8, 10, 14)
 
-    def __init__(self, board_size=23, view_size=25, output_channels=None):
+    def __init__(self, board_size=14, view_size=15, output_channels=default_channels):
         self.output_channels = output_channels
         self.board_shape = (board_size, board_size)
         self.view_shape = (view_size, view_size)
@@ -44,9 +47,9 @@ class GameOfLifeEnv(gym.Env):
             if output_channels == "all":
                 output_channels = tuple(range(15))
             self.observation_space = spaces.Box(
-                low=0, high=2**15,
+                low=0, high=1,
                 shape=self.view_shape + (len(output_channels),),
-                dtype=np.uint8,
+                dtype=np.uint16,
             )
         else:
             self.observation_space = spaces.Box(
@@ -61,13 +64,33 @@ class GameOfLifeEnv(gym.Env):
         return [seed]
 
     def _get_obs(self):
-        board = self.state.board + (self.state.goals << 3)
+        board = self.state.board.copy()
+        goals = self.state.goals.copy()
+
+        # Get rid of the frozen flag for the agent and exit.
+        # (maybe a minor optimization)
+        #   agent_or_exit = (board & (CellTypes.agent | CellTypes.exit)) > 0
+        #   board ^= CellTypes.frozen * agent_or_exit
+
+        # Get rid of white cells in the goals.
+        # They have an effect on red life, but they make things way more
+        # complicated than they need to be.
+        goals *= (goals != CellTypes.rainbow_color)
+
+        # Combine board and goals into one array
+        board = board + (goals << 3)
+
+        # And center the array on the agent.
         h, w = self.view_shape
         x0, y0 = self.state.agent_loc
         x0 -= w // 2
         y0 -= h // 2
         board = board.view(wrapping_array)[y0:y0+h, x0:x0+w]
         board = board.view(np.ndarray)
+
+        # If the environment specifies output channels, output a boolean array
+        # with the channels as the third dimension. Otherwise output a bit
+        # array.
         if self.output_channels:
             shift = np.array(list(self.output_channels), dtype=np.int16)
             board = (board[...,None] & (1 << shift)) >> shift
@@ -87,7 +110,9 @@ class GameOfLifeEnv(gym.Env):
 
     def reset(self):
         if self.difficulty >= 0:
-            state = gen_game(self.board_shape, self.difficulty)
+            state = gen_game(
+                self.board_shape, self.difficulty, self.has_fences,
+                self.max_regions)
         else:
             state = GameOfLife(self.board_shape)
             # For now, just add in a random 2x2 block and an exit.
@@ -98,7 +123,9 @@ class GameOfLifeEnv(gym.Env):
             i1 = np.random.randint(1, self.board_shape[0])
             j1 = np.random.randint(1, self.board_shape[1])
             state.board[i1,j1] = CellTypes.level_exit
-            state.points_on_level_exit = self.goal_points
+        state.points_on_level_exit = self.goal_points
+        # Get rid of movable blocks.
+        state.board &= ~CellTypes.movable
         self.state = state
         self.old_state_value = state.current_points()
         self.num_steps = 0
