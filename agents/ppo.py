@@ -114,6 +114,7 @@ class PPO(object):
     lmda = 0.95  # generalized advantage estimation parameter
     learning_rate = 1e-4
     entropy_reg = 0.01
+    entropy_clip = 1.0  # don't start regularization until it drops below this
     vf_coef = 0.5
     max_gradient_norm = 5.0
     eps_clip = 0.2  # PPO clipping for both value and policy losses
@@ -232,16 +233,31 @@ class PPO(object):
             op.entropy = tf.reduce_sum(
                 -op.policy * tf.log(op.policy + 1e-12), axis=-1)
             mean_entropy = tf.reduce_mean(op.entropy)
-        with tf.name_scope("value_loss"):
-            v_clip = op.old_value + tf.clip_by_value(
-                op.v - op.old_value, -op.eps_clip, op.eps_clip)
-            value_loss = tf.maximum(
-                tf.square(op.v - op.rewards), tf.square(v_clip - op.rewards))
             pseudo_entropy = tf.stop_gradient(
                 tf.reduce_sum(op.policy*(1-op.policy), axis=-1))
             avg_pseudo_entropy = tf.reduce_mean(pseudo_entropy)
             smoothed_pseudo_entropy = tf.get_variable(
                 'smoothed_pseudo_entropy', initializer=tf.constant(1.0))
+            # The first term in the entropy loss encourages higher entropy
+            # in the policy, encouraging exploration.
+            # Note that this uses the pseudo-entropy rather than the
+            # conventional entropy. This is because the derivative of the
+            # normal entropy diverges at zero.
+            entropy_loss = -self.entropy_reg * tf.minimum(avg_pseudo_entropy, self.entropy_clip)
+            # The second term in the entropy loss is just used to adjust the
+            # smoothed pseudo entropy.
+            entropy_loss += 0.5 * tf.square(avg_pseudo_entropy - smoothed_pseudo_entropy)
+        with tf.name_scope("value_loss"):
+            v_clip = op.old_value + tf.clip_by_value(
+                op.v - op.old_value, -op.eps_clip, op.eps_clip)
+            value_loss = tf.maximum(
+                tf.square(op.v - op.rewards), tf.square(v_clip - op.rewards))
+            # Rescale the value function with entropy.
+            # The gradient of the policy function becomes very small when
+            # the entropy is very low, essentially because it means the softmax
+            # of the policy logits is being saturated. By rescaling the value
+            # loss we attempt to make it have the same relative importance
+            # as the policy loss. Not clear how necessary this is.
             if self.value_grad_rescaling == 'per_state':
                 value_loss *= pseudo_entropy
             elif self.value_grad_rescaling == 'per_batch':
@@ -252,13 +268,9 @@ class PPO(object):
                 raise ValueError("Unrecognized value reweighting type: '%s'" % (
                     self.value_grad_rescaling,))
             value_loss = 0.5 * tf.reduce_mean(value_loss)
-            # Add another term to the loss which is just used to adjust
-            # the smoothed pseudo-entropy.
-            value_loss += 0.5 * tf.square(avg_pseudo_entropy - smoothed_pseudo_entropy)
 
         with tf.name_scope("trainer"):
-            total_loss = policy_loss + value_loss * self.vf_coef
-            total_loss -= self.entropy_reg * mean_entropy
+            total_loss = policy_loss + value_loss * self.vf_coef + entropy_loss
             optimizer = self.build_optimizer(op.learning_rate)
             grads, variables = zip(*optimizer.compute_gradients(total_loss))
             op.grads = grads
