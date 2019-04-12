@@ -67,43 +67,12 @@ def shuffle_arrays(*data):
     return [[x[i] for i in idx] for x in data]
 
 
-def relu_policy(p, t, p0, A, eps=1e-12):
-    y = A * (t - p) / (p0 + eps)
-    return tf.maximum(y, 0)
+def eps_relu(x, eps):
+    return tf.maximum(x, -eps)
 
 
-def abs_policy(p, t, p0, A, eps=1e-12):
-    y = A * (t - p) / (p0 + eps)
-    return tf.abs(y)
-
-
-def quad_policy(p, t, p0, A, eps=1e-12):
-    # Note that this policy blows up when p0 = t.
-    # Probably not a good choice for that reason.
-    y = 0.5 * tf.square(p-t) / (p0 * tf.abs(p0-t) + eps)
-    return tf.abs(A) * y
-
-
-def huber_policy(p, t, p0, A, eps=1e-12):
-    x1 = tf.abs(p - t)
-    x0 = tf.abs(p0 - t)
-    y = tf.where(
-        x1 < x0,
-        0.5 * tf.square(x1) / (x0 + eps),
-        x1 - 0.5 * x0
-    )
-    return tf.abs(A) * y / (p0 + eps)
-
-
-def half_huber_policy(p, t, p0, A, eps=1e-12):
-    x1 = tf.maximum(tf.sign(A)*(t-p), 0)
-    x0 = tf.abs(p0 - t)
-    y = tf.where(
-        x1 < x0,
-        0.5 * tf.square(x1) / (x0 + eps),
-        x1 - 0.5 * x0
-    )
-    return tf.abs(A) * y / (p0 + eps)
+def eps_elu(x, eps):
+    return eps * tf.nn.elu(x / eps)
 
 
 class PPO(object):
@@ -120,9 +89,8 @@ class PPO(object):
     eps_clip = 0.2  # PPO clipping for both value and policy losses
     reward_clip = 0.0
     value_grad_rescaling = 'smooth'  # one of [False, 'smooth', 'per_batch', 'per_state']
-    policy_loss_type = 'relu'  # or 'abs' or 'quad'
-    use_logit_target = False
-    scale_target_by_advantages = False
+    policy_rectifier = 'relu'  # or 'elu' or ...more to come
+    scale_prob_clipping = False
 
     video_freq = 20
 
@@ -214,20 +182,19 @@ class PPO(object):
         with tf.name_scope("policy_loss"):
             hot_actions = tf.one_hot(op.actions, num_actions, dtype=tf.float32)
             a_policy = tf.reduce_mean(op.policy * hot_actions, axis=-1)
-            if self.scale_target_by_advantages:
-                policy_delta = op.advantages * op.eps_clip
+            prob_diff = tf.sign(op.advantages) * (1 - a_policy / op.old_policy)
+            if self.scale_prob_clipping:
+                # Scaling the clipping by 1 - old_policy ensures that
+                # the clipping is active even when the new policy is 1.
+                # This is non-standard.
+                eps = op.eps_clip * (1 - op.old_policy)
             else:
-                policy_delta = tf.sign(op.advantages) * op.eps_clip
-            target_policy = op.old_policy * (1 + policy_delta)
-            if self.use_logit_target:
-                target_policy /= 1 + policy_delta * (2*op.old_policy - 1)
-            policy_loss = {
-                'relu': relu_policy,
-                'abs': abs_policy,
-                'quad': quad_policy,
-                'huber': huber_policy,
-                'half_huber': half_huber_policy,
-            }[self.policy_loss_type](a_policy, target_policy, op.old_policy, op.advantages)
+                eps = op.eps_clip
+            rectifier = {
+                'relu': eps_relu,
+                'elu': eps_elu,
+            }[self.policy_rectifier]
+            policy_loss = op.advantages * rectifier(prob_diff, eps)
             policy_loss = tf.reduce_mean(policy_loss)
         with tf.name_scope("entropy"):
             op.entropy = tf.reduce_sum(
