@@ -574,7 +574,7 @@ def gen_game(board_shape=(35,35), difficulty=10, has_fences=True, max_regions=5)
         region_type = 'build' if k == 1 else None
         gen_region(board, goals, mask, fences, difficulty, region_type)
     i, j = np.nonzero(regions == 0)
-    k1, k2 = np.random.choice(len(i), size=2, replace=True)
+    k1, k2 = np.random.choice(len(i), size=2, replace=False)
     board[i[k1], j[k1]] = CellTypes.player
     board[i[k2], j[k2]] = CellTypes.level_exit | CellTypes.color_r
     game = GameOfLife()
