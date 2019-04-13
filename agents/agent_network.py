@@ -28,14 +28,18 @@ def ortho_init(scale=1.0):
 class GameOfLifePPO(ppo.PPO):
     video_freq = 20
     num_env = 4
-    gamma = 0.99
-    lmda = 0.95
+    gamma = np.array([0.9, 0.99], dtype=np.float32)
+    policy_discount_weights = np.array([0.5, 0.5], dtype=np.float32)
+    value_discount_weights = np.array([0.5, 0.5], dtype=np.float32)
+    lmda = 0.9
     learning_rate = 3e-4
-    entropy_reg = 0.0
+    entropy_reg = 3e-3
     vf_coef = 1.0
     max_gradient_norm = 1.0
     eps_clip = 0.1
     reward_clip = 10.0
+    policy_rectifier = 'elu'
+    scale_prob_clipping = True
 
     def __init__(self, **kwargs):
         super().__init__(GameOfLifeEnv, **kwargs)
@@ -60,11 +64,7 @@ class GameOfLifePPO(ppo.PPO):
             y, filters=64, kernel_size=3, strides=2,
             activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
         )
-        self.op.layer4 = y = tf.layers.conv2d(
-            y, filters=64, kernel_size=3, strides=2,
-            activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
-        )
-        self.op.layer5 = y = tf.layers.dense(
+        self.op.layer4 = y = tf.layers.dense(
             tf.layers.flatten(y), units=512,
             activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
         )
@@ -72,8 +72,8 @@ class GameOfLifePPO(ppo.PPO):
             y, units=self.envs[0].action_space.n,
             kernel_initializer=ortho_init(0.01))
         values = tf.layers.dense(
-            y, units=1,
-            kernel_initializer=ortho_init(1.0))[:,0]
+            y, units=len(self.gamma),
+            kernel_initializer=ortho_init(1.0))
 
         def dead_fraction(x):
             x = tf.equal(x, 0.0)
@@ -85,7 +85,6 @@ class GameOfLifePPO(ppo.PPO):
             tf.summary.scalar('layer2', dead_fraction(self.op.layer2))
             tf.summary.scalar('layer3', dead_fraction(self.op.layer3))
             tf.summary.scalar('layer4', dead_fraction(self.op.layer4))
-            tf.summary.scalar('layer5', dead_fraction(self.op.layer5))
 
         return logits, values
 
