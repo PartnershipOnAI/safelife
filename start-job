@@ -9,6 +9,7 @@ import sys
 import argparse
 import subprocess
 import shutil
+import logging
 import logging.config
 
 
@@ -124,7 +125,9 @@ tb_proc = subprocess.Popen(["tensorboard", "--logdir", data_base_dir])
 try:
     from agents.agent_network import GameOfLifePPO
     model = GameOfLifePPO(logdir=data_dir)
-    model.train(1e7)
+    model.train(5e6)
+except Exception:
+    logging.exception("Ran into an unexpected error. Aborting training.")
 finally:
     tb_proc.kill()
     if os.path.exists(active_run_file):
