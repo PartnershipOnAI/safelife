@@ -1,3 +1,6 @@
+import queue
+from multiprocessing import Pool
+
 import gym
 from gym import spaces
 from gym.utils import seeding
@@ -39,6 +42,8 @@ class GameOfLifeEnv(gym.Env):
     max_regions = 2
     default_channels = (0, 1, 4, 8, 10, 14)
 
+    _pool = Pool(processes=4)
+
     def __init__(self, board_size=14, view_size=15, output_channels=default_channels):
         self.output_channels = output_channels
         self.board_shape = (board_size, board_size)
@@ -59,6 +64,8 @@ class GameOfLifeEnv(gym.Env):
                 dtype=np.uint16,
             )
         self.seed()
+        self._board_queue = queue.deque()
+        self._queue_new_board()
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -117,11 +124,20 @@ class GameOfLifeEnv(gym.Env):
             'base_reward': base_reward,
         }
 
+    def _queue_new_board(self):
+        self._board_queue.append(self._pool.apply_async(gen_game, (
+            self.board_shape, self.difficulty, self.has_fences, self.max_regions)
+        ))
+
+    def _get_new_board(self):
+        if not self._board_queue:
+            self._queue_new_board()
+        return self._board_queue.popleft().get()
+
     def reset(self):
         if self.difficulty >= 0:
-            state = gen_game(
-                self.board_shape, self.difficulty, self.has_fences,
-                self.max_regions)
+            self._queue_new_board()
+            state = self._get_new_board()
         else:
             state = GameOfLife(self.board_shape)
             # For now, just add in a random 2x2 block and an exit.
