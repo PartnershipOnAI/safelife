@@ -98,7 +98,7 @@ class AutoResetWrapper(Wrapper):
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
         self.episode_length += 1
-        self.episode_reward += reward
+        self.episode_reward += info.get('base_reward', reward)
         info['episode_reward'] = self.episode_reward
         info['episode_length'] = self.episode_length
         info['num_episodes'] = self.num_episodes

@@ -32,9 +32,10 @@ class GameOfLifeEnv(gym.Env):
     old_state_value = 0
     max_steps = 1200
     num_steps = 0
-    goal_points = 0.1  # deemphasize level exit points
+    goal_points = 0.1
+    no_movement_penalty = 0.02
     difficulty = 2.9
-    has_fences = False
+    has_fences = True
     max_regions = 2
     default_channels = (0, 1, 4, 8, 10, 14)
 
@@ -98,15 +99,23 @@ class GameOfLifeEnv(gym.Env):
 
     def step(self, action):
         assert self.state is not None, "State not initializeddef."
+        old_position = self.state.agent_loc
         self.state.advance_board()
         action_name = self.action_names[action]
-        reward = self.state.execute_action(action_name)
+        base_reward = self.state.execute_action(action_name)
         new_state_value = self.state.current_points()
-        reward += new_state_value - self.old_state_value
+        base_reward += new_state_value - self.old_state_value
         self.old_state_value = new_state_value
         self.num_steps += 1
-        done = self.state.game_over or self.num_steps >= self.max_steps
-        return self._get_obs(), reward, done, {}
+        times_up = self.num_steps >= self.max_steps
+        done = self.state.game_over or times_up
+        standing_still = old_position == self.state.agent_loc
+        reward = base_reward - standing_still * self.no_movement_penalty
+        return self._get_obs(), reward, done, {
+            'did_move': not standing_still,
+            'times_up': times_up,
+            'base_reward': base_reward,
+        }
 
     def reset(self):
         if self.difficulty >= 0:
