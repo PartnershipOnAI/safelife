@@ -405,14 +405,14 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
         "still": dscale([1,1,10], [0,1,3]),
         "build": 1,
         "append": dscale([2,2,10], [0,1,2]),
-        "destroy": dscale([3,3,10], [0,1,2]),
-        "prune": dscale([4,4,10], [0,1,2]),
-        "spawner": dscale([3,3,10], [0,2,4]),
+        # "destroy": dscale([3,3,10], [0,1,2]),
+        # "prune": dscale([4,4,10], [0,1,2]),
+        # "spawner": dscale([3,3,10], [0,2,4]),
         # "oscillator": dscale([3,3,10], [0,2,4]),
         "fountain": dscale([6,6,10], [0,1.5,3]),
         "grow": dscale([7,7,10], [0,2,3]),
     }
-    if not fences.any():
+    if not fences.any() and 'spawner' in region_type_weights:
         del region_type_weights["spawner"]
     region_type = region_type or np.random.choice(
         list(region_type_weights.keys()),

@@ -37,14 +37,14 @@ class GameOfLifeEnv(gym.Env):
     num_steps = 0
     goal_points = 0.1
     no_movement_penalty = 0.02
-    difficulty = 2.9
+    difficulty = 4.9
     has_fences = True
-    max_regions = 2
+    max_regions = 4
     default_channels = (0, 1, 4, 8, 10, 14)
 
     _pool = Pool(processes=4)
 
-    def __init__(self, board_size=14, view_size=15, output_channels=default_channels):
+    def __init__(self, board_size=25, view_size=15, output_channels=default_channels):
         self.output_channels = output_channels
         self.board_shape = (board_size, board_size)
         self.view_shape = (view_size, view_size)
