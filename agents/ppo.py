@@ -8,7 +8,7 @@ It should probably be replaced with OpenAI baselines.
 import os
 import logging
 from types import SimpleNamespace
-from collections import deque, namedtuple
+from collections import namedtuple
 from functools import wraps
 
 import numpy as np
@@ -134,6 +134,7 @@ class PPO(object):
     policy_rectifier = 'relu'  # or 'elu' or ...more to come
 
     video_freq = 20
+    last_video = -1
 
     _params_loaded = False
 
@@ -161,8 +162,6 @@ class PPO(object):
         self.logger = tf.summary.FileWriter(logdir, self.session.graph)
         self.saver = tf.train.Saver(**saver_args)
         self.save_path = os.path.join(logdir, 'model')
-        self.recent_states = deque(maxlen=1)
-        self.training_stats = deque(maxlen=1)
         self.restore_checkpoint(logdir)
 
     def save_checkpoint(self):
@@ -205,22 +204,24 @@ class PPO(object):
         op = self.op
         input_space = self.envs[0].observation_space
         n_gamma = len(self.gamma)
-        op.states = tf.placeholder(
-            input_space.dtype, [None] + list(input_space.shape), name="state")
-        op.actions = tf.placeholder(tf.int32, [None], name="actions")
-        op.old_policy = tf.placeholder(tf.float32, [None], name="old_policy")
-        op.returns = tf.placeholder(tf.float32, [None, n_gamma], name="returns")
-        op.advantages = tf.placeholder(tf.float32, [None, n_gamma], name="advantages")
-        op.old_value = tf.placeholder(tf.float32, [None, n_gamma], name="old_value")
+        op.states = tf.placeholder(input_space.dtype, [None, None] + list(input_space.shape), name="state")
+        op.actions = tf.placeholder(tf.int32, [None, None], name="actions")
+        op.old_policy = tf.placeholder(tf.float32, [None, None], name="old_policy")
+        op.returns = tf.placeholder(tf.float32, [None, None, n_gamma], name="returns")
+        op.advantages = tf.placeholder(tf.float32, [None, None, n_gamma], name="advantages")
+        op.old_value = tf.placeholder(tf.float32, [None, None, n_gamma], name="old_value")
         op.learning_rate = tf.constant(self.learning_rate, name="learning_rate")
         op.eps_clip = tf.constant(self.eps_clip, name="eps_clip")
+        op.cell_mask = tf.placeholder(tf.float32, [None, None], name="cell_mask")
         op.policy_discount_weights = tf.constant(self.policy_discount_weights, name="policy_discount_weights")
         op.value_discount_weights = tf.constant(self.value_discount_weights, name="value_discount_weights")
         op.num_steps = tf.get_variable('num_steps', initializer=tf.constant(0))
         op.num_episodes = tf.get_variable('num_episodes', initializer=tf.constant(0))
 
         with tf.name_scope("policy"):
-            op.logits, op.v = self.build_logits_and_values(op.states)
+            op.cell_states_in = None
+            op.cell_states_out = None
+            op.logits, op.v = self.build_logits_and_values(op.states, op.cell_mask)
             op.policy = tf.nn.softmax(op.logits)
             num_actions = op.policy.shape[-1].value
         with tf.name_scope("policy_loss"):
@@ -290,6 +291,7 @@ class PPO(object):
             op.train = optimizer.apply_gradients(zip(grads2, variables))
 
         with tf.name_scope("network"):
+            tf.summary.histogram("policy", a_policy)
             tf.summary.scalar("value_func", tf.reduce_mean(op.v))
             tf.summary.histogram("value_func", tf.reduce_mean(op.v, axis=-1))
             tf.summary.scalar("entropy", mean_entropy)
@@ -297,15 +299,9 @@ class PPO(object):
             tf.summary.scalar("pseudo_entropy", avg_pseudo_entropy)
             tf.summary.scalar("pseudo_entropy_smooth", smoothed_pseudo_entropy)
         with tf.name_scope("training"):
-            op.training_stats = tf.stack([
-                tf.global_norm(grads),
-                policy_loss,
-                value_loss
-            ])
-            op.training_stats_batch = tf.placeholder(tf.float32, [None, 3])
-            tf.summary.histogram("gradients", op.training_stats_batch[:,0])
-            tf.summary.histogram("policy_loss", op.training_stats_batch[:,1])
-            tf.summary.histogram("value_loss", op.training_stats_batch[:,2])
+            tf.summary.histogram("gradients", tf.global_norm(grads))
+            tf.summary.histogram("policy_loss", policy_loss)
+            tf.summary.histogram("value_loss", value_loss)
         op.summary = tf.summary.merge_all()
 
     def build_optimizer(self, learning_rate):
@@ -322,12 +318,19 @@ class PPO(object):
         and the number of value functions should match the number of distinct
         discount factors (gamma).
 
+        If the policy function uses an RNN, it should store the input and
+        output cell states in self.op.cell_states_in and cell_states_out.
+
         To be implemented by subclasses.
         """
         raise NotImplementedError
 
-    @named_output('s', 'a', 'pi', 'r', 'G', 'A', 'v')
-    def gen_batch(self, steps_per_env, as_np_arrays=False):
+    @named_output('s', 'a', 'pi', 'r', 'G', 'A', 'v', 'm', 'c')
+    def gen_batch(self, steps_per_env, cell_states=None):
+        # Except for cell states ('c') all outputs should have shape
+        # (steps_per_env, num_env, ...). All outputs are numpy arrays.
+        # The cell state is just shape (num_env, ...), which is the last
+        # state of the input cell.
         op = self.op
         session = self.session
         num_env = len(self.envs)
@@ -337,41 +340,50 @@ class PPO(object):
         action_prob = []
         rewards = []
         values = []
-        mask = []
+        is_done = []
 
-        # Run agents through the environment
         for _ in range(steps_per_env):
-            states += [env.state for env in self.envs]
-            policies, vals = session.run([op.policy, op.v], feed_dict={
-                op.states: states[-num_env:]
-            })
-            values.append(vals)
-            for env, policy in zip(self.envs, policies):
+            new_states = [env.state for env in self.envs]
+            states.append(new_states)
+            fd = {op.states: states[-1:]}
+            if cell_states is not None:
+                fd[op.cell_states_in] = cell_states
+            if op.cell_states_out is not None:
+                policies, vals, cell_states = session.run(
+                    [op.policy, op.v, op.cell_states_out], feed_dict=fd)
+            else:
+                policies, vals = session.run([op.policy, op.v], feed_dict=fd)
+            values.append(vals[0])
+            for i in range(num_env):
+                env = self.envs[i]
+                policy = policies[0, i]
                 self.num_steps += 1
                 action = np.random.choice(len(policy), p=policy)
                 _, reward, done, info = env.step(action)
                 rewards.append(reward)
-                mask.append(not done)
+                is_done.append(done)
                 actions.append(action)
                 action_prob.append(policy[action])
                 if done:
                     self.log_episode(info)
-        self.recent_states += states
-
-        if as_np_arrays:
-            states = np.array(states)
-            actions = np.array(actions)
-            action_prob = np.array(action_prob)
+                    if cell_states is not None:
+                        # Zero out the cell state so that it starts
+                        # fresh at the beginning of the next episode.
+                        cell_states[i] *= 0.0
 
         # Get the value of the last state (for discounted rewards)
-        values.append(session.run(op.v, feed_dict={
-            op.states: [env.state for env in self.envs]
-        }))
+        fd = {op.states: [[env.state for env in self.envs]]}
+        if cell_states is not None:
+            fd[op.cell_states_in] = cell_states
+        values.append(session.run(op.v, feed_dict=fd)[0])
 
-        # Reshape the outputs to contain an axis for distinct environments
-        values = np.array(values)  # shape(n_step + 1, n_env, n_gamma)
+        # Convert everything to a numpy array
+        states = np.array(states)
+        actions = np.array(actions).reshape(steps_per_env, num_env)
+        action_prob = np.array(action_prob).reshape(steps_per_env, num_env)
         rewards = np.array(rewards).reshape(steps_per_env, num_env, 1)
-        mask = np.array(mask).reshape(steps_per_env, num_env, 1)
+        values = np.array(values).reshape(steps_per_env + 1, num_env, -1)
+        mask = ~np.array(is_done).reshape(steps_per_env, num_env, 1)
 
         if self.reward_clip > 0:
             rewards = np.clip(rewards, -self.reward_clip, self.reward_clip)
@@ -388,43 +400,60 @@ class PPO(object):
             returns[i] += gamma * mask[i] * returns[i+1]
             advantages[i] += lmda * mask[i] * advantages[i+1]
 
-        # Remove the axis for the distinct environments
-        # Also remove the last of the values, which is no longer needed.
-        mask = mask.ravel()
-        rewards = rewards.ravel()
-        returns = returns.reshape(-1, n_gamma)
-        values = values[:-1].reshape(-1, n_gamma)
-        advantages = advantages.reshape(-1, n_gamma)
+        # Calculate mask for cell states.
+        # This mask is 0 (false) if it's the start of the episode, 1 otherwise.
+        cell_mask = np.roll(mask[...,0], 1, axis=0)
+        cell_mask[0] = True
 
-        return states, actions, action_prob, rewards, returns, advantages, values
+        return (
+            states, actions, action_prob, rewards[...,0], returns, advantages,
+            values[:-1], cell_mask, cell_states
+        )
 
     def next_video_name(self):
-        if self.num_episodes % self.video_freq == 0:
+        if self.last_video // self.video_freq < self.num_episodes // self.video_freq:
+            self.last_video = self.num_episodes
             return "video_{}-{:0.3g}".format(self.num_episodes, self.num_steps)
 
-    def train_batch(self, steps_per_env=20, batch_size=32, epochs=3):
+    def train_batch(self, steps_per_env=50, env_per_minibatch=4, epochs=3, summarize=False):
         op = self.op
         session = self.session
         num_env = len(self.envs)
+        env_idx = np.arange(num_env)
+        assert num_env % env_per_minibatch == 0
 
         batch = self.gen_batch(steps_per_env)
 
-        # Do the training
-        states, actions, old_policy, _, returns, advantages, values = shuffle_arrays(*batch)
         for _ in range(epochs):
-            for k in range(0, len(states) + 1 - batch_size, batch_size):
-                k2 = k+batch_size
-                stats, _ = session.run([op.training_stats, op.train], feed_dict={
-                    op.states: states[k:k2],
-                    op.actions: actions[k:k2],
-                    op.old_policy: old_policy[k:k2],
-                    op.old_value: values[k:k2],
-                    op.returns: returns[k:k2],
-                    op.advantages: advantages[k:k2],
-                })
-                self.training_stats.append(stats)
+            np.random.shuffle(env_idx)
+            for idx in env_idx.reshape(-1, env_per_minibatch):
+                fd = {
+                    op.states: batch.s[:,idx],
+                    op.actions: batch.a[:,idx],
+                    op.old_policy: batch.pi[:,idx],
+                    op.old_value: batch.v[:,idx],
+                    op.returns: batch.G[:,idx],
+                    op.advantages: batch.A[:,idx],
+                    op.cell_mask: batch.m[:,idx],
+                }
+                if op.cell_states_in is not None:
+                    fd[op.cell_states_in] = batch.c[idx]
+                session.run(op.train, feed_dict=fd)
 
-        return steps_per_env * num_env
+        if summarize:
+            fd = {
+                op.states: batch.s,
+                op.actions: batch.a,
+                op.old_policy: batch.pi,
+                op.old_value: batch.v,
+                op.returns: batch.G,
+                op.advantages: batch.A,
+                op.cell_mask: batch.m,
+            }
+            if op.cell_states_in is not None:
+                fd[op.cell_states_in] = batch.c
+            summary = session.run(op.summary, feed_dict=fd)
+            self.logger.add_summary(summary, self.num_steps)
 
     def log_episode(self, info):
         self.num_episodes += 1
@@ -438,20 +467,11 @@ class PPO(object):
             self.num_episodes, info['episode_length'], info['episode_reward'])
 
     def train(self, total_steps, report_every=2000, save_every=5000, **kw):
-        last_save = self.num_steps - 1
-        self.recent_states = deque(maxlen=report_every)
-        self.training_stats = deque(maxlen=report_every)
+        last_report = last_save = self.num_steps - 1
         while self.num_steps < total_steps:
-            self.train_batch(**kw)
+            summarize = last_report // report_every < self.num_steps // report_every
+            self.train_batch(summarize=summarize, **kw)
             if last_save // save_every < self.num_steps // save_every:
                 self.save_checkpoint()
                 last_save = self.num_steps
-            if len(self.recent_states) >= report_every:
-                summary = self.session.run(self.op.summary, feed_dict={
-                    self.op.states: list(self.recent_states),
-                    self.op.training_stats_batch: np.array(self.training_stats),
-                })
-                self.logger.add_summary(summary, self.num_steps)
-                self.recent_states.clear()
-                self.training_stats.clear()
         logger.info("FINISHED TRAINING")

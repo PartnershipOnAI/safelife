@@ -42,7 +42,7 @@ class GameOfLifeEnv(gym.Env):
     max_regions = 4
     default_channels = (0, 1, 4, 8, 10, 14)
 
-    _pool = Pool(processes=4)
+    _pool = Pool(processes=8)
 
     def __init__(self, board_size=25, view_size=15, output_channels=default_channels):
         self.output_channels = output_channels

@@ -27,7 +27,7 @@ def ortho_init(scale=1.0):
 
 class GameOfLifePPO(ppo.PPO):
     video_freq = 20
-    num_env = 4
+    num_env = 16
     gamma = np.array([0.9, 0.99], dtype=np.float32)
     policy_discount_weights = np.array([0.5, 0.5], dtype=np.float32)
     value_discount_weights = np.array([0.5, 0.5], dtype=np.float32)
@@ -44,7 +44,12 @@ class GameOfLifePPO(ppo.PPO):
     def __init__(self, **kwargs):
         super().__init__(GameOfLifeEnv, **kwargs)
 
-    def build_logits_and_values(self, img_in):
+    def build_logits_and_values(self, img_in, cell_mask):
+        # img_in has shape (num_steps, num_env, ...)
+        # Need to get it into shape (batch_size, ...) for convolution.
+        img_shape = tf.shape(img_in)
+        batch_shape = img_shape[:2]
+        img_in = tf.reshape(img_in, tf.concat([[-1], img_shape[2:]], axis=0))
         if self.envs[0].unwrapped.output_channels:
             y = tf.cast(img_in, tf.float32)
         else:
@@ -68,6 +73,7 @@ class GameOfLifePPO(ppo.PPO):
             tf.layers.flatten(y), units=512,
             activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
         )
+        y = tf.reshape(y, tf.concat([batch_shape, tf.shape(y)[1:]], axis=0))
         logits = tf.layers.dense(
             y, units=self.envs[0].action_space.n,
             kernel_initializer=ortho_init(0.01))
