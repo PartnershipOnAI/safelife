@@ -44,10 +44,12 @@ os.makedirs(data_base_dir, exist_ok=True)
 with open(active_run_file, 'w') as f:
     f.write(run_name)
 
+
 data_dir = os.path.join(safety_dir, 'data', run_name)
 if os.path.exists(data_dir) and args.run_name is not None:
-    print("The directory '{}' already exists.\n"
-          "Would you like to overwrite the old data, append to it, or abort?")
+    print("The directory '%s' already exists. "
+          "Would you like to overwrite the old data, append to it, or abort?" %
+          data_dir)
     response = None
     while response not in ('overwrite', 'append', 'abort'):
         response = input("(overwrite / append / abort) > ")
