@@ -18,6 +18,7 @@ parser.add_argument('run_name', nargs='?', help="a name for the new run")
 parser.add_argument('--install', action="store_true")
 parser.add_argument('--shutdown', action="store_true", help=""
     "Shut down the system when the job is complete.")
+parser.add_argument('--port', default=6006, type=int)
 args = parser.parse_args()
 
 
@@ -51,9 +52,11 @@ if os.path.exists(data_dir) and args.run_name is not None:
           "Would you like to overwrite the old data, append to it, or abort?" %
           data_dir)
     response = None
+    response = 'overwrite' if args.run_name == 'tmp' else None
     while response not in ('overwrite', 'append', 'abort'):
         response = input("(overwrite / append / abort) > ")
     if response == 'overwrite':
+        print("Overwriting old data.")
         shutil.rmtree(data_dir)
     elif response == 'abort':
         print("Aborting.")
@@ -119,7 +122,9 @@ if args.install:
 
 # Start tensorboard
 
-tb_proc = subprocess.Popen(["tensorboard", "--logdir", data_base_dir])
+if args.port:
+    tb_proc = subprocess.Popen([
+        "tensorboard", "--logdir", data_base_dir, '--port', str(args.port)])
 
 
 # Start training!
@@ -131,7 +136,8 @@ try:
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
 finally:
-    tb_proc.kill()
+    if args.port:
+        tb_proc.kill()
     if os.path.exists(active_run_file):
         os.remove(active_run_file)
     if args.shutdown:

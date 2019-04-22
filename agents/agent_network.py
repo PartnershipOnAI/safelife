@@ -44,7 +44,7 @@ class GameOfLifePPO(ppo.PPO):
     def __init__(self, **kwargs):
         super().__init__(GameOfLifeEnv, **kwargs)
 
-    def build_logits_and_values(self, img_in, cell_mask):
+    def build_logits_and_values(self, img_in, cell_mask, use_lstm=True):
         # img_in has shape (num_steps, num_env, ...)
         # Need to get it into shape (batch_size, ...) for convolution.
         img_shape = tf.shape(img_in)
@@ -69,11 +69,35 @@ class GameOfLifePPO(ppo.PPO):
             y, filters=64, kernel_size=3, strides=2,
             activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
         )
-        self.op.layer4 = y = tf.layers.dense(
-            tf.layers.flatten(y), units=512,
-            activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
-        )
-        y = tf.reshape(y, tf.concat([batch_shape, tf.shape(y)[1:]], axis=0))
+        y_size = y.shape[1] * y.shape[2] * y.shape[3]
+        y = tf.reshape(y, tf.concat([batch_shape, [y_size]], axis=0))
+        if use_lstm:
+            cell_mask = tf.cast(cell_mask, tf.float32)
+            lstm = tf.nn.rnn_cell.LSTMCell(512, name="lstm_layer", state_is_tuple=False)
+            n_steps = batch_shape[0]
+            self.op.cell_states_in = lstm.zero_state(batch_shape[1], tf.float32)
+
+            def loop_cond(n, *args):
+                return n < n_steps
+
+            def loop_body(n, state, array_out):
+                y_in = y[n]
+                state = state * cell_mask[n,:,None]
+                y_out, state = lstm(y_in, state)
+                return n + 1, state, array_out.write(n, y_out)
+
+            n, states, y = tf.while_loop(loop_cond, loop_body, (
+                tf.constant(0, dtype=tf.int32),
+                self.op.cell_states_in,
+                tf.TensorArray(tf.float32, n_steps),
+            ))
+            self.op.cell_states_out = states
+            self.op.layer4 = y = y.stack()
+        else:
+            self.op.layer4 = y = tf.layers.dense(
+                y, units=512,
+                activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
+            )
         logits = tf.layers.dense(
             y, units=self.envs[0].action_space.n,
             kernel_initializer=ortho_init(0.01))

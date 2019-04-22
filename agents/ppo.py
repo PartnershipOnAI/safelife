@@ -212,7 +212,7 @@ class PPO(object):
         op.old_value = tf.placeholder(tf.float32, [None, None, n_gamma], name="old_value")
         op.learning_rate = tf.constant(self.learning_rate, name="learning_rate")
         op.eps_clip = tf.constant(self.eps_clip, name="eps_clip")
-        op.cell_mask = tf.placeholder(tf.float32, [None, None], name="cell_mask")
+        op.cell_mask = tf.fill(tf.shape(op.states)[:2], True, name="cell_mask")
         op.policy_discount_weights = tf.constant(self.policy_discount_weights, name="policy_discount_weights")
         op.value_discount_weights = tf.constant(self.value_discount_weights, name="value_discount_weights")
         op.num_steps = tf.get_variable('num_steps', initializer=tf.constant(0))
@@ -415,7 +415,7 @@ class PPO(object):
             self.last_video = self.num_episodes
             return "video_{}-{:0.3g}".format(self.num_episodes, self.num_steps)
 
-    def train_batch(self, steps_per_env=50, env_per_minibatch=4, epochs=3, summarize=False):
+    def train_batch(self, steps_per_env=20, env_per_minibatch=4, epochs=3, summarize=False):
         op = self.op
         session = self.session
         num_env = len(self.envs)
