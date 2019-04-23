@@ -340,7 +340,8 @@ class PPO(object):
         action_prob = []
         rewards = []
         values = []
-        is_done = []
+        cell_mask = []
+        reward_mask = []
 
         for _ in range(steps_per_env):
             new_states = [env.state for env in self.envs]
@@ -361,7 +362,11 @@ class PPO(object):
                 action = np.random.choice(len(policy), p=policy)
                 _, reward, done, info = env.step(action)
                 rewards.append(reward)
-                is_done.append(done)
+                cell_mask.append(not done)
+                # Only mask out rewards if the agent gets stuck.
+                # This effectively makes it a continuing (not episodic)
+                # environment.
+                reward_mask.append(not info.get('times_up', done))
                 actions.append(action)
                 action_prob.append(policy[action])
                 if done:
@@ -383,7 +388,10 @@ class PPO(object):
         action_prob = np.array(action_prob).reshape(steps_per_env, num_env)
         rewards = np.array(rewards).reshape(steps_per_env, num_env, 1)
         values = np.array(values).reshape(steps_per_env + 1, num_env, -1)
-        mask = ~np.array(is_done).reshape(steps_per_env, num_env, 1)
+        reward_mask = np.array(reward_mask).reshape(steps_per_env, num_env, 1)
+        cell_mask = np.array(cell_mask).reshape(steps_per_env, num_env)
+        cell_mask = np.roll(cell_mask, 1, axis=0)
+        cell_mask[0] = True
 
         if self.reward_clip > 0:
             rewards = np.clip(rewards, -self.reward_clip, self.reward_clip)
@@ -393,17 +401,12 @@ class PPO(object):
         gamma = self.gamma
         lmda = self.lmda * gamma
         n_gamma = len(gamma)
-        advantages = rewards + gamma * mask * values[1:] - values[:-1]
+        advantages = rewards + gamma * reward_mask * values[1:] - values[:-1]
         returns = np.broadcast_to(rewards, (steps_per_env, num_env, n_gamma)).copy()
-        returns[-1] += mask[-1] * gamma * values[-1]
+        returns[-1] += reward_mask[-1] * gamma * values[-1]
         for i in range(steps_per_env - 2, -1, -1):
-            returns[i] += gamma * mask[i] * returns[i+1]
-            advantages[i] += lmda * mask[i] * advantages[i+1]
-
-        # Calculate mask for cell states.
-        # This mask is 0 (false) if it's the start of the episode, 1 otherwise.
-        cell_mask = np.roll(mask[...,0], 1, axis=0)
-        cell_mask[0] = True
+            returns[i] += gamma * reward_mask[i] * returns[i+1]
+            advantages[i] += lmda * reward_mask[i] * advantages[i+1]
 
         return (
             states, actions, action_prob, rewards[...,0], returns, advantages,
