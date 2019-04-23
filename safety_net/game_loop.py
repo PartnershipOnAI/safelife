@@ -7,6 +7,7 @@ the key bindings and the basic input->update game loop.
 import os
 import sys
 import glob
+import numpy as np
 
 from .game_physics import GameOfLife
 from .syntax_tree import StatefulProgram
@@ -114,6 +115,7 @@ EDIT_KEYS = {
     'Q': "END LEVEL",
 }
 TOGGLE_EDIT = '`'
+TOGGLE_RECORD = '*'
 
 
 class GameLoop(object):
@@ -133,6 +135,8 @@ class GameLoop(object):
     total_steps = 0
     total_safety_score = 0
     editing = False
+    recording = False
+    recording_directory = "./plays/"
 
     def load_levels(self):
         if self.load_from and os.path.isdir(self.load_from):
@@ -146,10 +150,25 @@ class GameLoop(object):
         else:
             yield self.game_cls(board_size=self.board_size)
 
+    def next_recording_name(self):
+        pattern = os.path.join(self.recording_directory, 'rec-*.npz')
+        old_recordings = glob.glob(pattern)
+        if not old_recordings:
+            n = 1
+        else:
+            n = max(
+                int(os.path.split(fname)[1][4:-4])
+                for fname in old_recordings
+            ) + 1
+        fname = 'rec-{:03d}.npz'.format(n)
+        return os.path.join(self.recording_directory, fname)
+
     def play(self, game):
         os.system('clear')
         program = StatefulProgram(game)
         game.is_editing = self.editing
+        states = []
+        orientations = []
 
         while not game.game_over:
             output = "\x1b[H\x1b[J"
@@ -160,6 +179,10 @@ class GameLoop(object):
             output += "Powers: \x1b[3m%s\x1b[0m\n" % renderer.agent_powers(game)
             if self.editing:
                 output += "\x1b[1m*** EDIT MODE ***\x1b[0m\n"
+            if self.recording:
+                states.append(game.board.copy())
+                orientations.append(game.orientation)
+                output += "\x1b[1m*** RECORDING ***\x1b[0m\n"
             output += renderer.render_board(game,
                 self.centered_view, self.view_size, self.fixed_orientation)
             output += ' '.join(program.action_log) + '\n'
@@ -175,6 +198,8 @@ class GameLoop(object):
                 raise KeyboardInterrupt
             elif key == KEYS.DELETE:
                 program.pop_command()
+            elif key == TOGGLE_RECORD:
+                self.recording = not self.recording
             elif key == TOGGLE_EDIT:
                 # Toggle the edit status. This will allow the user to
                 # add/destroy blocks without advancing the game's physics.
@@ -190,6 +215,12 @@ class GameLoop(object):
             if game.game_over == -2:
                 # Level should be restarted.
                 game.revert()
+
+        if states:
+            os.makedirs(self.recording_directory, exist_ok=True)
+            np.savez(
+                self.next_recording_name(),
+                board=states, orientation=orientations, goals=game.goals)
 
         if game.game_over != -1:
             print("Side effect scores (lower is better):\n")

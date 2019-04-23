@@ -82,10 +82,38 @@ def render_board(board, goals=0, orientation=0):
     Just render the board itself. Doesn't require game state.
     """
     data = render_cell(board, goals, orientation)
-    data = np.hstack(tuple(data))
-    data = np.hstack(tuple(data))
+    data = np.moveaxis(data, -4, -3)
+    s = data.shape
+    data = data.reshape(s[:-5] + (s[-5]*s[-4], s[-3]*s[-2], s[-1]))
     return data
 
 
 def render_game(game):
     return render_board(game.board, game.goals, game.orientation)
+
+
+def render_file(fname, duration=0.03):
+    data = np.load(fname)
+    rgb_array = render_board(
+        data['board'], data['goals'], data['orientation'][..., None, None])
+    bare_fname = '.'.join(fname.split('.')[:-1])
+    if rgb_array.ndim == 3:
+        imageio.imwrite(bare_fname+'.png', rgb_array)
+    elif rgb_array.ndim == 4:
+        imageio.mimwrite(bare_fname+'.gif', rgb_array,
+                         duration=duration, subrectangles=True)
+    else:
+        raise Exception("Unexpected dimension of rgb_array.")
+
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('fnames', help="File to render.", nargs='+')
+    args = parser.parse_args()
+    for fname in args.fnames:
+        try:
+            render_file(fname)
+            print("Success:", fname)
+        except Exception:
+            print("Failed:", fname)
