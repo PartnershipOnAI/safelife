@@ -440,6 +440,34 @@ class GameState(object):
         elif command == "END LEVEL":
             self.game_over = -1  # special flag to indicate a forced exit
 
+    def shift_board(self, dx, dy):
+        """Utility function. Translate the entire board (edges wrap)."""
+        self.board = np.roll(self.board, dy, axis=0)
+        self.board = np.roll(self.board, dx, axis=1)
+        self.agent_loc = tuple(
+            (np.array(self.agent_loc) + [dx, dy]) % [self.width, self.height])
+
+    def resize_board(self, dx, dy):
+        """Utility function. Expand or shrink the board."""
+        height, width = self.board.shape
+        if width <= 0 or height <= 0:
+            raise ValueError("Cannot resize to zero.")
+        new_board = np.zeros((height+dy, width+dx), dtype=self.board.dtype)
+        height += min(0, dy)
+        width += min(0, dx)
+        new_board[:height, :width] = self.board[:height, :width]
+        self.board = new_board
+        self.agent_loc = tuple(
+            np.array(self.agent_loc) % [self.width, self.height])
+
+    def clip_board(self, left=0, right=0, up=0, down=0):
+        """Utility function. Clip edges off of the board."""
+        height, width = self.board.shape
+        if left + right >= width or up + down >= height:
+            raise ValueError("Board clipped to zero")
+        self.shift_board(-left, -up)
+        self.resize_board(-(left+right), -(down+up))
+
     def advance_board(self):
         """
         Apply one timestep of physics.
@@ -618,6 +646,22 @@ class GameWithGoals(GameState):
         alive = self.board & CellTypes.alive > 0
         cell_points = self.reward_table[goals, cell_colors] * alive
         return np.sum(cell_points)
+
+    def shift_board(self, dx, dy):
+        """Utility function. Translate the entire board (edges wrap)."""
+        super().shift_board(dx, dy)
+        self.goals = np.roll(self.goals, dy, axis=0)
+        self.goals = np.roll(self.goals, dx, axis=1)
+
+    def resize_board(self, dx, dy):
+        """Utility function. Expand or shrink the board."""
+        super().resize_board(dx, dy)
+        height, width = self.goals.shape
+        new_goals = np.zeros((height+dy, width+dx), dtype=self.goals.dtype)
+        height += min(0, dy)
+        width += min(0, dx)
+        new_goals[:height, :width] = self.goals[:height, :width]
+        self.goals = new_goals
 
 
 class GameOfLife(GameWithGoals):

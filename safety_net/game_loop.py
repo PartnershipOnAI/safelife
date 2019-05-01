@@ -116,6 +116,7 @@ EDIT_KEYS = {
 }
 TOGGLE_EDIT = '`'
 TOGGLE_RECORD = '*'
+START_SHELL = '\\'
 
 
 class GameLoop(object):
@@ -205,6 +206,8 @@ class GameLoop(object):
                 # add/destroy blocks without advancing the game's physics.
                 self.editing = not self.editing
                 game.is_editing = self.editing
+            elif key == START_SHELL:
+                from IPython import embed; embed()  # noqa
             elif self.editing and key in EDIT_KEYS:
                 # Execute action immediately.
                 program.message = game.execute_edit(EDIT_KEYS[key]) or ""
