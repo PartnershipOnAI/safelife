@@ -195,6 +195,8 @@ class GameState(object):
 
     def save(self, file_name=None):
         """Saves the game state to disk."""
+        file_name = os.path.expanduser(file_name)
+        file_name = os.path.abspath(file_name)
         if file_name is None:
             file_name = self.file_name
         if file_name is None:
@@ -216,6 +218,8 @@ class GameState(object):
     @classmethod
     def load(cls, file_name, auto_cls=True):
         """Load game state from disk."""
+        file_name = os.path.expanduser(file_name)
+        file_name = os.path.abspath(file_name)
         data = np.load(file_name)
         if auto_cls and 'class' in data:
             cls_components = str(data['class']).split('.')
