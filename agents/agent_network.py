@@ -44,7 +44,7 @@ class GameOfLifePPO(ppo.PPO):
     def __init__(self, **kwargs):
         super().__init__(GameOfLifeEnv, **kwargs)
 
-    def build_logits_and_values(self, img_in, cell_mask, use_lstm=True):
+    def build_logits_and_values(self, img_in, cell_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)
         # Need to get it into shape (batch_size, ...) for convolution.
         img_shape = tf.shape(img_in)
