@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
-from safety_net.safety_gym import GameOfLifeEnv
+from safelife.safety_gym import GameOfLifeEnv
 from . import ppo
 
 

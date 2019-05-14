@@ -99,7 +99,7 @@ logging.config.dictConfig({
         }
     },
     'loggers': {
-        'agents': {
+        'training': {
             'level': 'INFO',
             'propagate': False,
             'handlers': ['console', 'logfile'],
@@ -130,7 +130,7 @@ if args.port:
 # Start training!
 
 try:
-    from agents.agent_network import GameOfLifePPO
+    from training.agent_network import GameOfLifePPO
     model = GameOfLifePPO(logdir=data_dir)
     model.train(5e6)
 except Exception:

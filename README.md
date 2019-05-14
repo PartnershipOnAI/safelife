@@ -38,17 +38,17 @@ The environment can be used for training and running a reinforcement learning ag
 
     python3 setup.py install
 
-or just install the requirements (`pip3 install -r requirements.txt`) and move the `safety_net` folder to somewhere where your python executable can find it (i.e., just keep this as your working directory).
+or just install the requirements (`pip3 install -r requirements.txt`) and move the `safelife` folder to somewhere where your python executable can find it (i.e., just keep this as your working directory).
 
 ### Playing as a human
 
 To play the game, run
 
-    python3 -m safety_net --load ./levels
+    python3 -m safelife --load ./levels
 
 That will play all of the levels in the `levels` folder. Other levels can be played using e.g. `--load ./levels/mazes`. You can also play a randomized level using
 
-    python3 -m safety_net --randomize
+    python3 -m safelife --randomize
 
 Arrow keys will move the player, and the `c` key will activate or deactivate whichever cell is in front of the player. Press `shift-R` to restart a level, although it incurs some point penalty. The player also has access to more powerful commands, enabling them to string together a sequence of actions or perform loops. For more details on exactly which keys do what, see `game_loop.py`.
 
