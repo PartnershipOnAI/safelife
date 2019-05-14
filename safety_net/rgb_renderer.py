@@ -2,7 +2,7 @@ import os
 import imageio
 import numpy as np
 
-from .game_physics import CellTypes
+from .game_physics import CellTypes, GameState
 
 
 sprite_sheet = imageio.imread(os.path.abspath(
@@ -106,14 +106,30 @@ def render_file(fname, duration=0.03):
         raise Exception("Unexpected dimension of rgb_array.")
 
 
+def render_mov(fname, steps, duration=0.03):
+    game = GameState.load(fname)
+    bare_fname = '.'.join(fname.split('.')[:-1])
+    frames = []
+    for _ in range(steps):
+        frames.append(render_game(game))
+        game.advance_board()
+    imageio.mimwrite(bare_fname+'.gif', frames,
+                     duration=duration, subrectangles=True)
+
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('fnames', help="File to render.", nargs='+')
+    parser.add_argument('--steps', default=0, type=int)
+    parser.add_argument('--duration', default=0.03, type=float)
     args = parser.parse_args()
     for fname in args.fnames:
         try:
-            render_file(fname)
+            if args.steps == 0:
+                render_file(fname, args.duration)
+            else:
+                render_mov(fname, args.steps, args.duration)
             print("Success:", fname)
         except Exception:
             print("Failed:", fname)
