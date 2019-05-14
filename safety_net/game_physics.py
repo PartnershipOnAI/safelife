@@ -464,13 +464,13 @@ class GameState(object):
         self.agent_loc = tuple(
             np.array(self.agent_loc) % [self.width, self.height])
 
-    def clip_board(self, left=0, right=0, up=0, down=0):
+    def clip_board(self, left=0, right=0, top=0, bottom=0):
         """Utility function. Clip edges off of the board."""
         height, width = self.board.shape
-        if left + right >= width or up + down >= height:
+        if left + right >= width or top + bottom >= height:
             raise ValueError("Board clipped to zero")
-        self.shift_board(-left, -up)
-        self.resize_board(-(left+right), -(down+up))
+        self.shift_board(-left, -top)
+        self.resize_board(-(left+right), -(bottom+top))
 
     def advance_board(self):
         """
@@ -628,18 +628,18 @@ class GameWithGoals(GameState):
 
     def execute_edit(self, command):
         if command.startswith("CHANGE GOAL"):
-            x1, y1 = self.relative_loc(1)
-            old_goal = self.goals[y1, x1]
+            x0, y0 = self.edit_loc
+            old_goal = self.goals[y0, x0]
             if command.endswith("FULL CYCLE"):
-                self.goals[y1, x1] += CellTypes.color_r
-            elif self.goals[y1, x1]:
-                self.goals[y1, x1] <<= 1
+                self.goals[y0, x0] += CellTypes.color_r
+            elif self.goals[y0, x0]:
+                self.goals[y0, x0] <<= 1
             else:
-                self.goals[y1, x1] = CellTypes.color_r
-            self.goals[y1, x1] &= CellTypes.rainbow_color
+                self.goals[y0, x0] = CellTypes.color_r
+            self.goals[y0, x0] &= CellTypes.rainbow_color
             return "goal change: {old_goal} -> {new_goal}".format(
                 old_goal=bin(old_goal >> 9),
-                new_goal=bin(self.goals[y1, x1] >> 9)
+                new_goal=bin(self.goals[y0, x0] >> 9)
             )
         else:
             return super().execute_edit(command)
