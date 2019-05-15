@@ -688,6 +688,11 @@ class GameOfLife(GameWithGoals):
     born_rule = (3,)
 
     def advance_board(self):
+        from ._ext import advance_board
+        self.num_steps += 1
+        self.board = advance_board(self.board, self.spawn_prob)
+
+    def advance_board_old(self):
         """
         Apply one timestep of physics using Game of Life rules.
         """
