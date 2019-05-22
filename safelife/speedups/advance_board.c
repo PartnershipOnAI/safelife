@@ -1,18 +1,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include "advance_board.h"
+#include "constants.h"
 
-const int16_t ALIVE = 1 << 0;
-const int16_t ALIVE_BITS = (1 << 4) - 1;
-const int16_t DESTRUCTIBLE = 1 << 3;
-const int16_t FROZEN = 1 << 4;
-const int16_t PRESERVING = 1 << 5;
-const int16_t INHIBITING = 1 << 6;
-const int16_t SPAWNING = 1 << 7;
-const int16_t DESTRUCTIBLE2 = 1 << 8;
-const int16_t COLORS = 7 << 9;
-const int16_t FLAGS1 = PRESERVING | INHIBITING | SPAWNING;
-const int16_t FLAGS2 = DESTRUCTIBLE2 | COLORS;
+static const int16_t ALIVE_BITS = (1 << 4) - 1;
+static const int16_t DESTRUCTIBLE2 = 1 << 8;
+static const int16_t FLAGS1 = PRESERVING | INHIBITING | SPAWNING;
+static const int16_t FLAGS2 = DESTRUCTIBLE2 | COLORS;
 
 
 static void combine_neighbors(int16_t src, int16_t *dst) {

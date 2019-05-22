@@ -3,7 +3,7 @@ import glob
 import setuptools
 import numpy
 
-ext_path = os.path.abspath(os.path.join(__file__, '../safelife/ext_mod'))
+ext_path = os.path.abspath(os.path.join(__file__, '../safelife/speedups'))
 
 
 setuptools.setup(
@@ -13,11 +13,12 @@ setuptools.setup(
     description="Safety benchmarks for reinforcement learning",
     # package_dir={'safelife': src_dir},
     packages=['safelife'],
+    package_data={'safelife': ['*.png']},
     ext_modules=[
         setuptools.Extension(
-            'safelife._ext',
+            'safelife.speedups',
             define_macros=[
-                ('PY_ARRAY_UNIQUE_SYMBOL', 'safelife_ext'),
+                ('PY_ARRAY_UNIQUE_SYMBOL', 'safelife_speedups'),
                 ('NPY_NO_DEPRECATED_API', 'NPY_1_11_API_VERSION')
             ],
             include_dirs=[
