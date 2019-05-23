@@ -34,12 +34,79 @@ static PyObject *advance_board_py(PyObject *self, PyObject *args) {
     return (PyObject *)b2;
 }
 
+static char gen_still_life_doc[] =
+    "gen_still_life(board, mask, max_iter=40, min_fill=0.2, temperature=0.5, "
+        "alive=(0,0), wall=(100,100), tree=(100,100), weed=(100,100), "
+        "predator=(100,100), icecube=(100,100), fountain=(100,100))\n"
+    "--\n\n"
+    "Generate a still life pattern.\n"
+    "\n"
+    "Parameters\n"
+    "----------\n"
+    "board : ndarray\n"
+    "mask : ndarray\n"
+    "max_iter : float\n"
+    "    Maximum number of iterations to be run, relative to the board size.\n"
+    "min_fill : float\n"
+    "    Minimum fraction of the (unmasked) board that must be populated.\n"
+    "temperature : float\n"
+    "alive : (float, float)\n"
+    "    Penalties for 'life' cells.\n"
+    "    First value is penalty at zero density, second is the penalty when\n"
+    "    life cells take up 100% of the populated area. Penalty increase is\n"
+    "    linear.\n"
+    "wall : (float, float)\n"
+    "    Penalties for 'wall' cells.\n"
+    "tree : (float, float)\n"
+    "    Penalties for 'tree' cells.\n"
+    "weed : (float, float)\n"
+    "    Penalties for 'weed' cells.\n"
+    "predator : (float, float)\n"
+    "    Penalties for 'predator' cells.\n"
+    "icecube : (float, float)\n"
+    "    Penalties for 'icecube' cells.\n"
+    "fountain : (float, float)\n"
+    "    Penalties for 'fountain' cells.\n"
+;
 
-static PyObject *gen_still_life_py(PyObject *self, PyObject *args) {
+static PyObject *gen_still_life_py(PyObject *self, PyObject *args, PyObject *kw) {
     PyObject *board_obj, *mask_obj;
     PyArrayObject *board = NULL, *mask = NULL;
 
-    if (!PyArg_ParseTuple(args, "OO", &board_obj, &mask_obj)) return NULL;
+    double max_iter = 40;
+    double min_fill = 0.2;
+    double temperature = 0.5;
+    double cp[16] = {
+        // intercept and slope of penalty
+        0, 0,  // EMPTY (handled separately by min_fill)
+        0, 0,  // ALIVE
+        100, 100,  // WALL
+        100, 100,  // TREE
+        100, 100,  // WEED
+        100, 100,  // PREDATOR
+        100, 100,  // ICECUBE
+        100, 100,  // FOUNTAIN
+    };
+    static char *kwlist[] = {
+        "board", "mask", "max_iter", "min_fill", "temperature",
+        "alive", "wall", "tree", "weed", "predator", "icecube", "fountain",
+        NULL
+    };
+
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kw, "OO|ddd(dd)(dd)(dd)(dd)(dd)(dd)(dd):gen_still_life",
+            kwlist,
+            &board_obj, &mask_obj, &max_iter, &min_fill, &temperature,
+            cp+2, cp+3, cp+4, cp+5, cp+6, cp+7, cp+8, cp+9,
+            cp+10, cp+11, cp+12, cp+13, cp+14, cp+15)) {
+        return NULL;
+    }
+
+    for (int i = 0; i < 8; i++) {
+        // Convert penalties to intercept, slope instead of t=0, t=1
+        cp[2*i+1] -= cp[2*i];
+    }
+
     board = (PyArrayObject *)PyArray_FROM_OTF(
         board_obj, NPY_INT16,
         NPY_ARRAY_IN_ARRAY | NPY_ARRAY_ENSURECOPY | NPY_ARRAY_FORCECAST);
@@ -64,10 +131,15 @@ static PyObject *gen_still_life_py(PyObject *self, PyObject *args) {
         (int16_t *)PyArray_DATA(board),
         (int32_t *)PyArray_DATA(mask),
         PyArray_DIM(board, 0),
-        PyArray_DIM(board, 1)
+        PyArray_DIM(board, 1),
+        max_iter, min_fill, temperature, cp
     );
-    if (err_code && 0) {
-        PY_RUN_ERROR("Max-iter hit. Aborting!");
+    if (err_code) {
+        if (err_code == MAX_ITER_ERROR) {
+            PY_RUN_ERROR("Max-iter hit. Aborting!");
+        } else {
+            PY_RUN_ERROR("Miscellany error.")
+        }
     }
 
     Py_DECREF(mask);
@@ -95,8 +167,8 @@ static PyMethodDef methods[] = {
         "Advances the board one step."
     },
     {
-        "gen_still_life", (PyCFunction)gen_still_life_py, METH_VARARGS,
-        "Generate a still life pattern."
+        "gen_still_life", (PyCFunction)gen_still_life_py,
+        METH_VARARGS | METH_KEYWORDS, gen_still_life_doc
     },
     {
         "seed", (PyCFunction)seed_py, METH_VARARGS,

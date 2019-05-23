@@ -101,10 +101,13 @@ static void wrapped_convolve(int *array, int *temp, int nrow, int ncol) {
 }
 
 
-int gen_still_life(int16_t *board, int32_t *mask, int nrow, int ncol) {
+int gen_still_life(
+        int16_t *board, int32_t *mask, int nrow, int ncol,
+        double rel_max_iter, double rel_min_fill, double temperature,
+        double *cell_penalties) {
     // The amount of indexing gymnastics used here is, admitedly, awful.
     // We could reduce it somewhat with more index division and modulos, but
-    // that'll slow things down and won't make it that much more clear.
+    // that'll slow things down and won't actually make it that much more clear.
     int size = nrow*ncol;
     int n_alive[size];
     int n_preserved[size];
@@ -114,24 +117,7 @@ int gen_still_life(int16_t *board, int32_t *mask, int nrow, int ncol) {
     int totals[8];
     int num_iter;
     iset bad_idx = iset_alloc(size);
-
-    // The following few should be passed in as parameters.
-    int max_iter = size * 40;
-    // max_iter = 1;
-    double min_fill = 0.2;
-    double temperature = 0.7;
-    double beta = 1 / temperature;
-    double cell_penalties[16] = {
-        // intercept and slope of penalty
-        0, 0,  // EMPTY (handled separately by min_fill)
-        0, 0,  // ALIVE
-        100, 40,  // WALL
-        1, 30,  // TREE
-        100, 100,  // WEED
-        100, 100,  // PREDATOR
-        100, 100,  // ICECUBE
-        100, 0,  // FOUNTAIN
-    };
+    double beta = 1 / (temperature > 0.01 ? temperature : 0.01);
 
     for (int k = 0; k < size; k++) {
         n_alive[k] = board[k] & ALIVE;
@@ -161,9 +147,11 @@ int gen_still_life(int16_t *board, int32_t *mask, int nrow, int ncol) {
         }
     }
 
+    int max_iter = rel_max_iter * total_area;
+    double min_fill = rel_min_fill * total_area;
     for (num_iter = 0; num_iter < max_iter; num_iter++) {
         int not_empty = total_area - totals[0];
-        if (bad_idx.size == 0 && not_empty >= total_area * min_fill) {
+        if (bad_idx.size == 0 && not_empty >= min_fill) {
             break;  // Success!
         }
 
@@ -208,9 +196,9 @@ int gen_still_life(int16_t *board, int32_t *mask, int nrow, int ncol) {
             k0 + dxp1 + dyp2,
             k0 + dxp2 + dyp2,
         };
-        int i2[9] = {6, 7, 8, 11, 12, 13, 16, 17, 18};
-        int i3[8] = {-6, -5, -4, -1, +1, +4, +5, +6};
-        int i4[9] = {-6, -5, -4, -1, 0, +1, +4, +5, +6};
+        static int i2[9] = {6, 7, 8, 11, 12, 13, 16, 17, 18};
+        static int i3[8] = {-6, -5, -4, -1, +1, +4, +5, +6};
+        static int i4[9] = {-6, -5, -4, -1, 0, +1, +4, +5, +6};
 
         // Now for each cell in the Moore neighborhood, count up how many
         // violations there'd be if that cell were each of the different cell
@@ -294,12 +282,14 @@ int gen_still_life(int16_t *board, int32_t *mask, int nrow, int ncol) {
                 // Starts at 2 (i.e., empty cell has same total penalty
                 // as a live cell with no neighbors), but quickly drops
                 // to zero once we approach min_fill.
-                double t = not_empty / (total_area * min_fill);
+                double t = not_empty / min_fill;
                 cell_penalties2[0] = t < 0.9 ? 2.0 : t < 1 ? 20 * (1 - t) : 0;
             }
             for (j3 = 1; j3 < 8; j3++) {
                 double t = totals[j3] / (not_empty + 1.0);
-                cell_penalties2[j3] = cell_penalties[j3*2] + t * cell_penalties[j3*2+1];
+                double base = cell_penalties[j3*2];
+                double slope = cell_penalties[j3*2+1];
+                cell_penalties2[j3] = base + t*slope;
             }
 
             for (j2 = 0, j4 = 0; j2 < 9; j2++) {
@@ -309,7 +299,8 @@ int gen_still_life(int16_t *board, int32_t *mask, int nrow, int ncol) {
                     // Add penalties to the different cell types
                     penalties[j4] = violations[j4] + cell_penalties2[j3];
                     new_cell = cell_type_array[j3];
-                    if (min_penalty > penalties[j4] && mask[k2] && new_cell != old_cell) {
+                    if (min_penalty > penalties[j4] &&
+                            mask[k2] && new_cell != old_cell) {
                         min_penalty = penalties[j4];
                     }
                 }
@@ -348,7 +339,7 @@ int gen_still_life(int16_t *board, int32_t *mask, int nrow, int ncol) {
                    "ERROR! target_prob > cum_prob: %5g; %5g\n",
                    target_prob, cum_prob);
                 iset_free(&bad_idx);
-                return -1;
+                return PROBABILITY_ERROR;
             }
 
             // Swap in the new cell
@@ -400,5 +391,5 @@ int gen_still_life(int16_t *board, int32_t *mask, int nrow, int ncol) {
 
     iset_free(&bad_idx);
     PRINT("Iterations: %i/%i\n", num_iter, max_iter);
-    return num_iter == max_iter ? -1 : 0;
+    return num_iter == max_iter ? MAX_ITER_ERROR : 0;
 }
