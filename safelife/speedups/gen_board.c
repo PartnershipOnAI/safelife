@@ -6,7 +6,7 @@
 #include "iset.h"
 #include "gen_board.h"
 
-#if 1
+#if 0
     #include <Python.h>
     #define PRINT(...) PySys_WriteStdout(__VA_ARGS__)
 #else
@@ -277,7 +277,7 @@ int gen_still_life(
             int16_t old_cell, new_cell;
             double probs[72];
             double *penalties = probs;  // alias; we only need one at a time
-            double cum_prob = 0.0;
+            double cprob1 = 0.0, cprob2 = 0.0;
             double min_penalty = 1000;
             double cell_penalties2[8];
             int num_masked = 0;
@@ -327,10 +327,10 @@ int gen_still_life(
                     double x = (min_penalty - penalties[j4]) * beta;
                     probs[j4] = exp(x);
                     probs[j4] *= mask[k2] * (new_cell != old_cell);
-                    cum_prob += probs[j4];
+                    cprob1 += probs[j4];
                 }
             }
-            if (cum_prob == 0.0) {
+            if (cprob1 == 0.0) {
                 // should never get here...
                 // Just drop this as a bad index and keep on our merry way.
                 iset_discard(&bad_idx, k0);
@@ -338,20 +338,19 @@ int gen_still_life(
             }
 
             // Pick a cell!
-            double target_prob = rand() * cum_prob / RAND_MAX;
-            cum_prob = 0.0;
+            double target_prob = rand() * cprob1 / RAND_MAX;
             for (j2 = 0, j4 = 0; j2 < 9; j2++) {
                 for (j3 = 0; j3 < 8; j3++, j4++) {
-                    cum_prob += probs[j4];
-                    if (target_prob <= cum_prob) {
+                    cprob2 += probs[j4];
+                    if (target_prob <= cprob2) {
                         goto swap_cell; // Pick this cell!
                     }
                 }
             }
             { // no cell selected (didn't hit the goto)
                 PRINT(
-                   "ERROR! target_prob > cum_prob: %5g; %5g\n",
-                   target_prob, cum_prob);
+                   "ERROR! target_prob > cum_prob: %0.5g; %0.5g %0.5g\n",
+                   target_prob, cprob1, cprob2);
                 iset_free(&bad_idx);
                 return PROBABILITY_ERROR;
             }

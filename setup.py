@@ -26,6 +26,7 @@ setuptools.setup(
                 numpy.get_include()],
             sources=glob.glob(os.path.join(ext_path, '*.c')),
             extra_compile_args=[
+                '-O3',
                 '-Wno-shorten-64-to-32',
                 # '-std=c++11',
                 '-stdlib=libc++',

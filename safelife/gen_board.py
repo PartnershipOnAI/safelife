@@ -429,7 +429,7 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
     crate_frac = dscale([0, 5, 10], low=[0, 0.2, -0.1], high=[0, 1, 0.5])
     plant_frac = dscale([0, 5, 10], low=[0, 0.2, -0.1], high=[0, 1, 0.5])
 
-    def _gen_still_life(board, mask, num_retries=3):
+    def _gen_still_life(board, mask, num_retries=3, half=False, exclude=()):
         # temperature < 0.3 tends to not converge, or converge very slowly
         # temperature = 0.4, fill = 0.05 yields pretty simple patterns
         # temperature = 1.5, fill = 0.4 yields pretty complex patterns
@@ -437,6 +437,8 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
             [0, 5, 10], low=[0.4, 0.4, 0.5], high=[0.4, 0.8, 0.8])
         min_fill = dscale(
             [0, 5, 10], low=[0.05, 0.1, 0.15], high=[0.1, 0.2, 0.3])
+        if half:
+            min_fill *= 0.5
         penalty_params = {
             "wall": (1, 40),
             "tree": (1, 30),
@@ -462,9 +464,8 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
             if num_retries > 0:
                 return _gen_still_life(board, mask, num_retries-1)
             else:
-                print(min_fill, temperature, penalty_params)
                 print("gen_still_life did not converge! "
-                      "num_retries exceeded; returning empty board")
+                      "num_retries exceeded; no patterns added.")
                 return board
 
     fence_mask = mask & (fences == 0)
@@ -484,29 +485,31 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
         life_mask = (board == CellTypes.life) & mask
         board += life_mask * CellTypes.color_r
     elif region_type == "append":
-        board = _gen_still_life(board, fence_mask)
+        board = _gen_still_life(board, fence_mask, half=True)
         life_mask = (board == CellTypes.life) & mask
         board += life_mask * CellTypes.color_g
         mask2 = fence_mask & (board == 0)
-        board = _gen_still_life(board, mask2)
-        alive_mask = ((board & CellTypes.alive) > 0) & mask2
-        board *= ~alive_mask
-        goals += alive_mask * CellTypes.color_b
+        board = _gen_still_life(
+            board, mask2, half=True, exclude=("tree", "weed"))
+        life_mask = (board == CellTypes.life) & mask2
+        board *= ~life_mask
+        goals += life_mask * CellTypes.color_b
     elif region_type == "grow":
-        board = _gen_still_life(board, fence_mask)
+        board = _gen_still_life(board, fence_mask, half=True)
         life_mask = (board == CellTypes.life) & mask
         board += life_mask * CellTypes.color_g
         mask2 = fence_mask & (board == 0)
-        board = _gen_still_life(board, mask2)
-        alive_mask = ((board & CellTypes.alive) > 0) & mask2
-        board *= ~alive_mask
-        goals += alive_mask * CellTypes.color_g
+        board = _gen_still_life(
+            board, mask2, half=True, exclude=("tree", "weed"))
+        life_mask = (board == CellTypes.life) & mask2
+        board *= ~life_mask
+        goals += life_mask * CellTypes.color_g
     elif region_type == "prune":
-        board = _gen_still_life(board, fence_mask)
+        board = _gen_still_life(board, fence_mask, half=True)
         life_mask = (board == CellTypes.life) & mask
         board += life_mask * CellTypes.color_g
         mask2 = fence_mask & (board == 0)
-        board = _gen_still_life(board, mask2)
+        board = _gen_still_life(board, mask2, half=True)
         life_mask2 = (board == CellTypes.life) & mask2
         board += life_mask2 * CellTypes.color_r
     elif region_type == "spawner":
