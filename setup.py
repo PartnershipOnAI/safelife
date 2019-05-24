@@ -29,8 +29,8 @@ setuptools.setup(
                 '-O3',
                 '-Wno-shorten-64-to-32',
                 # '-std=c++11',
-                '-stdlib=libc++',
-                '-mmacosx-version-min=10.9',
+                # '-stdlib=libc++',
+                # '-mmacosx-version-min=10.9',
                 '-Wno-c++11-extensions',
             ]
         ),

@@ -688,7 +688,7 @@ class GameOfLife(GameWithGoals):
     born_rule = (3,)
 
     def advance_board(self):
-        from ._ext import advance_board
+        from .speedups import advance_board
         self.num_steps += 1
         self.board = advance_board(self.board, self.spawn_prob)
 

@@ -28,6 +28,7 @@ safety_dir = os.path.realpath(os.path.join(__file__, '../'))
 data_base_dir = os.path.join(safety_dir, 'data')
 active_run_file = os.path.join(safety_dir, 'data/active_run.txt')
 sys.path.insert(1, safety_dir)  # ensure current directory is on the path
+os.chdir(safety_dir)
 
 # If the run name isn't suppied, get it from 'active_run.txt'
 # This is basically just used to restart after crashes.
@@ -118,6 +119,12 @@ if args.install:
     reqs_file = os.path.join(safety_dir, "requirements.txt")
     subprocess.run("sudo apt-get install ffmpeg --yes".split())
     subprocess.run(["sudo", "pip3", "install", "-r", reqs_file])
+# By making the build lib the same as the base folder, the extension
+# should just get built into the source directory.
+subprocess.run([
+    "python3", os.path.join(safety_dir, "setup.py"),
+    "build", "--build-lib", safety_dir
+])
 
 
 # Start tensorboard

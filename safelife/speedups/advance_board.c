@@ -6,7 +6,7 @@
 static const int16_t ALIVE_BITS = (1 << 4) - 1;
 static const int16_t DESTRUCTIBLE2 = 1 << 8;
 static const int16_t FLAGS1 = PRESERVING | INHIBITING | SPAWNING;
-static const int16_t FLAGS2 = DESTRUCTIBLE2 | COLORS;
+static const int16_t FLAGS2 = (1 << 8) | COLORS;
 
 
 static void combine_neighbors(int16_t src, int16_t *dst) {
