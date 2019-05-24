@@ -236,7 +236,12 @@ class GenLifeParams(object):
         return k // violations.shape[1], k % violations.shape[1]
 
 
-def gen_still_life(board, mask=None, params=GenLifeParams(), num_retries=3):
+def gen_still_life(board, mask=None, params=GenLifeParams()):
+    """
+    Generate a still life.
+
+    This is very slow. Better to use `speedups.gen_still_life`.
+    """
     # First, set up some useful constants
     CT = CellTypes
     shape = board.shape
@@ -374,15 +379,14 @@ def gen_still_life(board, mask=None, params=GenLifeParams(), num_retries=3):
                 bad_idx.discard((i, j))
     else:
         board *= (1 - mask)
-        if num_retries > 0:
-            return gen_still_life(board, mask, params, num_retries-1)
-        else:
-            print("Failed to converge! Returning empty board.")
+        raise RuntimeError("Failed to converge! Returning empty board.")
 
     return board
 
 
 def gen_region(board, goals, mask, fences, difficulty, region_type=None):
+    from . import speedups
+
     def dscale(x, y=None, low=None, high=None):
         """
         Do linear interpolation based on difficulty.
@@ -420,89 +424,89 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
         sum(region_type_weights.values())
     )
 
-    # temperature < 0.3 tends to not converge, or converge very slowly
-    # temperature = 0.4, fill = 0.05 yields pretty simple patterns
-    # temperature = 1.5, fill = 0.4 yields pretty complex patterns
-    temperature = dscale([0, 5, 10], low=[0.4, 0.4, 0.6], high=[0.4, 0.8, 2.0])
-    min_fill = dscale([0, 5, 10], low=[0.05, 0.1, 0.3], high=[0.1, 0.2, 0.4])
     fence_frac = dscale([0, 10], low=[1.1, -0.2], high=[2, 0.8])
     extra_walls = dscale([0, 10], low=[0,0], high=[0, 0.1])
     crate_frac = dscale([0, 5, 10], low=[0, 0.2, -0.1], high=[0, 1, 0.5])
+    plant_frac = dscale([0, 5, 10], low=[0, 0.2, -0.1], high=[0, 1, 0.5])
 
-    penalty_params = {
-        CellTypes.empty: [
-            # Empty spaces are penalized so as to make them no less likely
-            # than living spaces when the board is sparse.
-            (0, 2),
-            (0.9 * (1/min_fill - 1), 2),
-            (1/min_fill - 1, 0),
-            (1/min_fill, 0),
-        ],
-        CellTypes.life: [(0, 0), (1, 0)],
-        CellTypes.wall: [(0, 1), (0.1, 4)],
-        CellTypes.plant: [(0, 1), (0.1, 3)],
-        CellTypes.weed: [(0, 1), (0.1, 10)],
-        CellTypes.predator: [(0, 1), (0.1, 10)],
-        CellTypes.ice_cube: [(0, 1), (0.1, 10)],
-    }
-    penalty_params_prob = {
-        CellTypes.empty: 1,
-        CellTypes.life: 1,
-        CellTypes.wall: dscale([0,2,2,10], [0, 0, 0.25, 0.5]),
-        CellTypes.plant: dscale([0,3,3,10], [0, 0, 0.25, 0.5]),
-        CellTypes.weed: dscale([0,5,5,10], [0, 0, 0.15, 0.25]),
-        CellTypes.predator: dscale([0,8,8,10], [0, 0, 0.15, 0.15]),
-        CellTypes.ice_cube: dscale([0,6,6,10], [0, 0, 0.05, 0.05]),
-    }
-    for cell_type, prob in penalty_params_prob.items():
-        if prob < np.random.random():
-            del penalty_params[cell_type]
-    params = GenLifeParams(
-        temperature=temperature,
-        min_fill=min_fill,
-        penalty_params=penalty_params,
-    )
+    def _gen_still_life(board, mask, num_retries=3):
+        # temperature < 0.3 tends to not converge, or converge very slowly
+        # temperature = 0.4, fill = 0.05 yields pretty simple patterns
+        # temperature = 1.5, fill = 0.4 yields pretty complex patterns
+        temperature = dscale(
+            [0, 5, 10], low=[0.4, 0.4, 0.5], high=[0.4, 0.8, 0.8])
+        min_fill = dscale(
+            [0, 5, 10], low=[0.05, 0.1, 0.15], high=[0.1, 0.2, 0.3])
+        penalty_params = {
+            "wall": (1, 40),
+            "tree": (1, 30),
+            "weed": (1, 100),
+            "predator": (1, 100),
+            "ice_cube": (1, 100),
+        }
+        penalty_params_prob = {
+            "wall": dscale([0,2,2,10], [0, 0, 0.25, 0.5]),
+            "tree": dscale([0,3,3,10], [0, 0, 0.25, 0.5]),
+            "weed": dscale([0,5,5,10], [0, 0, 0.15, 0.25]),
+            "predator": dscale([0,8,8,10], [0, 0, 0.15, 0.15]),
+            "ice_cube": dscale([0,6,6,10], [0, 0, 0.05, 0.05]),
+        }
+        for name, prob in penalty_params_prob.items():
+            if prob < np.random.random():
+                del penalty_params[name]
+        try:
+            return speedups.gen_still_life(
+                board, mask, max_iter=100,
+                min_fill=min_fill, temperature=temperature, **penalty_params)
+        except RuntimeError:
+            if num_retries > 0:
+                return _gen_still_life(board, mask, num_retries-1)
+            else:
+                print(min_fill, temperature, penalty_params)
+                print("gen_still_life did not converge! "
+                      "num_retries exceeded; returning empty board")
+                return board
 
     fence_mask = mask & (fences == 0)
 
     if region_type == "still":
-        board = gen_still_life(board, fence_mask, params)
+        board = _gen_still_life(board, fence_mask)
         life_mask = (board == CellTypes.life) & mask
         board += life_mask * CellTypes.color_g
     elif region_type == "build":
-        board = gen_still_life(board, fence_mask, params)
+        board = _gen_still_life(board, fence_mask)
         alive_mask = ((board & CellTypes.alive) > 0) & mask
         life_mask = (board == CellTypes.life) & mask
         board *= (1 - life_mask)
         goals += alive_mask * CellTypes.color_b
     elif region_type == "destroy":
-        board = gen_still_life(board, fence_mask, params)
+        board = _gen_still_life(board, fence_mask)
         life_mask = (board == CellTypes.life) & mask
         board += life_mask * CellTypes.color_r
     elif region_type == "append":
-        board = gen_still_life(board, fence_mask, params)
+        board = _gen_still_life(board, fence_mask)
         life_mask = (board == CellTypes.life) & mask
         board += life_mask * CellTypes.color_g
         mask2 = fence_mask & (board == 0)
-        board = gen_still_life(board, mask2, params)
+        board = _gen_still_life(board, mask2)
         alive_mask = ((board & CellTypes.alive) > 0) & mask2
         board *= ~alive_mask
         goals += alive_mask * CellTypes.color_b
     elif region_type == "grow":
-        board = gen_still_life(board, fence_mask, params)
+        board = _gen_still_life(board, fence_mask)
         life_mask = (board == CellTypes.life) & mask
         board += life_mask * CellTypes.color_g
         mask2 = fence_mask & (board == 0)
-        board = gen_still_life(board, mask2, params)
+        board = _gen_still_life(board, mask2)
         alive_mask = ((board & CellTypes.alive) > 0) & mask2
         board *= ~alive_mask
         goals += alive_mask * CellTypes.color_g
     elif region_type == "prune":
-        board = gen_still_life(board, fence_mask, params)
+        board = _gen_still_life(board, fence_mask)
         life_mask = (board == CellTypes.life) & mask
         board += life_mask * CellTypes.color_g
         mask2 = fence_mask & (board == 0)
-        board = gen_still_life(board, mask2, params)
+        board = _gen_still_life(board, mask2)
         life_mask2 = (board == CellTypes.life) & mask2
         board += life_mask2 * CellTypes.color_r
     elif region_type == "spawner":
@@ -561,6 +565,11 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
     crate_mask = mask & (board == CellTypes.wall)
     crate_mask &= (np.random.random(board.shape) < crate_frac)
     board += crate_mask * CellTypes.movable
+    plant_mask = mask & (board == CellTypes.tree)
+    plant_mask &= (np.random.random(board.shape) < plant_frac)
+    board += plant_mask * CellTypes.movable
+
+    return board, goals
 
 
 def gen_game(board_shape=(35,35), difficulty=10, has_fences=True, max_regions=5):
@@ -572,7 +581,8 @@ def gen_game(board_shape=(35,35), difficulty=10, has_fences=True, max_regions=5)
     for k in np.unique(regions)[1:]:
         mask = regions == k
         region_type = 'build' if k == 1 else None
-        gen_region(board, goals, mask, fences, difficulty, region_type)
+        board, goals = gen_region(
+            board, goals, mask, fences, difficulty, region_type)
     i, j = np.nonzero(regions == 0)
     k1, k2 = np.random.choice(len(i), size=2, replace=False)
     board[i[k1], j[k1]] = CellTypes.player

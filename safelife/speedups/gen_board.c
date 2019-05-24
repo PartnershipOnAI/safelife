@@ -6,7 +6,7 @@
 #include "iset.h"
 #include "gen_board.h"
 
-#if 0
+#if 1
     #include <Python.h>
     #define PRINT(...) PySys_WriteStdout(__VA_ARGS__)
 #else
@@ -117,6 +117,7 @@ int gen_still_life(
     int totals[8];
     int num_iter;
     iset bad_idx = iset_alloc(size);
+    iset unmasked_idx = iset_alloc(size);
     double beta = 1 / (temperature > 0.01 ? temperature : 0.01);
 
     for (int k = 0; k < size; k++) {
@@ -137,6 +138,7 @@ int gen_still_life(
         if (!mask[k]) continue;
         total_area++;
         totals[idx_for_cell_type(val)]++;
+        iset_add(&unmasked_idx, k);
         if (val & FROZEN) continue;
         else if (val & ALIVE) {
             if (!n_preserved[k] && (n_alive[k] < 3 || n_alive[k] > 4))
@@ -146,6 +148,8 @@ int gen_still_life(
                 iset_add(&bad_idx, k);
         }
     }
+
+    PRINT("Total area: %i\n", total_area);
 
     int max_iter = rel_max_iter * total_area;
     double min_fill = rel_min_fill * total_area;
@@ -157,7 +161,7 @@ int gen_still_life(
 
         // Sample a point
         int k0, r0, c0;
-        k0 = iset_sample(&bad_idx);
+        k0 = iset_sample(bad_idx.size > 0 ? &bad_idx : &unmasked_idx);
         r0 = k0 / ncol;
         c0 = k0 % ncol;
         // build the 5x5 neighborhood surrounding the point.
@@ -276,6 +280,7 @@ int gen_still_life(
             double cum_prob = 0.0;
             double min_penalty = 1000;
             double cell_penalties2[8];
+            int num_masked = 0;
 
             {
                 // Special penalty for empty cell
@@ -295,15 +300,24 @@ int gen_still_life(
             for (j2 = 0, j4 = 0; j2 < 9; j2++) {
                 k2 = i1[i2[j2]];
                 old_cell = board[k2];
+                if (!mask[k2]) {
+                    num_masked++;
+                    j4 += 8;
+                    continue;
+                }
                 for (j3 = 0; j3 < 8; j3++, j4++) {
                     // Add penalties to the different cell types
                     penalties[j4] = violations[j4] + cell_penalties2[j3];
                     new_cell = cell_type_array[j3];
-                    if (min_penalty > penalties[j4] &&
-                            mask[k2] && new_cell != old_cell) {
+                    if (min_penalty > penalties[j4] && new_cell != old_cell) {
                         min_penalty = penalties[j4];
                     }
                 }
+            }
+            if (num_masked == 9) {
+                // Everything is masked out. Just go to the next point.
+                iset_discard(&bad_idx, k0);
+                continue;
             }
             for (j2 = 0, j4 = 0; j2 < 9; j2++) {
                 k2 = i1[i2[j2]];
@@ -342,17 +356,16 @@ int gen_still_life(
                 return PROBABILITY_ERROR;
             }
 
-            // Swap in the new cell
-            swap_cell:
+        swap_cell: // Swap in the new cell
             k2 = i1[i2[j2]];
             old_cell = board[k2];
             new_cell = cell_type_array[j3];
             totals[idx_for_cell_type(new_cell)]++;
             totals[idx_for_cell_type(old_cell)]--;
             board[k2] = new_cell;
-            PRINT("swap (%i %i): %i -> %i\n",
-                k2 / ncol, k2 % ncol,
-                idx_for_cell_type(old_cell), idx_for_cell_type(new_cell));
+            // PRINT("swap (%i %i): %i -> %i\n",
+            //     k2 / ncol, k2 % ncol,
+            //     idx_for_cell_type(old_cell), idx_for_cell_type(new_cell));
 
             // Adjust the neighbors and bad_idx
             int delta_alive = (new_cell & ALIVE) - (old_cell & ALIVE);
@@ -390,6 +403,7 @@ int gen_still_life(
     }  // end outer loop
 
     iset_free(&bad_idx);
+    iset_free(&unmasked_idx);
     PRINT("Iterations: %i/%i\n", num_iter, max_iter);
     return num_iter == max_iter ? MAX_ITER_ERROR : 0;
 }

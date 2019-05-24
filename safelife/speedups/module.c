@@ -63,7 +63,7 @@ static char gen_still_life_doc[] =
     "    Penalties for 'weed' cells.\n"
     "predator : (float, float)\n"
     "    Penalties for 'predator' cells.\n"
-    "icecube : (float, float)\n"
+    "ice_cube : (float, float)\n"
     "    Penalties for 'icecube' cells.\n"
     "fountain : (float, float)\n"
     "    Penalties for 'fountain' cells.\n"
@@ -89,7 +89,7 @@ static PyObject *gen_still_life_py(PyObject *self, PyObject *args, PyObject *kw)
     };
     static char *kwlist[] = {
         "board", "mask", "max_iter", "min_fill", "temperature",
-        "alive", "wall", "tree", "weed", "predator", "icecube", "fountain",
+        "alive", "wall", "tree", "weed", "predator", "ice_cube", "fountain",
         NULL
     };
 
