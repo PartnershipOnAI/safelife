@@ -79,8 +79,8 @@ static void wrapped_convolve(int *array, int *temp, int nrow, int ncol) {
         }
         // Wrap at end of row
         temp[end_of_row] = array[end_of_row];
-        temp[end_of_row] = array[end_of_row-1];
-        temp[end_of_row] = array[start_of_row];
+        temp[end_of_row] += array[end_of_row-1];
+        temp[end_of_row] += array[start_of_row];
     }
 
     // Combine along columns
@@ -98,6 +98,26 @@ static void wrapped_convolve(int *array, int *temp, int nrow, int ncol) {
         array[end_of_col] += temp[i];
         array[end_of_col] += temp[end_of_col-ncol];
     }
+}
+
+
+static int calc_interior_area(int32_t *mask, int nrow, int ncol) {
+    // Quick loop to calculate the number of unmasked cells that do not
+    // border masked cells.
+    int total = 0;
+    for (int i = 0, k = 0; i < nrow; i++) {
+        int dy1 = (i > 0 ? -1 : nrow - 1) * ncol;
+        int dy2 = (i < nrow - 1 ? +1 : 1 - nrow) * ncol;
+        for (int j = 0; j < ncol; j++, k++) {
+            int dx1 = (j > 0 ? -1 : ncol - 1);
+            int dx2 = (j < ncol - 1 ? +1 : 1 - ncol);
+            if (mask[k+dy1] && mask[k+dy2] &&
+                mask[k+dx1] && mask[k+dx2] && mask[k]) {
+                total++;
+            }
+        }
+    }
+    return total;
 }
 
 
@@ -125,6 +145,7 @@ int gen_still_life(
         n_preserved[k] = (board[k] & PRESERVING) >> PRESERVING_BIT;
         n_inhibited[k] = (board[k] & INHIBITING) >> INHIBITING_BIT;
     }
+
     wrapped_convolve(n_alive, tmp_buffer, nrow, ncol);
     wrapped_convolve(n_preserved, tmp_buffer, nrow, ncol);
     wrapped_convolve(n_inhibited, tmp_buffer, nrow, ncol);
@@ -149,10 +170,16 @@ int gen_still_life(
         }
     }
 
-    PRINT("Total area: %i\n", total_area);
-
     int max_iter = rel_max_iter * total_area;
-    double min_fill = rel_min_fill * total_area;
+    int interior_area = calc_interior_area(mask, nrow, ncol);
+    double effective_area = 0.75 * interior_area + 0.25 * total_area;
+    double min_fill = rel_min_fill * effective_area;
+    PRINT("Total area: %i; ", total_area);
+    PRINT("Interior area: %i\n", interior_area);
+    if (interior_area < 2) {
+        return AREA_TOO_SMALL_ERROR;
+    }
+
     for (num_iter = 0; num_iter < max_iter; num_iter++) {
         int not_empty = total_area - totals[0];
         if (bad_idx.size == 0 && not_empty >= min_fill) {
@@ -324,9 +351,8 @@ int gen_still_life(
                 old_cell = board[k2];
                 for (j3 = 0; j3 < 8; j3++, j4++) {
                     new_cell = cell_type_array[j3];
-                    double x = (min_penalty - penalties[j4]) * beta;
-                    probs[j4] = exp(x);
-                    probs[j4] *= mask[k2] * (new_cell != old_cell);
+                    probs[j4] = mask[k2] && new_cell != old_cell ?
+                        exp((min_penalty - penalties[j4]) * beta) : 0.0;
                     cprob1 += probs[j4];
                 }
             }
@@ -351,7 +377,9 @@ int gen_still_life(
                 PRINT(
                    "ERROR! target_prob > cum_prob: %0.5g; %0.5g %0.5g\n",
                    target_prob, cprob1, cprob2);
+                PRINT("k0 = %i, %i\n \n", k0/ncol, k0%ncol);
                 iset_free(&bad_idx);
+                iset_free(&unmasked_idx);
                 return PROBABILITY_ERROR;
             }
 
@@ -362,9 +390,6 @@ int gen_still_life(
             totals[idx_for_cell_type(new_cell)]++;
             totals[idx_for_cell_type(old_cell)]--;
             board[k2] = new_cell;
-            // PRINT("swap (%i %i): %i -> %i\n",
-            //     k2 / ncol, k2 % ncol,
-            //     idx_for_cell_type(old_cell), idx_for_cell_type(new_cell));
 
             // Adjust the neighbors and bad_idx
             int delta_alive = (new_cell & ALIVE) - (old_cell & ALIVE);

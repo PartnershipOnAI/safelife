@@ -2,6 +2,7 @@
 
 #define MAX_ITER_ERROR -1
 #define PROBABILITY_ERROR -2
+#define AREA_TOO_SMALL_ERROR -3
 
 int gen_still_life(
         int16_t *board, int32_t *mask, int nrow, int ncol,

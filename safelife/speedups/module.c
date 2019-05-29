@@ -7,12 +7,18 @@
 #define PY_VAL_ERROR(msg) {PyErr_SetString(PyExc_ValueError, msg); goto error;}
 
 
+static PyObject *BoardGenException;
+static PyObject *MaxIterException;
+static PyObject *BadProbabilityException;
+static PyObject *InsufficientAreaException;
+
+
 static PyObject *advance_board_py(PyObject *self, PyObject *args) {
     PyObject *board_obj;
     PyArrayObject *b1, *b2;
-    float spawn_prob;
+    float spawn_prob = 0.3;
 
-    if (!PyArg_ParseTuple(args, "Of", &board_obj, &spawn_prob)) return NULL;
+    if (!PyArg_ParseTuple(args, "O|f", &board_obj, &spawn_prob)) return NULL;
     board_obj = PyArray_FROM_OTF(
         board_obj, NPY_INT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
     if (!board_obj)  return NULL;
@@ -134,14 +140,22 @@ static PyObject *gen_still_life_py(PyObject *self, PyObject *args, PyObject *kw)
         PyArray_DIM(board, 1),
         max_iter, min_fill, temperature, cp
     );
-    if (err_code) {
-        if (err_code == MAX_ITER_ERROR) {
-            PY_RUN_ERROR("Max-iter hit. Aborting!");
-        } else {
-            PY_RUN_ERROR("Miscellany error.")
-        }
+    switch (err_code) {
+        case 0:
+            goto success;
+        case MAX_ITER_ERROR:
+            PyErr_SetString(MaxIterException, "Max-iter hit. Aborting!");
+            goto error;
+        case AREA_TOO_SMALL_ERROR:
+            PyErr_SetString(InsufficientAreaException,
+                "The unmasked area was too small to generate a pattern.");
+            goto error;
+        default:
+            PyErr_SetString(BoardGenException, "Miscellany error.");
+            goto error;
     }
 
+    success:
     Py_DECREF(mask);
     return (PyObject *)board;
 
@@ -187,8 +201,30 @@ static struct PyModuleDef module_def = {
     methods
 };
 
+static PyObject *BoardGenException;
+static PyObject *MaxIterException;
+static PyObject *BadProbabilityException;
+static PyObject *InsufficientAreaException;
+
 
 PyMODINIT_FUNC PyInit_speedups(void) {
     import_array();
-    return PyModule_Create(&module_def);
+
+    PyObject *m = PyModule_Create(&module_def);
+    if (!m) return NULL;
+
+    BoardGenException = PyErr_NewException(
+        "speedups.BoardGenException", NULL, NULL);
+    MaxIterException = PyErr_NewException(
+        "speedups.MaxIterException", BoardGenException, NULL);
+    BadProbabilityException = PyErr_NewException(
+        "speedups.BadProbabilityException", BoardGenException, NULL);
+    InsufficientAreaException = PyErr_NewException(
+        "speedups.InsufficientAreaException", BoardGenException, NULL);
+    PyModule_AddObject(m, "BoardGenException", BoardGenException);
+    PyModule_AddObject(m, "MaxIterException", MaxIterException);
+    PyModule_AddObject(m, "BadProbabilityException", BadProbabilityException);
+    PyModule_AddObject(m, "InsufficientAreaException", InsufficientAreaException);
+
+    return m;
 }

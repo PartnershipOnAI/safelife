@@ -454,13 +454,15 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
             "ice_cube": dscale([0,6,6,10], [0, 0, 0.05, 0.05]),
         }
         for name, prob in penalty_params_prob.items():
-            if prob < np.random.random():
+            if prob < np.random.random() or name in exclude:
                 del penalty_params[name]
         try:
             return speedups.gen_still_life(
                 board, mask, max_iter=100,
                 min_fill=min_fill, temperature=temperature, **penalty_params)
-        except RuntimeError:
+        except speedups.InsufficientAreaException:
+            return board
+        except speedups.MaxIterException:
             if num_retries > 0:
                 return _gen_still_life(board, mask, num_retries-1)
             else:
