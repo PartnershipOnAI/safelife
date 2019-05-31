@@ -1,6 +1,6 @@
 pyemd==0.5.1
-numpy>=1.10.0
+numpy>=1.11.0
 scipy>=1.0.0
 gym>=0.12
 imageio>=2.5.0
-tensorflow>=1.13
+tensorflow>=1.13,<2.0

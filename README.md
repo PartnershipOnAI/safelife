@@ -34,11 +34,16 @@ These properties can be mixed and matched, allowing for a large set of interesti
 
 ## Running the environment
 
-The environment can be used for training and running a reinforcement learning agent (still to come), or it can be played with human input. To install, run
+The environment can be used for training and running a reinforcement learning agent, or it can be played with human input. To install, run
 
     python3 setup.py install
 
-or just install the requirements (`pip3 install -r requirements.txt`) and move the `safelife` folder to somewhere where your python executable can find it (i.e., just keep this as your working directory).
+If you'd like to install in the current directory, instead run
+
+    pip3 install -r requirements.txt
+    python3 setup.py build --build-lib .
+
+which will compile the `speedups.so` extension and place it in the `safelife` folder.
 
 ### Playing as a human
 
@@ -46,12 +51,16 @@ To play the game, run
 
     python3 -m safelife --load ./levels
 
-That will play all of the levels in the `levels` folder. Other levels can be played using e.g. `--load ./levels/mazes`. You can also play a randomized level using
+That will play all of the levels in the `levels` folder. Other levels can be played using e.g. `--load ./levels/mazes`. You can also play a randomized level using e.g.
 
-    python3 -m safelife --randomize
+    python3 -m safelife --difficulty 5
 
 Arrow keys will move the player, and the `c` key will activate or deactivate whichever cell is in front of the player. Press `shift-R` to restart a level, although it incurs some point penalty. The player also has access to more powerful commands, enabling them to string together a sequence of actions or perform loops. For more details on exactly which keys do what, see `game_loop.py`.
 
 ### Playing as an RL agent
 
-(still to come)
+The `start-job` script will start training an agent. Note that it assumes that the `speedups.so` has been installed locally (i.e., using `python3 setup.py build --build-lib .`). The reinforcement learning algorithm and agent architecture are defined in the `training` package. Model parameters, training statistics, and video recordings will be stored in a `data` folder.
+
+The `start-job` script is designed to be run remotely via gcloud. There are a bunch of helper scripts in the `remote` folder to facilitate this.
+
+For now, all hyperparameters need to be hardcoded in the relevant files (mostly `safelife.safety_gym` to specify the environment, and `training.agent_network` to specify the RL parameters and network). We'll probably later add a parameter file to make loading and changing parameters easier.

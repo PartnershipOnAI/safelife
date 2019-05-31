@@ -8,12 +8,20 @@ ext_path = os.path.abspath(os.path.join(__file__, '../safelife/speedups'))
 
 setuptools.setup(
     name='safety-net',
-    version='0.1',
+    version='0.1.dev1',
     author="Carroll L. Wainwright",
     description="Safety benchmarks for reinforcement learning",
     # package_dir={'safelife': src_dir},
     packages=['safelife'],
     package_data={'safelife': ['*.png']},
+    install_requires=[
+        "pyemd==0.5.1",
+        "numpy>=1.11.0",
+        "scipy>=1.0.0",
+        "gym>=0.12",
+        "imageio>=2.5.0",
+        "tensorflow>=1.13,<2.0",
+    ],
     ext_modules=[
         setuptools.Extension(
             'safelife.speedups',
