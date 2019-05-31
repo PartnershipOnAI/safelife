@@ -592,24 +592,16 @@ class GameWithGoals(GameState):
     """
     goals = None
 
-    # No goal: All zero except for r (-1)
-    # Red: all -1 except for r (+1), ym (0)
-    # Blue: all +1 except for b (+2), r (-1), y (0)
-    # Green: all zero except for g (+2), r(-1), c (+1)
-    # Yellow: all zero except y (+1), k (-1)
-    # Cyan: all +1 except for c(+2), r(-1), ym (0)
-    # Magenta: all -1 except for m (+2), r (+1), y (0)
-    # White: all 0 except w (+1)
     reward_table = np.array([
         # k   r   g   y   b   m   c   w
-        [+0,-.25, +0, +0, +0, +0, +0, +0],  # black / no goal
-        [-1, +1, -1, +0, -1, +0, -1, -1],  # red goal
-        [+0, -1, +2, +0, +0, +0, +1, +0],  # green goal
-        [-1, +0, +0, +1, +0, +0, +0, +0],  # yellow goal
-        [+1, -1, +1, +0, +2, +1, +1, +1],  # blue goal
-        [-1, +1, -1, +0, -1, +2, -1, -1],  # magenta goal
-        [+1, -1, +1, +0, +1, +0, +2, +1],  # cyan goal
-        [+0, -.25, +0, +0, +0, +0, +0, +1],  # white / rainbow goal
+        [+0, -1, +0, +0, +0, +0, +0, +0],  # black / no goal
+        [-3, +3, -3, +0, -3, +0, -3, -3],  # red goal
+        [+0, -3, +5, +0, +0, +0, +3, +0],  # green goal
+        [-3, +0, +0, +3, +0, +0, +0, +0],  # yellow goal
+        [+3, -3, +3, +0, +5, +3, +3, +3],  # blue goal
+        [-3, +3, -3, +0, -3, +5, -3, -3],  # magenta goal
+        [+3, -3, +3, +0, +3, +0, +5, +3],  # cyan goal
+        [+0, -1, +0, +0, +0, +0, +0, +3],  # white / rainbow goal
     ])
     reward_table.setflags(write=False)
 

@@ -118,7 +118,7 @@ class GameOfLifeEnv(gym.Env):
         done = self.state.game_over or times_up
         standing_still = old_position == self.state.agent_loc
         reward = base_reward - standing_still * self.no_movement_penalty
-        return self._get_obs(), reward, done, {
+        return self._get_obs(), reward / 3.0, done, {
             'did_move': not standing_still,
             'times_up': times_up,
             'base_reward': base_reward,
