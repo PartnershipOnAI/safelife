@@ -457,9 +457,18 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
             if prob < np.random.random() or name in exclude:
                 del penalty_params[name]
         try:
-            return speedups.gen_still_life(
+            new_board = speedups.gen_still_life(
                 board, mask, max_iter=100,
                 min_fill=min_fill, temperature=temperature, **penalty_params)
+            new_fill = np.sum(new_board * mask != 0) / np.sum(mask)
+            if new_fill > 2 * min_fill:
+                if num_retries > 0:
+                    return _gen_still_life(board, mask, num_retries-1)
+                else:
+                    print("gen_still_life produced an overfull pattern. "
+                          "num_retries exceeded; no patterns added.")
+                    return board
+            return new_board
         except speedups.InsufficientAreaException:
             return board
         except speedups.MaxIterException:

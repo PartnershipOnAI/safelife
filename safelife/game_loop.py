@@ -252,6 +252,13 @@ class GameLoop(object):
         except KeyboardInterrupt:
             print("\nGame aborted")
 
+    def print_games(self):
+        for i, game in enumerate(self.load_levels()):
+            print("\nBoard #%i" % i)
+            print(renderer.render_board(game))
+            if getch() == KEYS.INTERRUPT:
+                break
+
 
 if __name__ == "__main__":
     GameLoop().start_games()
