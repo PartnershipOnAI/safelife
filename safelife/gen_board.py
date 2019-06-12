@@ -384,6 +384,30 @@ def gen_still_life(board, mask=None, params=GenLifeParams()):
     return board
 
 
+def simple_still_life(board_size, min_fill=0.1, num_tries=10, **kw):
+    from . import speedups
+
+    board = np.zeros(board_size, dtype=np.int16)
+    mask = np.ones(board_size, dtype=bool)
+    mask[0] = mask[-1] = False
+    mask[:,0] = mask[:,-1] = False
+    for _ in range(num_tries):
+        try:
+            new_board = speedups.gen_still_life(
+                board, mask, max_iter=100, min_fill=min_fill, **kw)
+        except speedups.BoardGenException:
+            continue
+        new_count = np.sum(mask * (new_board != 0))
+        if new_count > 2 * min_fill * np.sum(mask):
+            # too many cells!
+            continue
+        else:
+            break
+    else:
+        raise speedups.BoardGenException("num_tries exceeded")
+    return new_board
+
+
 def gen_region(board, goals, mask, fences, difficulty, region_type=None):
     from . import speedups
 
@@ -434,7 +458,7 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
         # temperature = 0.4, fill = 0.05 yields pretty simple patterns
         # temperature = 1.5, fill = 0.4 yields pretty complex patterns
         temperature = dscale(
-            [0, 5, 10], low=[0.4, 0.4, 0.5], high=[0.4, 0.8, 0.8])
+            [0, 5, 10], low=[0.3, 0.4, 0.5], high=[0.3, 0.8, 0.8])
         min_fill = dscale(
             [0, 5, 10], low=[0.05, 0.1, 0.15], high=[0.1, 0.2, 0.3])
         if half:

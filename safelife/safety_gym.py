@@ -35,7 +35,7 @@ class GameOfLifeEnv(gym.Env):
     old_state_value = 0
     max_steps = 1200
     num_steps = 0
-    goal_points = 0.1
+    points_on_level_exit = 1.0
     no_movement_penalty = 0.02
     difficulty = 4
     has_fences = True
@@ -148,7 +148,7 @@ class GameOfLifeEnv(gym.Env):
             i1 = np.random.randint(1, self.board_shape[0])
             j1 = np.random.randint(1, self.board_shape[1])
             state.board[i1,j1] = CellTypes.level_exit
-        state.points_on_level_exit = self.goal_points
+        state.points_on_level_exit = self.points_on_level_exit
         # Get rid of movable blocks.
         state.board &= ~CellTypes.movable
         self.state = state

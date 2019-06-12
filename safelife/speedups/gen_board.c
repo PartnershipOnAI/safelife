@@ -429,5 +429,6 @@ int gen_still_life(
     iset_free(&bad_idx);
     iset_free(&unmasked_idx);
     PRINT("Iterations: %i/%i\n", num_iter, max_iter);
+    PRINT("Num alive: %i/%i\n", totals[ALIVE_IDX], total_area);
     return num_iter == max_iter ? MAX_ITER_ERROR : 0;
 }

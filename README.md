@@ -49,11 +49,11 @@ which will compile the `speedups.so` extension and place it in the `safelife` fo
 
 To play the game, run
 
-    python3 -m safelife --load ./levels
+    python3 -m safelife play ./levels
 
-That will play all of the levels in the `levels` folder. Other levels can be played using e.g. `--load ./levels/mazes`. You can also play a randomized level using e.g.
+That will play all of the levels in the `levels` folder. Other levels can be played using e.g. `play ./levels/mazes`. You can also play a randomized level using e.g.
 
-    python3 -m safelife --difficulty 5
+    python3 -m safelife play --difficulty 5
 
 Arrow keys will move the player, and the `c` key will activate or deactivate whichever cell is in front of the player. Press `shift-R` to restart a level, although it incurs some point penalty. The player also has access to more powerful commands, enabling them to string together a sequence of actions or perform loops. For more details on exactly which keys do what, see `game_loop.py`.
 

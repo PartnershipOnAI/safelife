@@ -125,7 +125,7 @@ class GameLoop(object):
     """
     game_cls = GameOfLife
     board_size = (25, 25)
-    random_board = False
+    random_board = True
     difficulty = 1  # for random boards
     load_from = None
     view_size = None
@@ -140,11 +140,15 @@ class GameLoop(object):
     recording_directory = "./plays/"
 
     def load_levels(self):
-        if self.load_from and os.path.isdir(self.load_from):
-            for fname in sorted(glob.glob(os.path.join(self.load_from, '*.npz'))):
+        if len(self.load_from) == 1 and os.path.isdir(self.load_from[0]):
+            # Load all levels from a directory
+            load_pattern = os.path.join(self.load_from[0], '*.npz')
+            for fname in sorted(glob.glob(load_pattern)):
                 yield self.game_cls.load(fname)
         elif self.load_from:
-            yield self.game_cls.load(self.load_from)
+            # Load file names directly
+            for fname in self.load_from:
+                yield self.game_cls.load(fname)
         elif self.random_board:
             while True:
                 yield gen_game(self.board_size, self.difficulty)
@@ -254,11 +258,49 @@ class GameLoop(object):
 
     def print_games(self):
         for i, game in enumerate(self.load_levels()):
-            print("\nBoard #%i" % i)
+            print("\nBoard #%i" % (i+1))
             print(renderer.render_board(game))
             if getch() == KEYS.INTERRUPT:
                 break
 
 
-if __name__ == "__main__":
-    GameLoop().start_games()
+def _make_cmd_args(subparsers):
+    # used by __main__.py to define command line tools
+    play_parser = subparsers.add_parser(
+        "play", help="Play a game of SafeLife in the terminal.")
+    print_parser = subparsers.add_parser(
+        "print", help="Generate new game boards and print to terminal.")
+    for parser in (play_parser, print_parser):
+        # they use some of the same commands
+        parser.add_argument('load_from',
+            nargs='*', help="Load game state from file. "
+            "Effectively overrides board size and difficulty.")
+        parser.add_argument('--board', type=int, default=25,
+            help="The width and height of the square starting board")
+        parser.add_argument('--difficulty', type=float, default=1.0,
+            help="Difficulty of the random board. On a scale of 0-10.")
+        parser.set_defaults(run_cmd=_run_cmd_args)
+    play_parser.add_argument('--clear', action="store_true",
+        help="Starts with an empty board.")
+    play_parser.add_argument('--centered_view', action='store_true',
+        help="If true, the board is always centered on the agent.")
+    play_parser.add_argument('--view_size', type=int, default=None,
+        help="View size. Implies a centered view.")
+    play_parser.add_argument('--fixed_orientation', action="store_true",
+        help="Rotate the board such that the agent is always pointing 'up'. "
+        "Implies a centered view. (not recommended for humans)")
+
+
+def _run_cmd_args(args):
+    main_loop = GameLoop()
+    main_loop.board_size = (args.board, args.board)
+    main_loop.load_from = args.load_from
+    main_loop.difficulty = args.difficulty
+    if args.cmd == "print":
+        main_loop.print_games()
+    else:
+        main_loop.random_board = not args.clear
+        main_loop.centered_view = args.centered_view
+        main_loop.view_size = args.view_size and (args.view_size, args.view_size)
+        main_loop.fixed_orientation = args.fixed_orientation
+        main_loop.start_games()
