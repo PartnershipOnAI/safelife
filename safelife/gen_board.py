@@ -453,7 +453,8 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
     crate_frac = dscale([0, 5, 10], low=[0, 0.2, -0.1], high=[0, 1, 0.5])
     plant_frac = dscale([0, 5, 10], low=[0, 0.2, -0.1], high=[0, 1, 0.5])
 
-    def _gen_still_life(board, mask, num_retries=3, half=False, exclude=()):
+    def _gen_still_life(
+            board, mask, seeds=None, num_retries=3, half=False, exclude=()):
         # temperature < 0.3 tends to not converge, or converge very slowly
         # temperature = 0.4, fill = 0.05 yields pretty simple patterns
         # temperature = 1.5, fill = 0.4 yields pretty complex patterns
@@ -482,12 +483,13 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
                 del penalty_params[name]
         try:
             new_board = speedups.gen_still_life(
-                board, mask, max_iter=100,
+                board, mask, seeds, max_iter=100,
                 min_fill=min_fill, temperature=temperature, **penalty_params)
             new_fill = np.sum(new_board * mask != 0) / np.sum(mask)
             if new_fill > 2 * min_fill:
                 if num_retries > 0:
-                    return _gen_still_life(board, mask, num_retries-1)
+                    return _gen_still_life(
+                        board, mask, seeds, num_retries-1, half, exclude)
                 else:
                     print("gen_still_life produced an overfull pattern. "
                           "num_retries exceeded; no patterns added.")
@@ -497,7 +499,8 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
             return board
         except speedups.MaxIterException:
             if num_retries > 0:
-                return _gen_still_life(board, mask, num_retries-1)
+                return _gen_still_life(
+                    board, mask, seeds, num_retries-1, half, exclude)
             else:
                 print("gen_still_life did not converge! "
                       "num_retries exceeded; no patterns added.")
@@ -524,8 +527,9 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
         life_mask = (board == CellTypes.life) & mask
         board += life_mask * CellTypes.color_g
         mask2 = fence_mask & (board == 0)
+        seeds = board * fence_mask > 0
         board = _gen_still_life(
-            board, mask2, half=True, exclude=("tree", "weed"))
+            board, mask2, seeds, half=True, exclude=("tree", "weed"))
         life_mask = (board == CellTypes.life) & mask2
         board *= ~life_mask
         goals += life_mask * CellTypes.color_b
@@ -534,8 +538,9 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
         life_mask = (board == CellTypes.life) & mask
         board += life_mask * CellTypes.color_g
         mask2 = fence_mask & (board == 0)
+        seeds = board * fence_mask > 0
         board = _gen_still_life(
-            board, mask2, half=True, exclude=("tree", "weed"))
+            board, mask2, seeds, half=True, exclude=("tree", "weed"))
         life_mask = (board == CellTypes.life) & mask2
         board *= ~life_mask
         goals += life_mask * CellTypes.color_g
@@ -544,7 +549,9 @@ def gen_region(board, goals, mask, fences, difficulty, region_type=None):
         life_mask = (board == CellTypes.life) & mask
         board += life_mask * CellTypes.color_g
         mask2 = fence_mask & (board == 0)
-        board = _gen_still_life(board, mask2, half=True)
+        seeds = board * fence_mask > 0
+        board = _gen_still_life(
+            board, mask2, seeds, half=True, exclude=("tree", "weed"))
         life_mask2 = (board == CellTypes.life) & mask2
         board += life_mask2 * CellTypes.color_r
     elif region_type == "spawner":

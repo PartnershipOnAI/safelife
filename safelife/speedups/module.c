@@ -51,6 +51,8 @@ static char gen_still_life_doc[] =
     "----------\n"
     "board : ndarray\n"
     "mask : ndarray\n"
+    "seeds : ndarray\n"
+    "    Locations at which to start growing patterns. Same shape as board.\n"
     "max_iter : float\n"
     "    Maximum number of iterations to be run, relative to the board size.\n"
     "min_fill : float\n"
@@ -76,8 +78,8 @@ static char gen_still_life_doc[] =
 ;
 
 static PyObject *gen_still_life_py(PyObject *self, PyObject *args, PyObject *kw) {
-    PyObject *board_obj, *mask_obj;
-    PyArrayObject *board = NULL, *mask = NULL;
+    PyObject *board_obj, *mask_obj, *seeds_obj = Py_None;
+    PyArrayObject *board = NULL, *mask = NULL, *seeds = NULL;
 
     double max_iter = 40;
     double min_fill = 0.2;
@@ -94,15 +96,16 @@ static PyObject *gen_still_life_py(PyObject *self, PyObject *args, PyObject *kw)
         100, 100,  // FOUNTAIN
     };
     static char *kwlist[] = {
-        "board", "mask", "max_iter", "min_fill", "temperature",
+        "board", "mask", "seeds", "max_iter", "min_fill", "temperature",
         "alive", "wall", "tree", "weed", "predator", "ice_cube", "fountain",
         NULL
     };
 
     if (!PyArg_ParseTupleAndKeywords(
-            args, kw, "OO|ddd(dd)(dd)(dd)(dd)(dd)(dd)(dd):gen_still_life",
+            args, kw, "OO|Oddd(dd)(dd)(dd)(dd)(dd)(dd)(dd):gen_still_life",
             kwlist,
-            &board_obj, &mask_obj, &max_iter, &min_fill, &temperature,
+            &board_obj, &mask_obj, &seeds_obj,
+            &max_iter, &min_fill, &temperature,
             cp+2, cp+3, cp+4, cp+5, cp+6, cp+7, cp+8, cp+9,
             cp+10, cp+11, cp+12, cp+13, cp+14, cp+15)) {
         return NULL;
@@ -119,23 +122,30 @@ static PyObject *gen_still_life_py(PyObject *self, PyObject *args, PyObject *kw)
     mask = (PyArrayObject *)PyArray_FROM_OTF(
         mask_obj, NPY_INT32,
         NPY_ARRAY_IN_ARRAY | NPY_ARRAY_ENSURECOPY);
-    if (!board || !mask) {
-        PY_VAL_ERROR("Board and/or mask are not arrays.");
+    // Make seeds same as mask if not available
+    seeds = seeds_obj != Py_None ? (PyArrayObject *)PyArray_FROM_OTF(
+        seeds_obj, NPY_INT32,
+        NPY_ARRAY_IN_ARRAY | NPY_ARRAY_ENSURECOPY) : mask;
+    if (!board || !mask || !seeds) {
+        PY_VAL_ERROR("Board and/or mask and/or seeds are not arrays.");
     }
-    if (PyArray_NDIM(board) != 2 || PyArray_NDIM(mask) != 2) {
-        PY_VAL_ERROR("Board and mask must be dimension 2.");
+    if (PyArray_NDIM(board) != 2 || PyArray_NDIM(mask) != 2 || PyArray_NDIM(seeds) != 2) {
+        PY_VAL_ERROR("Board, mask, and seeds must all be dimension 2.");
     }
     if (PyArray_DIM(board, 0) < 3 || PyArray_DIM(board, 1) < 3) {
-        PY_VAL_ERROR("Board and mask must be at least 3x3.");
+        PY_VAL_ERROR("Board must be at least 3x3.");
     }
     if (PyArray_DIM(board, 0) != PyArray_DIM(mask, 0) ||
-            PyArray_DIM(board, 1) != PyArray_DIM(mask, 1)) {
-        PY_VAL_ERROR("Board and mask must have the same dimensions.");
+            PyArray_DIM(board, 1) != PyArray_DIM(mask, 1) ||
+            PyArray_DIM(board, 0) != PyArray_DIM(seeds, 0) ||
+            PyArray_DIM(board, 1) != PyArray_DIM(seeds, 1)) {
+        PY_VAL_ERROR("Board, mask, and seeds must all have the same shape.");
     }
 
     int err_code = gen_still_life(
         (int16_t *)PyArray_DATA(board),
         (int32_t *)PyArray_DATA(mask),
+        (int32_t *)PyArray_DATA(seeds),
         PyArray_DIM(board, 0),
         PyArray_DIM(board, 1),
         max_iter, min_fill, temperature, cp
@@ -157,11 +167,13 @@ static PyObject *gen_still_life_py(PyObject *self, PyObject *args, PyObject *kw)
 
     success:
     Py_DECREF(mask);
+    if (seeds_obj != Py_None) Py_DECREF(seeds);
     return (PyObject *)board;
 
     error:
     Py_XDECREF((PyObject *)board);
     Py_XDECREF((PyObject *)mask);
+    if (seeds_obj != Py_None) Py_XDECREF(seeds);
     return NULL;
 }
 

@@ -10,7 +10,7 @@
     #include <Python.h>
     #define PRINT(...) PySys_WriteStdout(__VA_ARGS__)
 #else
-    #define PRINT(...) ;
+    #define PRINT(...) do {} while (0);
 #endif
 
 #define EMPTY_IDX  0
@@ -122,7 +122,7 @@ static int calc_interior_area(int32_t *mask, int nrow, int ncol) {
 
 
 int gen_still_life(
-        int16_t *board, int32_t *mask, int nrow, int ncol,
+        int16_t *board, int32_t *mask, int32_t *seeds, int nrow, int ncol,
         double rel_max_iter, double rel_min_fill, double temperature,
         double *cell_penalties) {
     // The amount of indexing gymnastics used here is, admitedly, awful.
@@ -138,6 +138,7 @@ int gen_still_life(
     int num_iter;
     iset bad_idx = iset_alloc(size);
     iset unmasked_idx = iset_alloc(size);
+    iset seeds_idx = iset_alloc(size);
     double beta = 1 / (temperature > 0.01 ? temperature : 0.01);
 
     for (int k = 0; k < size; k++) {
@@ -156,6 +157,7 @@ int gen_still_life(
         int16_t val = board[k];
         // Assume that there are no violations that are masked out,
         // although we'll make sure not to create new ones in the masked area.
+        if (seeds[k]) iset_add(&seeds_idx, k);
         if (!mask[k]) continue;
         total_area++;
         totals[idx_for_cell_type(val)]++;
@@ -188,7 +190,12 @@ int gen_still_life(
 
         // Sample a point
         int k0, r0, c0;
-        k0 = iset_sample(bad_idx.size > 0 ? &bad_idx : &unmasked_idx);
+        k0 = iset_sample(
+            bad_idx.size > 0 ? &bad_idx :
+            seeds_idx.size > 0 ? &seeds_idx :
+            &unmasked_idx);
+        // Sample from each seed no more than once.
+        iset_discard(&seeds_idx, k0);
         r0 = k0 / ncol;
         c0 = k0 % ncol;
         // build the 5x5 neighborhood surrounding the point.
@@ -380,6 +387,7 @@ int gen_still_life(
                 PRINT("k0 = %i, %i\n \n", k0/ncol, k0%ncol);
                 iset_free(&bad_idx);
                 iset_free(&unmasked_idx);
+                iset_free(&seeds_idx);
                 return PROBABILITY_ERROR;
             }
 
@@ -428,6 +436,7 @@ int gen_still_life(
 
     iset_free(&bad_idx);
     iset_free(&unmasked_idx);
+    iset_free(&seeds_idx);
     PRINT("Iterations: %i/%i\n", num_iter, max_iter);
     PRINT("Num alive: %i/%i\n", totals[ALIVE_IDX], total_area);
     return num_iter == max_iter ? MAX_ITER_ERROR : 0;
