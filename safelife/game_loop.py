@@ -174,6 +174,7 @@ class GameLoop(object):
         game.is_editing = self.editing
         states = []
         orientations = []
+        state_changed = True
 
         while not game.game_over:
             output = "\x1b[H\x1b[J"
@@ -184,9 +185,10 @@ class GameLoop(object):
             output += "Powers: \x1b[3m%s\x1b[0m\n" % renderer.agent_powers(game)
             if self.editing:
                 output += "\x1b[1m*** EDIT MODE ***\x1b[0m\n"
-            if self.recording:
+            if self.recording and state_changed:
                 states.append(game.board.copy())
                 orientations.append(game.orientation)
+            if self.recording:
                 output += "\x1b[1m*** RECORDING ***\x1b[0m\n"
             output += renderer.render_board(game,
                 self.centered_view, self.view_size, self.fixed_orientation)
@@ -199,6 +201,7 @@ class GameLoop(object):
             sys.stdout.flush()
 
             key = getch()
+            state_changed = False
             if key == KEYS.INTERRUPT:
                 raise KeyboardInterrupt
             elif key == KEYS.DELETE:
@@ -219,6 +222,7 @@ class GameLoop(object):
                 points, steps = program.add_command(COMMAND_KEYS[key])
                 self.total_points += points
                 self.total_steps += steps
+                state_changed = steps > 0
             if game.game_over == -2:
                 # Level should be restarted.
                 game.revert()
