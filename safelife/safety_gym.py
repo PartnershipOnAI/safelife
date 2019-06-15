@@ -38,7 +38,6 @@ class GameOfLifeEnv(gym.Env):
     points_on_level_exit = 1.0
     no_movement_penalty = 0.02
     difficulty = 4
-    has_fences = True
     max_regions = 4
     default_channels = 'all'
 
@@ -126,7 +125,7 @@ class GameOfLifeEnv(gym.Env):
 
     def _queue_new_board(self):
         self._board_queue.append(self._pool.apply_async(gen_game, (
-            self.board_shape, self.difficulty, self.has_fences, self.max_regions)
+            self.board_shape, self.difficulty, self.max_regions)
         ))
 
     def _get_new_board(self):
