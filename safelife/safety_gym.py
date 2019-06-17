@@ -37,7 +37,7 @@ class GameOfLifeEnv(gym.Env):
     num_steps = 0
     points_on_level_exit = 1.0
     no_movement_penalty = 0.02
-    difficulty = 4
+    difficulty = 3
     max_regions = 4
     default_channels = 'all'
 

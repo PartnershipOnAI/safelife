@@ -33,7 +33,7 @@ class GameOfLifePPO(ppo.PPO):
     value_discount_weights = np.array([0.5, 0.5], dtype=np.float32)
     lmda = 0.9
     learning_rate = 3e-4
-    entropy_reg = 3e-3
+    entropy_reg = 1e-2
     vf_coef = 1.0
     max_gradient_norm = 1.0
     eps_clip = 0.1
