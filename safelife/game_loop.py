@@ -112,7 +112,7 @@ EDIT_KEYS = {
     's': "SAVE",
     'S': "SAVE AS",
     'R': "REVERT",
-    'Q': "END LEVEL",
+    'Q': "ABORT LEVEL",
 }
 TOGGLE_EDIT = '`'
 TOGGLE_RECORD = '*'
@@ -223,8 +223,7 @@ class GameLoop(object):
                 self.total_points += points
                 self.total_steps += steps
                 state_changed = steps > 0
-            if game.game_over == -2:
-                # Level should be restarted.
+            if game.game_over == "RESTART":
                 game.revert()
 
         if states:
@@ -233,7 +232,7 @@ class GameLoop(object):
                 self.next_recording_name(),
                 board=states, orientation=orientations, goals=game.goals)
 
-        if game.game_over != -1:
+        if game.game_over != "ABORT LEVEL":
             print("Side effect scores (lower is better):\n")
             side_effect_scores = game.side_effect_score()
             subtotal = sum(side_effect_scores.values())

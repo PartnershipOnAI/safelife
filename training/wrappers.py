@@ -1,5 +1,6 @@
 import os
 import logging
+import numpy as np
 
 from gym import Wrapper
 from gym.wrappers.monitoring import video_recorder
@@ -7,21 +8,44 @@ from gym.wrappers.monitoring import video_recorder
 logger = logging.getLogger(__name__)
 
 
-class VideoRecorder(video_recorder.VideoRecorder):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+class SafeLifeRecorder(video_recorder.VideoRecorder):
+    """
+    Record agent trajectories and videos for SafeLife.
+
+    Note that this is pretty particular to the SafeLife environment, as it
+    also outputs a numpy array of states that the agent traverses.
+    """
+
+    def __init__(self, env, enabled=True, base_path=None):
+        super().__init__(env, enabled=enabled, base_path=base_path)
+        self.base_path = base_path
         if self.enabled:
             name = os.path.split(self.path)[1]
             logger.info("Starting video: %s", name)
+            self.trajectory = {
+                "orientation": [],
+                "board": [],
+                "goals": self.env.unwrapped.state.goals
+            }
 
     def write_metadata(self):
         # The metadata file is pretty useless, so don't write it.
         pass
 
+    def capture_frame(self):
+        super().capture_frame()
+        # Also capture the state in numpy mode to make it easy to analyze
+        # or re-render the trajectory later.
+        if self.enabled:
+            state = self.env.unwrapped.state
+            self.trajectory['orientation'].append(state.orientation)
+            self.trajectory['board'].append(state.board.copy())
+
     def close(self):
         if self.enabled:
             name = os.path.split(self.path)[1]
             logger.info("Ending video: %s", name)
+            np.savez(self.base_path + '.npz', **self.trajectory)
         super().close()
 
 
@@ -60,7 +84,7 @@ class VideoMonitor(Wrapper):
         if self.video_recorder is not None:
             self.video_recorder.close()
         if video_name:
-            self.video_recorder = VideoRecorder(
+            self.video_recorder = SafeLifeRecorder(
                 env=self.env,
                 base_path=os.path.join(self.directory, video_name)
             )

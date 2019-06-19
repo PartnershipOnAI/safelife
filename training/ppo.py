@@ -416,7 +416,7 @@ class PPO(object):
     def next_video_name(self):
         if self.last_video // self.video_freq < self.num_episodes // self.video_freq:
             self.last_video = self.num_episodes
-            return "video_{}-{:0.3g}".format(self.num_episodes, self.num_steps)
+            return "episode_{}-{:0.3g}".format(self.num_episodes, self.num_steps)
 
     def train_batch(self, steps_per_env=20, env_per_minibatch=4, epochs=3, summarize=False):
         op = self.op

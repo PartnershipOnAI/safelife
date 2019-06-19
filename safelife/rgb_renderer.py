@@ -120,7 +120,7 @@ def render_mov(fname, steps, duration=0.03):
 def _make_cmd_args(subparsers):
     # used by __main__.py to define command line tools
     parser = subparsers.add_parser(
-        "to_rgb", help="Convert a SafeLife level to either a png or a gif.")
+        "render", help="Convert a SafeLife level to either a png or a gif.")
     parser.add_argument('fnames', help="File to render.", nargs='+')
     parser.add_argument('--steps', default=0, type=int)
     parser.add_argument('--duration', default=0.03, type=float)

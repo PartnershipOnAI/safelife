@@ -343,7 +343,7 @@ class GameState(object):
                 board[y0, x0] ^= board[y1, x1] & toggle_bits
         elif action == "RESTART":
             reward = -5
-            self.game_over = -2
+            self.game_over = "RESTART"
         return reward
 
     @property
@@ -441,8 +441,8 @@ class GameState(object):
         elif command == "REVERT":
             if not self.revert():
                 return "No saved state; cannot revert."
-        elif command == "END LEVEL":
-            self.game_over = -1  # special flag to indicate a forced exit
+        elif command == "ABORT LEVEL":
+            self.game_over = "ABORT LEVEL"
 
     def shift_board(self, dx, dy):
         """Utility function. Translate the entire board (edges wrap)."""
