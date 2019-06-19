@@ -2,7 +2,7 @@ import random
 import numpy as np
 from scipy import ndimage, signal
 
-from .game_physics import CellTypes, GameOfLife
+from .game_physics import CellTypes, SafeLife
 
 
 def make_partioned_regions(shape, alpha=1.0, max_regions=5, min_regions=2):
@@ -376,7 +376,7 @@ def gen_game(board_shape=(35,35), difficulty=10, max_regions=5):
     k1, k2 = np.random.choice(len(i), size=2, replace=False)
     board[i[k1], j[k1]] = CellTypes.player
     board[i[k2], j[k2]] = CellTypes.level_exit | CellTypes.color_r
-    game = GameOfLife()
+    game = SafeLife()
     game.deserialize({
         'board': board,
         'goals': goals,

@@ -9,7 +9,7 @@ import sys
 import glob
 import numpy as np
 
-from .game_physics import GameOfLife
+from .game_physics import SafeLife
 from .syntax_tree import StatefulProgram
 from . import asci_renderer as renderer
 from .gen_board import gen_game
@@ -123,7 +123,7 @@ class GameLoop(object):
     """
     Play the game interactively. For humans.
     """
-    game_cls = GameOfLife
+    game_cls = SafeLife
     board_size = (25, 25)
     random_board = True
     difficulty = 1  # for random boards

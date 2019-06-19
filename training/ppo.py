@@ -116,6 +116,7 @@ class PPO(object):
     video_freq : int
         Frequency (really, period) at which training videos are captured.
     """
+    num_env = 16
     gamma = np.array([0.99], dtype=np.float32)
     lmda = 0.95  # generalized advantage estimation parameter
     policy_discount_weights = np.array([1.0], dtype=np.float32)

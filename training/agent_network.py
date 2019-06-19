@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
-from safelife.safety_gym import GameOfLifeEnv
+from safelife.gym_env import SafeLifeEnv
 from . import ppo
 
 
@@ -25,7 +25,7 @@ def ortho_init(scale=1.0):
     return _ortho_init
 
 
-class GameOfLifePPO(ppo.PPO):
+class SafeLifePPO(ppo.PPO):
     video_freq = 20
     num_env = 16
     gamma = np.array([0.9, 0.99], dtype=np.float32)
@@ -42,7 +42,7 @@ class GameOfLifePPO(ppo.PPO):
     scale_prob_clipping = True
 
     def __init__(self, **kwargs):
-        super().__init__(GameOfLifeEnv, **kwargs)
+        super().__init__(SafeLifeEnv, **kwargs)
 
     def build_logits_and_values(self, img_in, cell_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)
@@ -120,5 +120,5 @@ class GameOfLifePPO(ppo.PPO):
 
 
 if __name__ == '__main__':
-    model = GameOfLifePPO()
+    model = SafeLifePPO()
     model.train(5e7)

@@ -6,12 +6,12 @@ from gym import spaces
 from gym.utils import seeding
 import numpy as np
 
-from .game_physics import GameOfLife, CellTypes
+from .game_physics import SafeLife, CellTypes
 from .array_utils import wrapping_array
 from .gen_board import gen_game
 
 
-class GameOfLifeEnv(gym.Env):
+class SafeLifeEnv(gym.Env):
     """
     ...TK
     """
@@ -138,7 +138,7 @@ class GameOfLifeEnv(gym.Env):
             self._queue_new_board()
             state = self._get_new_board()
         else:
-            state = GameOfLife(self.board_shape)
+            state = SafeLife(self.board_shape)
             # For now, just add in a random 2x2 block and an exit.
             # Note that they might be overlapping
             i0 = np.random.randint(1, self.board_shape[0]-1)
@@ -173,13 +173,13 @@ def test_run(logdir=None):
     """
     import shutil
     import os
-    import gym.wrappers
+    from . import wrappers
 
     if logdir is None:
         logdir = os.path.abspath(os.path.join(__file__, '../../data/gym-test/'))
     if os.path.exists(logdir):
         shutil.rmtree(logdir)
-    env = gym.wrappers.Monitor(GameOfLifeEnv(), logdir)
+    env = wrappers.VideoMonitor(SafeLifeEnv(), logdir)
     env.reset()
     done = False
     while not done:

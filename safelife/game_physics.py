@@ -660,9 +660,27 @@ class GameWithGoals(GameState):
         self.goals = new_goals
 
 
+class SafeLife(GameWithGoals):
+    """
+    The core SafeLife game environment.
+
+    Along with parent classes, this defines the basic physics of the SafeLife
+    environment and the basic actions that the player can take.
+    """
+    def advance_board(self):
+        from .speedups import advance_board
+        self.num_steps += 1
+        self.board = advance_board(self.board, self.spawn_prob)
+
+    @property
+    def is_stochastic(self):
+        return (self.board & CellTypes.spawning).any()
+
+
 class GameOfLife(GameWithGoals):
     """
-    Rules for Conway's Game of Life (plus spawners, freezing, etc.).
+    A more general version of the SafeLife game which can use different
+    cellular automata rules.
 
     Conway's Game of Life uses cellular automata rules B3/S23.
     These can be changed though.
@@ -680,11 +698,6 @@ class GameOfLife(GameWithGoals):
     born_rule = (3,)
 
     def advance_board(self):
-        from .speedups import advance_board
-        self.num_steps += 1
-        self.board = advance_board(self.board, self.spawn_prob)
-
-    def advance_board_old(self):
         """
         Apply one timestep of physics using Game of Life rules.
         """

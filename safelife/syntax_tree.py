@@ -12,6 +12,11 @@ game 'state'. The state only needs to define a few distinct functions:
 The syntax tree will step through all of the commands, executing each one
 on the state in turn. The state is then responsible for handling the actions
 and all of their effects.
+
+Note that this module is *not* required to run the environment. For the moment
+it's just used for interactive play, and even there it's largely experimental.
+Players can ignore all of the more complicated commands and just move the
+agents one place at a time.
 """
 
 COMMAND_COST = {

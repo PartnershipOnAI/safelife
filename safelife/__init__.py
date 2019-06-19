@@ -4,7 +4,7 @@ from . import (
     asci_renderer,
     rgb_renderer,
     gen_board,
-    safety_gym,
+    gym_env,
 )
 
 try:

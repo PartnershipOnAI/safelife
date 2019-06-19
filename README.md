@@ -63,4 +63,4 @@ The `start-job` script will start training an agent. Note that it assumes that t
 
 The `start-job` script is designed to be run remotely via gcloud. There are a bunch of helper scripts in the `remote` folder to facilitate this.
 
-For now, all hyperparameters need to be hardcoded in the relevant files (mostly `safelife.safety_gym` to specify the environment, and `training.agent_network` to specify the RL parameters and network). We'll probably later add a parameter file to make loading and changing parameters easier.
+For now, all hyperparameters need to be hardcoded in the relevant files (mostly `safelife.gym_env` to specify the environment, and `training.agent_network` to specify the RL parameters and network). We'll probably later add a parameter file to make loading and changing parameters easier.
