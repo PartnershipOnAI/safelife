@@ -6,21 +6,48 @@ from gym import spaces
 from gym.utils import seeding
 import numpy as np
 
-from .game_physics import SafeLife, CellTypes
+from .game_physics import CellTypes
 from .array_utils import wrapping_array
 from .gen_board import gen_game
 
 
 class SafeLifeEnv(gym.Env):
     """
-    ...TK
+    A gym-like environment wrapper for SafeLife.
+
+    This adds a few minor adjustments on top of the core rules:
+
+    - A time limit is added. The episode ends when the time limit is reached
+      with no further points awarded.
+    - An (optional) penalty is applied when the agent doesn't move between
+      time steps.
+    - The observation is always centered on the agent, and the observation size
+      doesn't have to match the size of the game board (it can be larger or
+      smaller).
+    - The “white” goal cells are (optionally) removed from the observation.
+      These don't have any effect on the scoring or gameplay; they exist only
+      as a visual reference.
+
+    Parameters
+    ----------
+    max_steps : int
+    no_movement_penalty : float
+    remove_white_goals : bool
+    output_channels : None or tuple of ints
+        Specifies which channels get output in the observation.
+        If None, the output is just a single channel copy of the board.
+        If a tuple, each corresponding bit is given its own binary channel.
+    view_shape : (int, int)
+        Shape of the agent observation.
+    board_gen_params : dict
+        Parameters to be passed to :func:`gen_board.gen_game()`.
     """
 
     metadata = {
         'render.modes': ['ansi', 'rgb_array'],
         'video.frames_per_second': 30
     }
-    action_names = [
+    action_names = (
         "NULL",
         "MOVE UP",
         "MOVE RIGHT",
@@ -30,40 +57,46 @@ class SafeLifeEnv(gym.Env):
         "TOGGLE RIGHT",
         "TOGGLE DOWN",
         "TOGGLE LEFT",
-    ]
+    )
     state = None
-    old_state_value = 0
+
+    # The following are default parameters that can be overridden during
+    # initialization, or really at any other time.
+    # `view_shape` and `output_channels` should probably be kept constant
+    # after initialization.
     max_steps = 1200
-    num_steps = 0
     no_movement_penalty = 0.02
-    difficulty = 3
-    max_regions = 4
-    default_channels = 'all'
+    remove_white_goals = True
+    view_shape = (15, 15)
+    output_channels = tuple(range(15))  # default to all channels
 
     _pool = Pool(processes=8)
+    _min_queue_size = 1
 
-    def __init__(self, board_size=25, view_size=15, output_channels=default_channels):
-        self.board_shape = (board_size, board_size)
-        self.view_shape = (view_size, view_size)
-        self.action_space = spaces.Discrete(9)
-        if output_channels:
-            if output_channels == "all":
-                output_channels = tuple(range(15))
-            self.observation_space = spaces.Box(
-                low=0, high=1,
-                shape=self.view_shape + (len(output_channels),),
-                dtype=np.uint16,
-            )
-        else:
+    def __init__(self, **kwargs):
+        self.board_gen_params = {}
+        for key, val in kwargs.items():
+            if (not key.startswith('_') and hasattr(self, key) and
+                    not callable(getattr(self, key))):
+                setattr(self, key, val)
+            else:
+                raise ValueError("Unrecognized parameter: '%s'" % (key,))
+
+        self.action_space = spaces.Discrete(len(self.action_names))
+        if self.output_channels is None:
             self.observation_space = spaces.Box(
                 low=0, high=2**15,
                 shape=self.view_shape,
                 dtype=np.uint16,
             )
-        self.output_channels = output_channels
+        else:
+            self.observation_space = spaces.Box(
+                low=0, high=1,
+                shape=self.view_shape + (len(self.output_channels),),
+                dtype=np.uint16,
+            )
         self.seed()
         self._board_queue = queue.deque()
-        self._queue_new_board()
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -79,12 +112,13 @@ class SafeLifeEnv(gym.Env):
         #   board ^= CellTypes.frozen * agent_or_exit
 
         # Get rid of white cells in the goals.
-        # They have an effect on red life, but they make things way more
-        # complicated than they need to be.
-        goals *= (goals != CellTypes.rainbow_color)
+        # They effectively act as just a background pattern, and they can
+        # be confusing for an agent.
+        if self.remove_white_goals:
+            goals *= (goals != CellTypes.rainbow_color)
 
         # Combine board and goals into one array
-        board = board + (goals << 3)
+        board += (goals << 3)
 
         # And center the array on the agent.
         h, w = self.view_shape
@@ -109,10 +143,10 @@ class SafeLifeEnv(gym.Env):
         action_name = self.action_names[action]
         base_reward = self.state.execute_action(action_name)
         new_state_value = self.state.current_points()
-        base_reward += new_state_value - self.old_state_value
-        self.old_state_value = new_state_value
-        self.num_steps += 1
-        times_up = self.num_steps >= self.max_steps
+        base_reward += new_state_value - self._old_state_value
+        self._old_state_value = new_state_value
+        self._num_steps += 1
+        times_up = self._num_steps >= self.max_steps
         done = self.state.game_over or times_up
         standing_still = old_position == self.state.agent_loc
         reward = base_reward / 3.0 - standing_still * self.no_movement_penalty
@@ -122,35 +156,13 @@ class SafeLifeEnv(gym.Env):
             'base_reward': base_reward,
         }
 
-    def _queue_new_board(self):
-        self._board_queue.append(self._pool.apply_async(gen_game, (
-            self.board_shape, self.difficulty, self.max_regions)
-        ))
-
-    def _get_new_board(self):
-        if not self._board_queue:
-            self._queue_new_board()
-        return self._board_queue.popleft().get()
-
     def reset(self):
-        if self.difficulty >= 0:
-            self._queue_new_board()
-            state = self._get_new_board()
-        else:
-            state = SafeLife(self.board_shape)
-            # For now, just add in a random 2x2 block and an exit.
-            # Note that they might be overlapping
-            i0 = np.random.randint(1, self.board_shape[0]-1)
-            j0 = np.random.randint(1, self.board_shape[1]-1)
-            state.goals[i0:i0+2, j0:j0+2] = CellTypes.color_b
-            i1 = np.random.randint(1, self.board_shape[0])
-            j1 = np.random.randint(1, self.board_shape[1])
-            state.board[i1,j1] = CellTypes.level_exit
-        # Get rid of movable blocks.
-        state.board &= ~CellTypes.movable
-        self.state = state
-        self.old_state_value = state.current_points()
-        self.num_steps = 0
+        while len(self._board_queue) <= self._min_queue_size:
+            self._board_queue.append(self._pool.apply_async(
+                gen_game, (), self.board_gen_params))
+        self.state = self._board_queue.popleft().get()
+        self._old_state_value = self.state.current_points()
+        self._num_steps = 0
         return self._get_obs()
 
     def render(self, mode='ansi'):

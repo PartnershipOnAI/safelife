@@ -4,31 +4,34 @@ import tensorflow as tf
 
 from safelife.gym_env import SafeLifeEnv
 from . import ppo
-from . wrappers import SafeLifeWrapper
-
-
-def ortho_init(scale=1.0):
-    # (copied from OpenAI baselines)
-    def _ortho_init(shape, dtype, partition_info=None):
-        # lasagne ortho init for tf
-        shape = tuple(shape)
-        if len(shape) == 2:
-            flat_shape = shape
-        elif len(shape) == 4:  # assumes NHWC
-            flat_shape = (np.prod(shape[:-1]), shape[-1])
-        else:
-            raise NotImplementedError
-        a = np.random.normal(0.0, 1.0, flat_shape)
-        u, _, v = np.linalg.svd(a, full_matrices=False)
-        # pick the one with the correct shape
-        q = u if u.shape == flat_shape else v
-        q = q.reshape(shape)
-        return (scale * q[:shape[0], :shape[1]]).astype(np.float32)
-    return _ortho_init
+from .wrappers import SafeLifeWrapper
+from .training_utils import ortho_init
 
 
 class SafeLifePPO(ppo.PPO):
+    """
+    Defines the network architecture and parameters for agent training.
+
+    Note that this subclass is essentially designed to be a rich parameter
+    file. By changing some parameters to properties (or descriptors) one
+    can easily make the parameters a function of e.g. the total number of
+    training steps.
+
+    This class will generally change between training runs. Of course, copies
+    can be made to support different architectures, etc., and then those can
+    all be run together or in sequence.
+    """
+
+    # Training batch params
     num_env = 16
+    steps_per_env = 20
+    envs_per_minibatch = 4
+    epochs_per_batch = 3
+    total_steps = 5e6
+    report_every = 5000
+    save_every = 10000
+
+    # Training network params
     gamma = np.array([0.9, 0.99], dtype=np.float32)
     policy_discount_weights = np.array([0.5, 0.5], dtype=np.float32)
     value_discount_weights = np.array([0.5, 0.5], dtype=np.float32)
@@ -47,11 +50,29 @@ class SafeLifePPO(ppo.PPO):
     video_counter = None
     video_name = "episode-{episode}-{steps}"
 
+    # Environment params
+    environment_params = {
+        'max_steps': 1200,
+        'no_movement_penalty': 0.02,
+        'remove_white_goals': True,
+        'view_shape': (15, 15),
+        'output_channels': tuple(range(15)),
+    }
+    board_gen_params = {
+        'board_shape': (25, 25),
+        'difficulty': 3,
+        'max_regions': 4,
+    }
+
+    # --------------
+
     def __init__(self, logdir=ppo.DEFAULT_LOGDIR, **kwargs):
         self.logdir = logdir
         envs = [
-            SafeLifeWrapper(SafeLifeEnv(), self.update_environment)
-            for _ in range(self.num_env)
+            SafeLifeWrapper(
+                SafeLifeEnv(**self.environment_params),
+                self.update_environment
+            ) for _ in range(self.num_env)
         ]
         super().__init__(envs, logdir=logdir, **kwargs)
 
@@ -61,11 +82,14 @@ class SafeLifePPO(ppo.PPO):
             self.video_counter = self.num_episodes
         if self.video_counter % self.video_freq == 0:
             base_name = self.video_name.format(
-                episode=self.video_counter + 1, steps=self.num_steps)
+                episode=self.video_counter, steps=self.num_steps)
             env_wrapper.video_name = os.path.join(self.logdir, base_name)
         else:
             env_wrapper.video_name = None
         self.video_counter += 1
+        # Note that the following can easily be changed with each update
+        # to do e.g. curriculum learning.
+        env_wrapper.unwrapped.board_gen_params = self.board_gen_params
 
     def build_logits_and_values(self, img_in, cell_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)
@@ -141,7 +165,14 @@ class SafeLifePPO(ppo.PPO):
 
         return logits, values
 
-
-if __name__ == '__main__':
-    model = SafeLifePPO()
-    model.train(5e7)
+    def train(self, total_steps=None, **kw):
+        defaults = {
+            'steps_per_env': self.steps_per_env,
+            'envs_per_minibatch': self.envs_per_minibatch,
+            'epochs_per_batch': self.epochs_per_batch,
+            'total_steps': total_steps or self.total_steps,
+            'report_every': self.report_every,
+            'save_every': self.save_every,
+        }
+        defaults.update(**kw)
+        return super().train(**defaults)

@@ -601,7 +601,7 @@ class GameWithGoals(GameState):
         [+3, -3, +3, +0, +5, +3, +3, +3],  # blue goal
         [-3, +3, -3, +0, -3, +5, -3, -3],  # magenta goal
         [+3, -3, +3, +0, +3, +0, +5, +3],  # cyan goal
-        [+0, -1, +0, +0, +0, +0, +0, +3],  # white / rainbow goal
+        [+0, -1, +0, +0, +0, +0, +0, +0],  # white / rainbow goal
     ])
     reward_table.setflags(write=False)
 

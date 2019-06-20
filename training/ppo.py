@@ -72,6 +72,9 @@ class PPO(object):
     """
     Proximal policy optimization.
 
+    Note that essentially all of these attributes can get overridden by
+    subclasses, so the defaults set here are basically just for example.
+
     Attributes
     ----------
     gamma : ndarray
@@ -401,18 +404,20 @@ class PPO(object):
             values[:-1], cell_mask, cell_states
         )
 
-    def train_batch(self, steps_per_env=20, env_per_minibatch=4, epochs=3, summarize=False):
+    def train_batch(
+            self, steps_per_env=20, envs_per_minibatch=4, epochs_per_batch=3,
+            summarize=False):
         op = self.op
         session = self.session
         num_env = len(self.envs)
         env_idx = np.arange(num_env)
-        assert num_env % env_per_minibatch == 0
+        assert num_env % envs_per_minibatch == 0
 
         batch = self.gen_batch(steps_per_env)
 
-        for _ in range(epochs):
+        for _ in range(epochs_per_batch):
             np.random.shuffle(env_idx)
-            for idx in env_idx.reshape(-1, env_per_minibatch):
+            for idx in env_idx.reshape(-1, envs_per_minibatch):
                 fd = {
                     op.states: batch.s[:,idx],
                     op.actions: batch.a[:,idx],

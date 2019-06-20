@@ -139,7 +139,7 @@ if args.port:
 try:
     from training.safelife_ppo import SafeLifePPO
     model = SafeLifePPO(logdir=data_dir)
-    model.train(5e6)
+    model.train()
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
 finally:

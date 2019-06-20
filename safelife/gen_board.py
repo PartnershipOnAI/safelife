@@ -361,17 +361,36 @@ def populate_region(board, goals, mask, fences, region_type=None, **params):
     return board, goals
 
 
-def gen_game(board_shape=(35,35), difficulty=10, max_regions=5):
+def gen_game(board_shape=(25,25), max_regions=5, start_region='build', **region_params):
+    """
+    Randomly generate a new SafeLife game board.
+
+    Generation proceeds by creating several different random "regions",
+    and then filling in each region with one of several types of patterns
+    or tasks. Regions can be surrounded by fences / walls to make it harder
+    for patterns to spread from one region to another.
+
+    Parameters
+    ----------
+    board_shape : (int, int)
+    max_regions : int
+    region_type : str or None
+        Fix the first region type to be of type `start_region`. If None, the
+        first region type is randomly chosen, just like all the others.
+    region_params : dict
+        Extra parameters to be passed to :func:`populate_region`.
+    """
     regions = make_partioned_regions(board_shape, max_regions=max_regions)
     fences = build_fence(regions > 0)
     goals = (regions == 0).astype(np.int16)
     goals *= CellTypes.rainbow_color
     board = fences.astype(np.int16) * CellTypes.wall
+    region_type = start_region
     for k in np.unique(regions)[1:]:
         mask = regions == k
-        region_type = 'build' if k == 1 else None
         board, goals = populate_region(
-            board, goals, mask, fences, region_type, difficulty=difficulty)
+            board, goals, mask, fences, region_type, **region_params)
+        region_type = None
     i, j = np.nonzero(regions == 0)
     k1, k2 = np.random.choice(len(i), size=2, replace=False)
     board[i[k1], j[k1]] = CellTypes.player
