@@ -1,8 +1,10 @@
+import os
 import numpy as np
 import tensorflow as tf
 
 from safelife.gym_env import SafeLifeEnv
 from . import ppo
+from . wrappers import SafeLifeWrapper
 
 
 def ortho_init(scale=1.0):
@@ -26,7 +28,6 @@ def ortho_init(scale=1.0):
 
 
 class SafeLifePPO(ppo.PPO):
-    video_freq = 20
     num_env = 16
     gamma = np.array([0.9, 0.99], dtype=np.float32)
     policy_discount_weights = np.array([0.5, 0.5], dtype=np.float32)
@@ -41,8 +42,30 @@ class SafeLifePPO(ppo.PPO):
     policy_rectifier = 'elu'
     scale_prob_clipping = True
 
-    def __init__(self, **kwargs):
-        super().__init__(SafeLifeEnv, **kwargs)
+    # Parameters for recording videos
+    video_freq = 100
+    video_counter = None
+    video_name = "episode-{episode}-{steps}"
+
+    def __init__(self, logdir=ppo.DEFAULT_LOGDIR, **kwargs):
+        self.logdir = logdir
+        envs = [
+            SafeLifeWrapper(SafeLifeEnv(), self.update_environment)
+            for _ in range(self.num_env)
+        ]
+        super().__init__(envs, logdir=logdir, **kwargs)
+
+    def update_environment(self, env_wrapper):
+        # Called just before an environment resets
+        if self.video_counter is None:
+            self.video_counter = self.num_episodes
+        if self.video_counter % self.video_freq == 0:
+            base_name = self.video_name.format(
+                episode=self.video_counter + 1, steps=self.num_steps)
+            env_wrapper.video_name = os.path.join(self.logdir, base_name)
+        else:
+            env_wrapper.video_name = None
+        self.video_counter += 1
 
     def build_logits_and_values(self, img_in, cell_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)

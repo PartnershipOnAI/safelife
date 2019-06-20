@@ -14,7 +14,7 @@ from functools import wraps
 import numpy as np
 import tensorflow as tf
 
-from .wrappers import VideoMonitor, AutoResetWrapper
+from .wrappers import AutoResetWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -113,10 +113,7 @@ class PPO(object):
         value function when entropy drops very low.
     policy_rectifier : str
         One of ['relu', 'elu'].
-    video_freq : int
-        Frequency (really, period) at which training videos are captured.
     """
-    num_env = 16
     gamma = np.array([0.99], dtype=np.float32)
     lmda = 0.95  # generalized advantage estimation parameter
     policy_discount_weights = np.array([1.0], dtype=np.float32)
@@ -134,11 +131,6 @@ class PPO(object):
     value_grad_rescaling = 'smooth'  # one of [False, 'smooth', 'per_batch', 'per_state']
     policy_rectifier = 'relu'  # or 'elu' or ...more to come
 
-    video_freq = 20
-    last_video = -1
-
-    _params_loaded = False
-
     def __init__(self, envs, logdir=DEFAULT_LOGDIR, saver_args={}, **kwargs):
         for key, val in kwargs.items():
             if (not key.startswith('_') and hasattr(self, key) and
@@ -147,11 +139,6 @@ class PPO(object):
             else:
                 raise ValueError("Unrecognized parameter: '%s'" % (key,))
 
-        if callable(envs):
-            envs = [envs() for _ in range(self.num_env)]
-        else:
-            envs = list(envs)
-        envs[0] = VideoMonitor(envs[0], logdir, self.next_video_name)
         self.envs = [AutoResetWrapper(env) for env in envs]
 
         self.op = SimpleNamespace()
@@ -413,11 +400,6 @@ class PPO(object):
             states, actions, action_prob, rewards[...,0], returns, advantages,
             values[:-1], cell_mask, cell_states
         )
-
-    def next_video_name(self):
-        if self.last_video // self.video_freq < self.num_episodes // self.video_freq:
-            self.last_video = self.num_episodes
-            return "episode_{}-{:0.3g}".format(self.num_episodes, self.num_steps)
 
     def train_batch(self, steps_per_env=20, env_per_minibatch=4, epochs=3, summarize=False):
         op = self.op

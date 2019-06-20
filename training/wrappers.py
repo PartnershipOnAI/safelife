@@ -49,18 +49,32 @@ class SafeLifeRecorder(video_recorder.VideoRecorder):
         super().close()
 
 
-class VideoMonitor(Wrapper):
-    def __init__(self, env, directory, video_name_callback=None):
-        super().__init__(env)
-        self.video_recorder = None
-        self.directory = os.path.abspath(directory)
+class SafeLifeWrapper(Wrapper):
+    """
+    A wrapper for the SafeLife environment to handle recording and parameter
+    updating.
 
-        if not os.path.exists(directory):
-            logger.info('Creating monitor directory %s', directory)
-            os.makedirs(directory, exist_ok=True)
-        if not callable(video_name_callback):
-            raise ValueError("'video_name_callback' must in fact be callable.")
-        self.video_name_callback = video_name_callback
+    Parameters
+    ----------
+    env : SafeLifeEnv instance
+    reset_callback : callable
+        Called whenever the environment is about to reset, using `self` as the
+        single argument. Useful for updating either the name of the video
+        recording or any underlying parameters of the SafeLife environment.
+    video_name : str
+        If set, the environment will record a video and save the raw trajectory
+        information for the next episode. This attribute can be changed between
+        episodes (via `reset_callback`) to either disable recording or give the
+        recording a new name.
+    """
+    def __init__(self, env, reset_callback=None, video_name=None):
+        if not callable(reset_callback):
+            raise ValueError("'reset_callback' must be a callable")
+        self.reset_callback = reset_callback
+        self.video_name = video_name
+        self.video_idx = 1  # used only if the name is duplicated
+        self.video_recorder = None
+        super().__init__(env)
 
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
@@ -69,6 +83,7 @@ class VideoMonitor(Wrapper):
         return observation, reward, done, info
 
     def reset(self, **kwargs):
+        self.reset_callback(self)
         observation = self.env.reset(**kwargs)
         self.reset_video_recorder()
         return observation
@@ -80,14 +95,19 @@ class VideoMonitor(Wrapper):
         super().close()
 
     def reset_video_recorder(self):
-        video_name = self.video_name_callback()
         if self.video_recorder is not None:
             self.video_recorder.close()
-        if video_name:
-            self.video_recorder = SafeLifeRecorder(
-                env=self.env,
-                base_path=os.path.join(self.directory, video_name)
-            )
+            self.video_recorder = None
+        if self.video_name:
+            path = p0 = os.path.abspath(self.video_name)
+            directory = os.path.split(path)[0]
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+            while os.path.exists(path):
+                # If the video name already exists, add a counter to it.
+                path = p0 + '-' + str(self.video_idx)
+                self.video_idx += 1
+            self.video_recorder = SafeLifeRecorder(env=self.env, base_path=path)
             self.video_recorder.capture_frame()
         else:
             self.video_recorder = None
@@ -102,10 +122,11 @@ class AutoResetWrapper(Wrapper):
     A top-level wrapper that automatically resets an environment when done
     and does some basic logging of episode rewards.
     """
-    def __init__(self, env):
+    def __init__(self, env, reset_callback=None):
         super().__init__(env)
         self._state = None
         self.num_episodes = -1
+        self.reset_callback = reset_callback
 
     @property
     def state(self):
@@ -117,6 +138,8 @@ class AutoResetWrapper(Wrapper):
         self.episode_length = 0
         self.episode_reward = 0.0
         self.num_episodes += 1
+        if self.reset_callback is not None:
+            self.reset_callback(self)
         return self.env.reset(**kwargs)
 
     def step(self, action):

@@ -35,7 +35,6 @@ class SafeLifeEnv(gym.Env):
     old_state_value = 0
     max_steps = 1200
     num_steps = 0
-    points_on_level_exit = 1.0
     no_movement_penalty = 0.02
     difficulty = 3
     max_regions = 4
@@ -116,8 +115,8 @@ class SafeLifeEnv(gym.Env):
         times_up = self.num_steps >= self.max_steps
         done = self.state.game_over or times_up
         standing_still = old_position == self.state.agent_loc
-        reward = base_reward - standing_still * self.no_movement_penalty
-        return self._get_obs(), reward / 3.0, done, {
+        reward = base_reward / 3.0 - standing_still * self.no_movement_penalty
+        return self._get_obs(), reward, done, {
             'did_move': not standing_still,
             'times_up': times_up,
             'base_reward': base_reward,
@@ -147,7 +146,6 @@ class SafeLifeEnv(gym.Env):
             i1 = np.random.randint(1, self.board_shape[0])
             j1 = np.random.randint(1, self.board_shape[1])
             state.board[i1,j1] = CellTypes.level_exit
-        state.points_on_level_exit = self.points_on_level_exit
         # Get rid of movable blocks.
         state.board &= ~CellTypes.movable
         self.state = state
