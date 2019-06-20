@@ -6,7 +6,7 @@ from gym import spaces
 from gym.utils import seeding
 import numpy as np
 
-from .game_physics import CellTypes
+from .game_physics import SafeLife, CellTypes
 from .array_utils import wrapping_array
 from .gen_board import gen_game
 
@@ -41,6 +41,11 @@ class SafeLifeEnv(gym.Env):
         Shape of the agent observation.
     board_gen_params : dict
         Parameters to be passed to :func:`gen_board.gen_game()`.
+    fixed_levels : list of level names
+        If set, levels are loaded from disk rather than procedurally generated.
+    randomize_fixed_levels : bool
+        If true, fixed levels will be played in a random order (shuffled once
+        per epoch).
     """
 
     metadata = {
@@ -70,6 +75,9 @@ class SafeLifeEnv(gym.Env):
     view_shape = (15, 15)
     output_channels = tuple(range(15))  # default to all channels
 
+    _fixed_levels = []
+    randomize_fixed_levels = True
+
     _pool = Pool(processes=8)
     _min_queue_size = 1
 
@@ -97,6 +105,15 @@ class SafeLifeEnv(gym.Env):
             )
         self.seed()
         self._board_queue = queue.deque()
+
+    @property
+    def fixed_levels(self):
+        return tuple(level.file_name for level in self._fixed_levels)
+
+    @fixed_levels.setter
+    def fixed_levels(self, val):
+        self._fixed_levels = [SafeLife.load(fname) for fname in val]
+        self._level_idx = len(self._fixed_levels)
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -157,10 +174,19 @@ class SafeLifeEnv(gym.Env):
         }
 
     def reset(self):
-        while len(self._board_queue) <= self._min_queue_size:
-            self._board_queue.append(self._pool.apply_async(
-                gen_game, (), self.board_gen_params))
-        self.state = self._board_queue.popleft().get()
+        if self._fixed_levels:
+            if self._level_idx >= len(self._fixed_levels):
+                self._level_idx = 0
+                if self.randomize_fixed_levels:
+                    np.random.shuffle(self._fixed_levels)
+            self.state = self._fixed_levels[self._level_idx]
+            self._level_idx += 1
+            self.state.revert()
+        else:
+            while len(self._board_queue) <= self._min_queue_size:
+                self._board_queue.append(self._pool.apply_async(
+                    gen_game, (), self.board_gen_params))
+            self.state = self._board_queue.popleft().get()
         self._old_state_value = self.state.current_points()
         self._num_steps = 0
         return self._get_obs()

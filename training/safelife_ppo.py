@@ -80,7 +80,7 @@ class SafeLifePPO(ppo.PPO):
         # Called just before an environment resets
         if self.video_counter is None:
             self.video_counter = self.num_episodes
-        if self.video_counter % self.video_freq == 0:
+        if self.video_freq > 0 and self.video_counter % self.video_freq == 0:
             base_name = self.video_name.format(
                 episode=self.video_counter, steps=self.num_steps)
             env_wrapper.video_name = os.path.join(self.logdir, base_name)
