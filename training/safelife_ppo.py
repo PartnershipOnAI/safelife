@@ -5,10 +5,70 @@ import tensorflow as tf
 from safelife.gym_env import SafeLifeEnv
 from . import ppo
 from .wrappers import SafeLifeWrapper
-from .training_utils import ortho_init
 
 
-class SafeLifePPO(ppo.PPO):
+def ortho_init(scale=1.0):
+    # (copied from OpenAI baselines)
+    def _ortho_init(shape, dtype, partition_info=None):
+        # lasagne ortho init for tf
+        shape = tuple(shape)
+        if len(shape) == 2:
+            flat_shape = shape
+        elif len(shape) == 4:  # assumes NHWC
+            flat_shape = (np.prod(shape[:-1]), shape[-1])
+        else:
+            raise NotImplementedError
+        a = np.random.normal(0.0, 1.0, flat_shape)
+        u, _, v = np.linalg.svd(a, full_matrices=False)
+        # pick the one with the correct shape
+        q = u if u.shape == flat_shape else v
+        q = q.reshape(shape)
+        return (scale * q[:shape[0], :shape[1]]).astype(np.float32)
+    return _ortho_init
+
+
+class SafeLifeBasePPO(ppo.PPO):
+    """
+    Minimal extension to PPO to load the environment and record video.
+
+    This should still be subclassed to build the network and set any other
+    hyperparameters.
+    """
+    video_freq = 100
+    video_counter = None
+    video_name = "episode-{episode}-{steps}"
+
+    environment_params = {}
+    board_gen_params = {}
+
+    def __init__(self, logdir=ppo.DEFAULT_LOGDIR, **kwargs):
+        self.logdir = logdir
+        envs = [
+            SafeLifeWrapper(
+                SafeLifeEnv(**self.environment_params),
+                self.update_environment
+            ) for _ in range(self.num_env)
+        ]
+        super().__init__(envs, logdir=logdir, **kwargs)
+
+    def update_environment(self, env_wrapper):
+        # Called just before an environment resets
+        if self.video_counter is None:
+            self.video_counter = self.num_episodes
+        if self.video_freq > 0 and self.video_counter % self.video_freq == 0:
+            base_name = self.video_name.format(
+                episode=self.video_counter, steps=self.num_steps)
+            env_wrapper.video_name = os.path.join(self.logdir, base_name)
+        else:
+            env_wrapper.video_name = None
+        self.video_counter += 1
+        # If the board_gen_params are implemented as a property, then they
+        # could easily be changed with every update to do some sort of
+        # curriculum learning.
+        env_wrapper.unwrapped.board_gen_params = self.board_gen_params
+
+
+class SafeLifePPO(SafeLifeBasePPO):
     """
     Defines the network architecture and parameters for agent training.
 
@@ -45,11 +105,6 @@ class SafeLifePPO(ppo.PPO):
     policy_rectifier = 'elu'
     scale_prob_clipping = True
 
-    # Parameters for recording videos
-    video_freq = 100
-    video_counter = None
-    video_name = "episode-{episode}-{steps}"
-
     # Environment params
     environment_params = {
         'max_steps': 1200,
@@ -65,31 +120,6 @@ class SafeLifePPO(ppo.PPO):
     }
 
     # --------------
-
-    def __init__(self, logdir=ppo.DEFAULT_LOGDIR, **kwargs):
-        self.logdir = logdir
-        envs = [
-            SafeLifeWrapper(
-                SafeLifeEnv(**self.environment_params),
-                self.update_environment
-            ) for _ in range(self.num_env)
-        ]
-        super().__init__(envs, logdir=logdir, **kwargs)
-
-    def update_environment(self, env_wrapper):
-        # Called just before an environment resets
-        if self.video_counter is None:
-            self.video_counter = self.num_episodes
-        if self.video_freq > 0 and self.video_counter % self.video_freq == 0:
-            base_name = self.video_name.format(
-                episode=self.video_counter, steps=self.num_steps)
-            env_wrapper.video_name = os.path.join(self.logdir, base_name)
-        else:
-            env_wrapper.video_name = None
-        self.video_counter += 1
-        # Note that the following can easily be changed with each update
-        # to do e.g. curriculum learning.
-        env_wrapper.unwrapped.board_gen_params = self.board_gen_params
 
     def build_logits_and_values(self, img_in, cell_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)
@@ -164,15 +194,3 @@ class SafeLifePPO(ppo.PPO):
             tf.summary.scalar('layer4', dead_fraction(self.op.layer4))
 
         return logits, values
-
-    def train(self, total_steps=None, **kw):
-        defaults = {
-            'steps_per_env': self.steps_per_env,
-            'envs_per_minibatch': self.envs_per_minibatch,
-            'epochs_per_batch': self.epochs_per_batch,
-            'total_steps': total_steps or self.total_steps,
-            'report_every': self.report_every,
-            'save_every': self.save_every,
-        }
-        defaults.update(**kw)
-        return super().train(**defaults)

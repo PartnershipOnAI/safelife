@@ -1,6 +1,8 @@
-# RL Safety Benchmarks: SafetyNet
+# RL Safety Benchmarks: SafeLife
 
-SafetyNet (working title) presents an environment designed to test the safety of reinforcement learning agents. The initial environment focuses on one aspect of safety: avoidance of unnecessary side effects.
+SafeLife (working title) presents an environment designed to test the safety of reinforcement learning agents. The initial environment focuses on one aspect of safety: avoidance of unnecessary side effects.
+
+*Note: this is a work in progress! Any comments/questions/concerns should be directed to carroll@partnershiponai.org*
 
 ## Overview of the environment
 
@@ -55,6 +57,7 @@ That will play all of the levels in the `levels` folder. Other levels can be pla
 
     python3 -m safelife play --difficulty 5
 
+See `python3 -m safelife --help` for more run options.
 Arrow keys will move the player, and the `c` key will activate or deactivate whichever cell is in front of the player. Press `shift-R` to restart a level, although it incurs some point penalty. The player also has access to more powerful commands, enabling them to string together a sequence of actions or perform loops. For more details on exactly which keys do what, see `game_loop.py`.
 
 ### Playing as an RL agent
@@ -63,4 +66,8 @@ The `start-job` script will start training an agent. Note that it assumes that t
 
 The `start-job` script is designed to be run remotely via gcloud. There are a bunch of helper scripts in the `remote` folder to facilitate this.
 
-For now, all hyperparameters need to be hardcoded in the relevant files (mostly `safelife.gym_env` to specify the environment, and `training.agent_network` to specify the RL parameters and network). We'll probably later add a parameter file to make loading and changing parameters easier.
+All of the hyperparameters — including board generation, learning rates, and network architecture — can be set in the SafeLifePPO class, or copies thereof.
+
+### Testing agents
+
+*still to come!*

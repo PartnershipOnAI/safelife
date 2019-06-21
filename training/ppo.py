@@ -134,6 +134,13 @@ class PPO(object):
     value_grad_rescaling = 'smooth'  # one of [False, 'smooth', 'per_batch', 'per_state']
     policy_rectifier = 'relu'  # or 'elu' or ...more to come
 
+    steps_per_env = 20
+    envs_per_minibatch = 4
+    epochs_per_batch = 3
+    total_steps = 5e6
+    report_every = 5000
+    save_every = 10000
+
     def __init__(self, envs, logdir=DEFAULT_LOGDIR, saver_args={}, **kwargs):
         for key, val in kwargs.items():
             if (not key.startswith('_') and hasattr(self, key) and
@@ -404,20 +411,18 @@ class PPO(object):
             values[:-1], cell_mask, cell_states
         )
 
-    def train_batch(
-            self, steps_per_env=20, envs_per_minibatch=4, epochs_per_batch=3,
-            summarize=False):
+    def train_batch(self, summarize=False):
         op = self.op
         session = self.session
         num_env = len(self.envs)
         env_idx = np.arange(num_env)
-        assert num_env % envs_per_minibatch == 0
+        assert num_env % self.envs_per_minibatch == 0
 
-        batch = self.gen_batch(steps_per_env)
+        batch = self.gen_batch(self.steps_per_env)
 
-        for _ in range(epochs_per_batch):
+        for _ in range(self.epochs_per_batch):
             np.random.shuffle(env_idx)
-            for idx in env_idx.reshape(-1, envs_per_minibatch):
+            for idx in env_idx.reshape(-1, self.envs_per_minibatch):
                 fd = {
                     op.states: batch.s[:,idx],
                     op.actions: batch.a[:,idx],
@@ -457,12 +462,13 @@ class PPO(object):
             "Episode %i: length=%i, reward=%0.1f",
             self.num_episodes, info['episode_length'], info['episode_reward'])
 
-    def train(self, total_steps, report_every=2000, save_every=5000, **kw):
+    def train(self, total_steps=None):
         last_report = last_save = self.num_steps - 1
+        total_steps = total_steps or self.total_steps
         while self.num_steps < total_steps:
-            summarize = last_report // report_every < self.num_steps // report_every
-            self.train_batch(summarize=summarize, **kw)
-            if last_save // save_every < self.num_steps // save_every:
+            summarize = last_report // self.report_every < self.num_steps // self.report_every
+            self.train_batch(summarize=summarize)
+            if last_save // self.save_every < self.num_steps // self.save_every:
                 self.save_checkpoint()
                 last_save = self.num_steps
         logger.info("FINISHED TRAINING")
