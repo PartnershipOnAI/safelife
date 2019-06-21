@@ -288,10 +288,17 @@ class PPO(object):
                 grads2, _ = tf.clip_by_global_norm(grads, self.max_gradient_norm)
             op.train = optimizer.apply_gradients(zip(grads2, variables))
 
-        with tf.name_scope("network"):
+        with tf.name_scope("agent_performance"):
+            for i in range(n_gamma):
+                k = str(i+1)
+                tf.summary.scalar("returns_"+k, tf.reduce_mean(op.returns[...,i]))
+                tf.summary.scalar("advantages_"+k, tf.reduce_mean(op.advantages[...,i]))
+                tf.summary.scalar("values_"+k, tf.reduce_mean(op.v[...,i]))
+                tf.summary.histogram("returns_"+k, op.returns[...,i])
+                tf.summary.histogram("advantages_"+k, op.advantages[...,i])
+                tf.summary.histogram("values_"+k, op.v[...,i])
+        with tf.name_scope("actions"):
             tf.summary.histogram("policy", a_policy)
-            tf.summary.scalar("value_func", tf.reduce_mean(op.v))
-            tf.summary.histogram("value_func", tf.reduce_mean(op.v, axis=-1))
             tf.summary.scalar("entropy", mean_entropy)
             tf.summary.histogram("entropy", op.entropy)
             tf.summary.scalar("pseudo_entropy", avg_pseudo_entropy)
