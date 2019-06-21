@@ -130,7 +130,7 @@ def simple_still_life(board_size, min_fill=0.1, num_tries=10, **kw):
     return new_board
 
 
-def region_population_params(difficulty, **fixed_params):
+def region_population_params(difficulty=5, **fixed_params):
     def dscale(x, y):
         """
         Do linear interpolation based on difficulty.
