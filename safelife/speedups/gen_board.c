@@ -261,7 +261,14 @@ int gen_still_life(
                 num_inhibiting = n_inhibited[k3] - is_inhibiting;
                 if (neighbor_cell & FROZEN) continue;
                 else if (neighbor_cell & ALIVE && num_preserving == 0) {
-                    if (num_alive >= 4) {
+                    int not2or3 = (num_alive < 2) || (num_alive > 3);
+                    int not3or4 = (num_alive < 3) || (num_alive > 4);
+                    violations[j2*8 + EMPTY_IDX] += not3or4;
+                    violations[j2*8 + WALL_IDX] += not3or4;
+                    violations[j2*8 + PREDATOR_IDX] += not2or3;
+                    violations[j2*8 + ALIVE_IDX] += not2or3;
+                    violations[j2*8 + TREE_IDX] += not2or3;
+                    /*if (num_alive >= 4) {
                         // note that the preserving cells
                         // (ice cube, weed, fountain) don't have violations
                         // for living neighbors
@@ -276,16 +283,18 @@ int gen_still_life(
                         violations[j2*8 + PREDATOR_IDX] += 3 - num_alive;
                         violations[j2*8 + ALIVE_IDX] += 2 - num_alive;
                         violations[j2*8 + TREE_IDX] += 2 - num_alive;
-                    }
+                    }*/
                 } else if (!(neighbor_cell & ALIVE) && num_inhibiting == 0) {
                     // Likewise, inhibiting cells (predator and ice cube)
                     // don't have violations for dead neighbors
-                    violations[j2*8 + EMPTY_IDX] += num_alive != 4;
-                    violations[j2*8 + WALL_IDX] += num_alive != 4;
-                    violations[j2*8 + FOUNTAIN_IDX] += num_alive != 3;
-                    violations[j2*8 + ALIVE_IDX] += num_alive != 3;
-                    violations[j2*8 + WEED_IDX] += num_alive != 3;
-                    violations[j2*8 + TREE_IDX] += num_alive != 3;
+                    int not3 = num_alive != 3;
+                    int not4 = num_alive != 4;
+                    violations[j2*8 + EMPTY_IDX] += not4;
+                    violations[j2*8 + WALL_IDX] += not4;
+                    violations[j2*8 + FOUNTAIN_IDX] += not3;
+                    violations[j2*8 + ALIVE_IDX] += not3;
+                    violations[j2*8 + WEED_IDX] += not3;
+                    violations[j2*8 + TREE_IDX] += not3;
                 }
             }
 
@@ -441,3 +450,359 @@ int gen_still_life(
     PRINT("Num alive: %i/%i\n", totals[ALIVE_IDX], total_area);
     return num_iter == max_iter ? MAX_ITER_ERROR : 0;
 }
+
+
+// -----------------------------------------
+
+
+typedef struct {
+    int oscillations;
+    int violations;
+} swap_cells_t;
+
+
+typedef struct {
+    int x1;
+    int y1;
+    int x2;
+    int y2;
+} bounds_t;
+
+
+static int _idx(int i, int j, int k, board_shape_t s) {
+    // The bounds checking here will generally be pretty redundant, but it
+    // makes the code much easier to read. Can try to optimize in a later step.
+    while (j < 0) j += s.rows;
+    while (k < 0) k += s.cols;
+    while (j >= s.rows) j -= s.rows;
+    while (k >= s.cols) k -= s.cols;
+    return k + (j + i * s.rows) * s.cols;
+}
+
+
+static int swap_single_cell(
+        int16_t *board, int *neighbors, board_shape_t board_shape,
+        int layer, int row, int col, int16_t new_cell) {
+    // Swap out a single cell type and update the neighboring cells.
+    // Returns:
+    //     0 if new cell is the same as old cell
+    //     1 if only FROZEN bit switched
+    //     2 if ALIVE bit switched
+    int i0 = _idx(layer, row, col, board_shape);
+    int16_t old_cell = board[i0];
+    if (old_cell == new_cell) {
+        return 0;
+    }
+
+    board[i0] = new_cell;
+    int delta_alive = (new_cell & ALIVE) - (old_cell & ALIVE);
+
+    if (delta_alive) {
+        for (int r = row-1; r <= row+1; r++) {
+            for (int c = col-1; c <= col+1; c++) {
+                neighbors[_idx(layer, r, c, board_shape)] += delta_alive;
+            }
+        }
+        return 2;
+    } else {
+        return 1;
+    }
+}
+
+
+static int check_for_violation(int16_t src, int16_t dst, int neighbors) {
+    if (src & FROZEN) {
+        return src != dst;
+    } else if (src & ALIVE) {
+        return (neighbors == 3 || neighbors == 4) ^ ((dst & ALIVE) != 0);
+    } else {
+        return (neighbors == 3) ^ ((dst & ALIVE) != 0);
+    }
+}
+
+
+static swap_cells_t swap_cells(
+        int16_t *board, int *neighbors, int *violations, int *oscillations,
+        board_shape_t board_shape, int row, int col, int16_t new_cell,
+        iset *bad_idx) {
+
+    swap_cells_t delta_swap = {0, 0};
+    bounds_t area_of_effect = {col, col, row, row};
+    int layer_size = board_shape.rows * board_shape.cols;
+
+    int did_swap = swap_single_cell(
+        board, neighbors, board_shape, 0, row, col, new_cell);
+    switch (did_swap) {
+        case 0: return delta_swap;
+        case 1: break;  // swap only changed frozen status
+        case 2:
+            area_of_effect.x1--;
+            area_of_effect.y1--;
+            area_of_effect.x2++;
+            area_of_effect.y2++;
+    }
+
+    for (int layer=1; layer < board_shape.depth; layer++) {
+        // Evolve the next layer outwards
+        int swap_types = 0;
+        for (int r = area_of_effect.y1; r <= area_of_effect.y2; r++) {
+            for (int c = area_of_effect.x1; c <= area_of_effect.x2; c++) {
+                int i1 = _idx(layer-1, r, c, board_shape);
+                int16_t b1 = board[i1], b2;
+                int n1 = neighbors[i1];
+                if (b1 & FROZEN) {
+                    b2 = b1;
+                } else if (b1 & ALIVE) {
+                    b2 = (n1 == 3 || n1 == 4) ? b1 : b1 ^ ALIVE;
+                } else {
+                    b2 = (n1 == 3) ? b1 ^ ALIVE : b1;
+                }
+                did_swap = swap_single_cell(
+                        board, neighbors, board_shape, layer, r, c, b2);
+                swap_types |= did_swap;
+                if (did_swap) {
+                    if (c == area_of_effect.x1) area_of_effect.x1 -= 1;
+                    if (c == area_of_effect.x2) area_of_effect.x2 += 1;
+                    if (r == area_of_effect.y1) area_of_effect.y1 -= 1;
+                    if (r == area_of_effect.y2) area_of_effect.y2 += 1;
+                }
+            }
+        }
+        if (!swap_types) break;  // end early; nothing to do.
+    }
+
+    // Loop through the updated area and update the violations and oscillations
+    for (int r = area_of_effect.y1; r <= area_of_effect.y2; r++) {
+        for (int c = area_of_effect.x1; c <= area_of_effect.x2; c++) {
+            int i1 = _idx(0, r, c, board_shape);
+            int i2 = i1;
+            int _oscillations, _violations;
+            // oscillations are given by storing dead bits in the usual ALIVE
+            // spot, and live bits in the next bit over. If both are present
+            // the total should be 3 * ALIVE.
+            const int is_osc = 3 * ALIVE;
+            int16_t b1 = board[i1], b2;
+            if (b1 & FROZEN) {
+                _oscillations = 0;
+                _violations = 0;
+            } else {
+                // Got to loop through layers to check for oscillations
+                b2 = b1;
+                _oscillations = (b1 & ALIVE) + ALIVE;
+                for (int layer=1; layer < board_shape.depth; layer++) {
+                    i2 += layer_size;
+                    b2 = board[i2];
+                    _oscillations |= (b2 & ALIVE) + ALIVE;
+                }
+                _violations = check_for_violation(b2, b1, neighbors[i2]);
+            }
+            delta_swap.violations = _violations - violations[i1];
+            delta_swap.oscillations = (_oscillations == is_osc);
+            delta_swap.oscillations -= (oscillations[i1] == is_osc);
+            violations[i1] = _violations;
+            oscillations[i1] = _oscillations;
+            if (bad_idx && _violations) {
+                iset_add(bad_idx, i1);
+            } else if (bad_idx) {
+                iset_discard(bad_idx, i1);
+            }
+        }
+    }
+
+    return delta_swap;
+}
+
+
+int gen_oscillator(
+        int16_t *board, int32_t *mask, int32_t *seeds, board_shape_t shape,
+        double rel_max_iter, double rel_min_fill, double temperature,
+        double *cell_penalties) {
+
+    // Assume that the board is already filled out in multiple layers.
+    // Still need to build the violations, oscillations, and neighbors though.
+    int layer_size = shape.rows * shape.cols;
+    int board_size = shape.depth * layer_size;
+    int last_layer_idx = board_size - layer_size;
+    int total_area = 0;
+
+    int neighbors[board_size];
+    int oscillations[layer_size];
+    int violations[layer_size];
+    int totals[4];
+    iset bad_idx = iset_alloc(layer_size);
+    iset unmasked_idx = iset_alloc(layer_size);
+    iset seeds_idx = iset_alloc(layer_size);
+
+    for (int i=0; i < board_size; i++) {
+        neighbors[i] = board[i] & ALIVE;
+    }
+    memset(oscillations, 0, sizeof(oscillations));
+    for (int i=0; i < shape.depth; i++) {
+        int k_start = i * layer_size;
+        int k_stop = k_start + layer_size;
+        for (int k=k_start; k < k_stop; k++) {
+            oscillations[k] |= neighbors[k] + ALIVE;
+        }
+    }
+    for (int i=0; i < shape.depth; i++) {
+        int temp[layer_size];
+        wrapped_convolve(neighbors, temp, shape.rows, shape.cols);
+    }
+    for (int i=0; i < layer_size; i++) {
+        violations[i] = check_for_violation(
+            board[i + last_layer_idx], board[i], neighbors[i + last_layer_idx]);
+        if (violations[i])  iset_add(&bad_idx, i);
+        if (seeds[i])  iset_add(&seeds_idx, i);
+        if (!mask[i]) {
+            iset_add(&unmasked_idx, i);
+            total_area++;
+            switch (board[i] & (ALIVE | FROZEN)) {
+                case 0:
+                    totals[EMPTY_IDX]++;
+                    break;
+                case ALIVE:
+                    totals[ALIVE_IDX]++;
+                    break;
+                case FROZEN:
+                    totals[WALL_IDX]++;
+                    break;
+                default:
+                    totals[TREE_IDX]++;
+            }
+        }
+    }
+
+    // Calculate some constants for the loop
+    int max_iter = rel_max_iter * total_area;
+    max_iter *= shape.depth * shape.depth;
+    int interior_area = calc_interior_area(mask, shape.rows, shape.cols);
+    double effective_area = 0.75 * interior_area + 0.25 * total_area;
+    double min_fill = rel_min_fill * effective_area;
+    PRINT("Total area: %i; ", total_area);
+    PRINT("Interior area: %i\n", interior_area);
+    if (interior_area < 2) {
+        return AREA_TOO_SMALL_ERROR;
+    }
+
+    // And start the loop!
+    int num_iter;
+    for (num_iter=0; num_iter < max_iter; num_iter++) {
+        int not_empty = total_area - totals[EMPTY_IDX];
+        if (bad_idx.size == 0 && not_empty >= min_fill) {
+            break;  // Success!
+        }
+
+        // Sample a point
+        int k0, r0, c0;
+        k0 = iset_sample(
+            bad_idx.size > 0 ? &bad_idx :
+            seeds_idx.size > 0 ? &seeds_idx :
+            &unmasked_idx);
+        // Sample from each seed no more than once.
+        iset_discard(&seeds_idx, k0);
+        r0 = k0 / shape.cols;
+        c0 = k0 % shape.cols;
+
+        // Figure out what the current penalties are for different cell types.
+        double cell_penalties2[4];
+        {
+            // Special penalty for empty cell
+            // Starts at 2 (i.e., empty cell has same total penalty
+            // as a live cell with no neighbors), but quickly drops
+            // to zero once we approach min_fill.
+            double t = not_empty / min_fill;
+            cell_penalties2[0] = t < 0.9 ? 2.0 : t < 1 ? 20 * (1 - t) : 0;
+        }
+        for (int j3 = 1; j3 < 4; j3++) {
+            double t = totals[j3] / (not_empty + 1.0);
+            double base = cell_penalties[j3*2];
+            double slope = cell_penalties[j3*2+1];
+            cell_penalties2[j3] = base + t*slope;
+        }
+
+        double beta = 1.0 / temperature;
+        double osc_bonus = 0.5;
+        double log_probs[4 * (2*shape.depth + 1)];
+        int16_t cell_types[4 * (2*shape.depth + 1)];
+        int switched_idx[4 * (2*shape.depth + 1)];
+        double max_log_prob = -1e100;
+        int16_t cell_options[4] = {0, FROZEN, ALIVE, ALIVE | FROZEN};
+
+        // Try switching each cell in the target's extended neighborhood.
+        int num_switched = 0;
+        for (int r = r0 - shape.depth; r <= r0 + shape.depth; r++) {
+            for (int c = c0 - shape.depth; c <= c0 + shape.depth; c++) {
+                int i1 = r * shape.cols + c;
+                if (!mask[i1]) continue;
+                int16_t current_cell = board[i1];
+                int start_idx;
+                switch (current_cell) {
+                    case 0:
+                        start_idx = 1;
+                        break;
+                    case FROZEN:
+                        start_idx = 2;
+                        break;
+                    case ALIVE:
+                        start_idx = 3;
+                        break;
+                    default:
+                        start_idx = 0;
+                }
+
+                int delta_violations = 0;
+                int delta_oscillations = 0;
+                for (int j = start_idx + 1; j != start_idx; j++) {
+                    if (j >= 4) j -= 4;
+                    int16_t target_type = cell_options[j];
+                    swap_cells_t delta = swap_cells(
+                        board, neighbors, violations, oscillations,
+                        shape, r, c, target_type, NULL);
+                    delta_violations += delta.violations;
+                    delta_oscillations += delta.oscillations;
+                    log_probs[num_switched] = delta_violations;
+                    log_probs[num_switched] -= osc_bonus * delta_oscillations;
+                    log_probs[num_switched] += cell_penalties2[j];
+                    log_probs[num_switched] *= -beta;
+                    if (max_log_prob > log_probs[num_switched]) {
+                        max_log_prob = log_probs[num_switched];
+                    }
+                    cell_types[num_switched] = target_type;
+                    switched_idx[num_switched] = i1;
+                    num_switched++;
+                }
+                // Then switch back to the old cell type.
+                swap_cells(
+                    board, neighbors, violations, oscillations,
+                    shape, r, c, current_cell, NULL);
+            }
+        }
+
+        // Go through all of the switched cells and pick one.
+        double total_prob = 0.0;
+        double *cell_prob = log_probs;  // change from log prob to normal prob
+        for (int k=0; k < num_switched; k++) {
+            cell_prob[k] = exp(log_probs[k] - max_log_prob);
+            total_prob += cell_prob[k];
+        }
+        double target_prob = rand() * total_prob / RAND_MAX;
+        for (int k=0; k < num_switched; k++) {
+            if (cell_prob[k] > target_prob) {
+                // Pick this cell!
+                int cell_idx = switched_idx[k];
+                swap_cells(
+                    board, neighbors, violations, oscillations,
+                    shape, cell_idx / shape.cols, cell_idx % shape.cols,
+                    cell_types[k], &bad_idx);
+            }
+        }
+    }
+
+    iset_free(&bad_idx);
+    iset_free(&unmasked_idx);
+    iset_free(&seeds_idx);
+    PRINT("Iterations: %i/%i\n", num_iter, max_iter);
+    PRINT("Num alive: %i/%i\n", totals[ALIVE_IDX], total_area);
+    return num_iter == max_iter ? MAX_ITER_ERROR : 0;
+}
+
