@@ -151,7 +151,7 @@ class GameLoop(object):
                 yield self.game_cls.load(fname)
         elif self.random_board:
             while True:
-                yield gen_game(self.board_size, self.difficulty)
+                yield gen_game(self.board_size, difficulty=self.difficulty)
         else:
             yield self.game_cls(board_size=self.board_size)
 
