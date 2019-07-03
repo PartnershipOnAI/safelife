@@ -586,9 +586,9 @@ static swap_cells_t swap_cells(
                 if (b1 & FROZEN) {
                     b2 = b1;
                 } else if (b1 & ALIVE) {
-                    b2 = (n1 == 3 || n1 == 4) ? b1 : b1 ^ ALIVE;
+                    b2 = (n1 == 3 || n1 == 4) ? b1 : 0;
                 } else {
-                    b2 = (n1 == 3) ? b1 ^ ALIVE : b1;
+                    b2 = (n1 == 3) ? ALIVE : b1;
                 }
                 did_swap = swap_single_cell(
                         board, neighbors, board_shape, layer, r, c, b2);
@@ -649,19 +649,27 @@ static swap_cells_t swap_cells(
     PRINT("\nswap cells: %c -> %c\n", print_cell(start_cell), print_cell(new_cell));
     PRINT("are of effect: %i, %i, %i, %i\n", area_of_effect.x1, area_of_effect.y1, area_of_effect.x2, area_of_effect.y2);
     PRINT("violations=%i\n", total_violations);
-    for (int r=row-2; r <= row+2; r++) {
-        for (int c=col-2; c <= col+2; c++) {
-            PRINT(" %c", print_cell(board[_idx(0, r, c, board_shape)]));
+    for (int layer=0; layer < board_shape.depth; layer++) {
+        PRINT("t = %i\n", layer);
+        for (int r=row-2; r <= row+2; r++) {
+            PRINT("   ");
+            for (int c=col-2; c <= col+2; c++) {
+                PRINT(" %c", print_cell(board[_idx(layer, r, c, board_shape)]));
+            }
+            PRINT("  | ");
+            for (int c=col-2; c <= col+2; c++) {
+                PRINT(" %i", neighbors[_idx(layer, r, c, board_shape)]);
+            }
+            PRINT("  | ");
+            for (int c=col-2; c <= col+2; c++) {
+                PRINT(" %i", violations[_idx(0, r, c, board_shape)]);
+            }
+            PRINT("  | ");
+            for (int c=col-2; c <= col+2; c++) {
+                PRINT(" %i", oscillations[_idx(0, r, c, board_shape)]);
+            }
+            PRINT("\n");
         }
-        PRINT("  | ");
-        for (int c=col-2; c <= col+2; c++) {
-            PRINT(" %i", neighbors[_idx(0, r, c, board_shape)]);
-        }
-        PRINT("  | ");
-        for (int c=col-2; c <= col+2; c++) {
-            PRINT(" %i", violations[_idx(0, r, c, board_shape)]);
-        }
-        PRINT("\n");
     }
 
     return delta_swap;
@@ -672,7 +680,7 @@ int gen_oscillator(
         int16_t *board, int32_t *mask, int32_t *seeds, board_shape_t shape,
         double rel_max_iter, double rel_min_fill, double temperature,
         double *cell_penalties) {
-    PRINT("\nStarting the oscillator!\n");
+    PRINT("\nStarting the oscillator! (%i %i %i)\n", shape.depth, shape.rows, shape.cols);
 
     // Assume that the board is already filled out in multiple layers.
     // Still need to build the violations, oscillations, and neighbors though.
@@ -694,22 +702,30 @@ int gen_oscillator(
     }
     memset(oscillations, 0, sizeof(oscillations));
     for (int i=0; i < shape.depth; i++) {
-        int k_start = i * layer_size;
-        int k_stop = k_start + layer_size;
-        for (int k=k_start; k < k_stop; k++) {
-            oscillations[k] |= neighbors[k] + ALIVE;
+        for (int k=0; k < layer_size; k++) {
+            oscillations[k] |= (board[k + i*layer_size] & ALIVE) + ALIVE;
         }
     }
+    PRINT("\nBoard 1: ");
+    for (int i=0; i < board_size; i++) PRINT("%i ", board[i]);
+
+    PRINT("\nNeighbors 1: ");
+    for (int i=0; i < board_size; i++) PRINT("%i ", neighbors[i]);
+
     for (int i=0; i < shape.depth; i++) {
         int temp[layer_size];
-        wrapped_convolve(neighbors, temp, shape.rows, shape.cols);
+        wrapped_convolve(neighbors + i*layer_size, temp, shape.rows, shape.cols);
     }
+
+    PRINT("\nNeighbors 2: ");
+    for (int i=0; i < board_size; i++) PRINT("%i ", neighbors[i]);
+
     for (int i=0; i < layer_size; i++) {
         violations[i] = check_for_violation(
             board[i + last_layer_idx], board[i], neighbors[i + last_layer_idx]);
         if (violations[i])  iset_add(&bad_idx, i);
         if (seeds[i])  iset_add(&seeds_idx, i);
-        if (!mask[i]) {
+        if (mask[i]) {
             iset_add(&unmasked_idx, i);
             total_area++;
             int cell_type_idx = idx_for_cell_type2(board[i]);
@@ -717,7 +733,7 @@ int gen_oscillator(
         }
     }
 
-    PRINT("\n%i checkpoint...\n", __LINE__);
+    PRINT("\n\n%i checkpoint...\n", __LINE__);
 
     // Calculate some constants for the loop
     int max_iter = rel_max_iter * total_area;
@@ -771,7 +787,7 @@ int gen_oscillator(
         }
 
         double beta = 1.0 / temperature;
-        double osc_bonus = 0.5;
+        double osc_bonus = 0.2;
         int neighborhood_size = (2*shape.depth+1) * (2*shape.depth+1);
         double log_probs[4 * neighborhood_size];
         int16_t cell_types[4 * neighborhood_size];
@@ -783,7 +799,7 @@ int gen_oscillator(
         for (int r = r0 - shape.depth; r <= r0 + shape.depth; r++) {
             for (int c = c0 - shape.depth; c <= c0 + shape.depth; c++) {
                 //PRINT("\nr,c = %i,%i\n", r, c);
-                int i1 = r * shape.cols + c;
+                int i1 = _idx(0, r, c, shape);
                 if (!mask[i1]) continue;
                 int16_t current_cell = board[i1];
                 int start_idx = idx_for_cell_type2(current_cell) + 1;
@@ -819,7 +835,7 @@ int gen_oscillator(
         double total_prob = 0.0;
         double *cum_probs = log_probs;  // change from log prob to cumulative prob
         for (int k=0; k < num_switched; k++) {
-            PRINT("logprob: %c -> %f\n", print_cell(cell_types[k]), log_probs[k]);
+            // PRINT("logprob: %c -> %f\n", print_cell(cell_types[k]), log_probs[k]);
             total_prob += exp(log_probs[k] - max_log_prob);
             cum_probs[k] = total_prob;
         }
@@ -831,7 +847,9 @@ int gen_oscillator(
                 int cell_idx = switched_idx[k];
                 int16_t old_cell = board[cell_idx];
                 int16_t new_cell = cell_types[k];
-                PRINT("PICK: %c -> %c\n\n", print_cell(old_cell), print_cell(new_cell));
+                PRINT("PICK: %c -> %c; i=(%i,%i); m=%i\n",
+                    print_cell(old_cell), print_cell(new_cell),
+                    cell_idx / shape.cols, cell_idx % shape.cols, mask[cell_idx]);
                 swap_cells(
                     board, neighbors, violations, oscillations,
                     shape, cell_idx / shape.cols, cell_idx % shape.cols,
@@ -842,7 +860,7 @@ int gen_oscillator(
             }
         }
         if (k >= num_switched) {
-            PRINT("no cell picked... %g %g %g\n\n", target_prob, total_prob, max_log_prob);
+            PRINT("no cell picked... %g %g %g\n", target_prob, total_prob, max_log_prob);
         }
     }
 
