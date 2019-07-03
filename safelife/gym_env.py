@@ -116,7 +116,9 @@ class SafeLifeEnv(gym.Env):
         self._level_idx = len(self._fixed_levels)
 
     def seed(self, seed=None):
+        from safelife import speedups
         self.np_random, seed = seeding.np_random(seed)
+        speedups.seed(seed)
         return [seed]
 
     def _get_obs(self):

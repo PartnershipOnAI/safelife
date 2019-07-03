@@ -42,7 +42,7 @@ void advance_board(
     // the exit bit. This allows us to treat destructibility and colors at
     // the same time.
     for (i = 0; i < size; i++) {
-        b2[i] |= (b2[i] & DESTRUCTIBLE) << 5;
+        b2[i] = b1[i] | (b1[i] & DESTRUCTIBLE) << 5;
     }
 
     // First figure out what the neighboring bits are.
@@ -69,6 +69,7 @@ void advance_board(
     }
 
     // Combine along columns
+    // Store the combined values in b2.
     for (i = 0; i < ncol; i++) {
         end_of_col = i + (nrow-1)*ncol;
         b2[i] = c1[i];

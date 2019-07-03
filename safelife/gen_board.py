@@ -130,6 +130,31 @@ def simple_still_life(board_size, min_fill=0.1, num_tries=10, **kw):
     return new_board
 
 
+def simple_oscillator(board_size, min_fill=0.1, num_tries=10, period=2, **kw):
+    from . import speedups
+
+    board = np.zeros(board_size, dtype=np.int16)
+    mask = np.ones(board_size, dtype=bool)
+    mask[0] = mask[-1] = False
+    mask[:,0] = mask[:,-1] = False
+    for _ in range(num_tries):
+        try:
+            print("about to make an oscillator...")
+            new_board = speedups.gen_oscillator(
+                board, mask, period, max_iter=100, min_fill=min_fill, **kw)
+        except speedups.BoardGenException:
+            continue
+        new_count = np.sum(mask * (new_board != 0))
+        if new_count > 2 * min_fill * np.sum(mask):
+            # too many cells!
+            continue
+        else:
+            break
+    else:
+        raise speedups.BoardGenException("num_tries exceeded")
+    return new_board
+
+
 def region_population_params(difficulty=5, **fixed_params):
     def dscale(x, y):
         """

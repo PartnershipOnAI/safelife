@@ -87,8 +87,8 @@ static PyObject *gen_still_life_py(PyObject *self, PyObject *args, PyObject *kw)
     double cp[16] = {
         // intercept and slope of penalty
         0, 0,  // EMPTY (handled separately by min_fill)
-        0, 0,  // ALIVE
         100, 100,  // WALL
+        0, 0,  // ALIVE
         100, 100,  // TREE
         100, 100,  // WEED
         100, 100,  // PREDATOR
@@ -106,7 +106,7 @@ static PyObject *gen_still_life_py(PyObject *self, PyObject *args, PyObject *kw)
             kwlist,
             &board_obj, &mask_obj, &seeds_obj,
             &max_iter, &min_fill, &temperature,
-            cp+2, cp+3, cp+4, cp+5, cp+6, cp+7, cp+8, cp+9,
+            cp+4, cp+5, cp+2, cp+3, cp+6, cp+7, cp+8, cp+9,
             cp+10, cp+11, cp+12, cp+13, cp+14, cp+15)) {
         return NULL;
     }
@@ -178,6 +178,147 @@ static PyObject *gen_still_life_py(PyObject *self, PyObject *args, PyObject *kw)
 }
 
 
+static char gen_oscillator_doc[] =
+    "gen_oscillator(board, mask, period, max_iter=40, min_fill=0.2, temperature=0.5, "
+        "alive=(0,0), wall=(100,100), tree=(100,100))\n"
+    "--\n\n"
+    "Generate an oscillator.\n"
+    "\n"
+    "Parameters\n"
+    "----------\n"
+    "board : ndarray\n"
+    "mask : ndarray\n"
+    "period: int\n"
+    "seeds : ndarray\n"
+    "    Locations at which to start growing patterns. Same shape as board.\n"
+    "max_iter : float\n"
+    "    Maximum number of iterations to be run, relative to the board size.\n"
+    "min_fill : float\n"
+    "    Minimum fraction of the (unmasked) board that must be populated.\n"
+    "temperature : float\n"
+    "alive : (float, float)\n"
+    "    Penalties for 'life' cells.\n"
+    "    First value is penalty at zero density, second is the penalty when\n"
+    "    life cells take up 100% of the populated area. Penalty increase is\n"
+    "    linear.\n"
+    "wall : (float, float)\n"
+    "    Penalties for 'wall' cells.\n"
+    "tree : (float, float)\n"
+    "    Penalties for 'tree' cells.\n"
+;
+
+static PyObject *gen_oscillator_py(PyObject *self, PyObject *args, PyObject *kw) {
+    PyObject *board_obj, *mask_obj, *seeds_obj = Py_None;
+    PyArrayObject *board = NULL, *mask = NULL, *seeds = NULL;
+
+    int period = 1;
+    double max_iter = 40;
+    double min_fill = 0.2;
+    double temperature = 0.5;
+    double cp[8] = {
+        // intercept and slope of penalty
+        0, 0,  // EMPTY (handled separately by min_fill)
+        100, 100,  // WALL
+        0, 0,  // ALIVE
+        100, 100,  // TREE
+    };
+    static char *kwlist[] = {
+        "board", "mask", "period", "seeds", "max_iter", "min_fill",
+        "temperature", "alive", "wall", "tree",
+        NULL
+    };
+
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kw, "OOi|Oddd(dd)(dd)(dd)(dd)(dd)(dd)(dd):gen_still_life",
+            kwlist,
+            &board_obj, &mask_obj, &period, &seeds_obj,
+            &max_iter, &min_fill, &temperature,
+            cp+4, cp+5, cp+2, cp+3, cp+6, cp+7)) {
+        return NULL;
+    }
+
+    for (int i = 0; i < 4; i++) {
+        // Convert penalties to intercept, slope instead of t=0, t=1
+        cp[2*i+1] -= cp[2*i];
+    }
+
+    board = (PyArrayObject *)PyArray_FROM_OTF(
+        board_obj, NPY_INT16,
+        NPY_ARRAY_IN_ARRAY | NPY_ARRAY_ENSURECOPY | NPY_ARRAY_FORCECAST);
+    mask = (PyArrayObject *)PyArray_FROM_OTF(
+        mask_obj, NPY_INT32,
+        NPY_ARRAY_IN_ARRAY | NPY_ARRAY_ENSURECOPY);
+    // Make seeds same as mask if not available
+    seeds = seeds_obj != Py_None ? (PyArrayObject *)PyArray_FROM_OTF(
+        seeds_obj, NPY_INT32,
+        NPY_ARRAY_IN_ARRAY | NPY_ARRAY_ENSURECOPY) : mask;
+    if (!board || !mask || !seeds) {
+        PY_VAL_ERROR("Board and/or mask and/or seeds are not arrays.");
+    }
+    if (PyArray_NDIM(board) != 2 || PyArray_NDIM(mask) != 2 || PyArray_NDIM(seeds) != 2) {
+        PY_VAL_ERROR("Board, mask, and seeds must all be dimension 2.");
+    }
+    if (PyArray_DIM(board, 0) < 3 || PyArray_DIM(board, 1) < 3) {
+        PY_VAL_ERROR("Board must be at least 3x3.");
+    }
+    if (PyArray_DIM(board, 0) != PyArray_DIM(mask, 0) ||
+            PyArray_DIM(board, 1) != PyArray_DIM(mask, 1) ||
+            PyArray_DIM(board, 0) != PyArray_DIM(seeds, 0) ||
+            PyArray_DIM(board, 1) != PyArray_DIM(seeds, 1)) {
+        PY_VAL_ERROR("Board, mask, and seeds must all have the same shape.");
+    }
+
+    // Create a new temporary board array
+    board_shape_t board_shape = {
+        period, PyArray_DIM(board, 0), PyArray_DIM(board, 1)
+    };
+    int layer_size = board_shape.cols * board_shape.rows;
+    int board_size = board_shape.depth * layer_size;
+    int16_t *layers = malloc(sizeof(int16_t) * board_size);
+    memcpy(layers, PyArray_DATA(board), sizeof(int16_t) * layer_size);
+    // Advance to the next timestep
+    for (int n = 1; n < board_shape.depth; n++) {
+        advance_board(
+            layers + (n-1)*layer_size, layers + n*layer_size,
+            board_shape.rows, board_shape.cols, 0.0);
+    }
+
+    int err_code = gen_oscillator(
+        layers,
+        (int32_t *)PyArray_DATA(mask),
+        (int32_t *)PyArray_DATA(seeds),
+        board_shape, max_iter, min_fill, temperature, cp
+    );
+
+    switch (err_code) {
+        case 0:
+            memcpy(PyArray_DATA(board), layers, sizeof(int16_t) * layer_size);
+            goto success;
+        case MAX_ITER_ERROR:
+            PyErr_SetString(MaxIterException, "Max-iter hit. Aborting!");
+            goto error;
+        case AREA_TOO_SMALL_ERROR:
+            PyErr_SetString(InsufficientAreaException,
+                "The unmasked area was too small to generate a pattern.");
+            goto error;
+        default:
+            PyErr_SetString(BoardGenException, "Miscellany error.");
+            goto error;
+    }
+
+    success:
+    Py_DECREF(mask);
+    if (seeds_obj != Py_None) Py_DECREF(seeds);
+    return (PyObject *)board;
+
+    error:
+    Py_XDECREF((PyObject *)board);
+    Py_XDECREF((PyObject *)mask);
+    if (seeds_obj != Py_None) Py_XDECREF(seeds);
+    return NULL;
+}
+
+
 static PyObject *seed_py(PyObject *self, PyObject *args) {
     int i;
     if (!PyArg_ParseTuple(args, "i", &i)) return NULL;
@@ -195,6 +336,10 @@ static PyMethodDef methods[] = {
     {
         "gen_still_life", (PyCFunction)gen_still_life_py,
         METH_VARARGS | METH_KEYWORDS, gen_still_life_doc
+    },
+    {
+        "gen_oscillator", (PyCFunction)gen_oscillator_py,
+        METH_VARARGS | METH_KEYWORDS, gen_oscillator_doc
     },
     {
         "seed", (PyCFunction)seed_py, METH_VARARGS,
