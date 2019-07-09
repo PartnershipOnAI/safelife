@@ -8,8 +8,8 @@
 
 #if 1
     #include <Python.h>
-    //#define PRINT(...) PySys_WriteStdout(__VA_ARGS__)
-    #define PRINT(...) printf(__VA_ARGS__)
+    #define PRINT(...) PySys_WriteStdout(__VA_ARGS__)
+    //#define PRINT(...) printf(__VA_ARGS__)
 #else
     #define PRINT(...) do {} while (0);
 #endif
@@ -121,8 +121,8 @@ static int calc_interior_area(int32_t *mask, int nrow, int ncol) {
         for (int j = 0; j < ncol; j++, k++) {
             int dx1 = (j > 0 ? -1 : ncol - 1);
             int dx2 = (j < ncol - 1 ? +1 : 1 - ncol);
-            if (mask[k+dy1] && mask[k+dy2] &&
-                mask[k+dx1] && mask[k+dx2] && mask[k]) {
+            if ((1 & mask[k+dy1]) && (1 & mask[k+dy2]) &&
+                (1 & mask[k+dx1]) && (1 & mask[k+dx2]) && (1 & mask[k])) {
                 total++;
             }
         }
@@ -554,14 +554,14 @@ static char print_cell(int16_t cell) {
 
 
 static swap_cells_t swap_cells(
-        int16_t *board, int *neighbors, int *violations, int *oscillations,
+        int16_t *board, int *neighbors, int *violations, int *oscillations, int *mask,
         board_shape_t board_shape, int row, int col, int16_t new_cell,
         iset *bad_idx) {
 
     swap_cells_t delta_swap = {0, 0};
     bounds_t area_of_effect = {col, row, col, row};
     int layer_size = board_shape.rows * board_shape.cols;
-    int start_cell = board[_idx(0, row, col, board_shape)]; // debug only!
+    // int start_cell = board[_idx(0, row, col, board_shape)]; // debug only!
 
     int did_swap = swap_single_cell(
         board, neighbors, board_shape, 0, row, col, new_cell);
@@ -630,23 +630,27 @@ static swap_cells_t swap_cells(
                 }
                 _violations = check_for_violation(b2, b1, neighbors[i2]);
             }
+            if (_oscillations == is_osc && !(mask[i1] & CAN_OSCILLATE_MASK)) {
+                _violations += 1;
+            }
             delta_swap.violations += _violations - violations[i1];
             delta_swap.oscillations += (_oscillations == is_osc);
             delta_swap.oscillations -= (oscillations[i1] == is_osc);
             violations[i1] = _violations;
             oscillations[i1] = _oscillations;
             total_violations += _violations;
-            if (bad_idx && _violations) {
-                iset_add(bad_idx, i1);
-            } else if (bad_idx) {
-                iset_discard(bad_idx, i1);
+            if (bad_idx) {
+                if (_violations && (mask[i1] & INCLUDE_VIOLATIONS_MASK)) {
+                    iset_add(bad_idx, i1);
+                } else {
+                    iset_discard(bad_idx, i1);
+                }
             }
         }
     }
-    return delta_swap;
 
-    // Print out the area of effect
-    PRINT("\nswap cells: %c -> %c\n", print_cell(start_cell), print_cell(new_cell));
+    // Print out the area of effect (for debugging only)
+    /*PRINT("\nswap cells: %c -> %c\n", print_cell(start_cell), print_cell(new_cell));
     PRINT("are of effect: %i, %i, %i, %i\n", area_of_effect.x1, area_of_effect.y1, area_of_effect.x2, area_of_effect.y2);
     PRINT("violations=%i\n", total_violations);
     for (int layer=0; layer < board_shape.depth; layer++) {
@@ -670,7 +674,7 @@ static swap_cells_t swap_cells(
             }
             PRINT("\n");
         }
-    }
+    }*/
 
     return delta_swap;
 }
@@ -678,7 +682,7 @@ static swap_cells_t swap_cells(
 
 int gen_oscillator(
         int16_t *board, int32_t *mask, int32_t *seeds, board_shape_t shape,
-        double rel_max_iter, double rel_min_fill, double temperature,
+        double rel_max_iter, double rel_min_fill, double temperature, double osc_bonus,
         double *cell_penalties) {
     PRINT("\nStarting the oscillator! (%i %i %i)\n", shape.depth, shape.rows, shape.cols);
 
@@ -706,26 +710,22 @@ int gen_oscillator(
             oscillations[k] |= (board[k + i*layer_size] & ALIVE) + ALIVE;
         }
     }
-    PRINT("\nBoard 1: ");
-    for (int i=0; i < board_size; i++) PRINT("%i ", board[i]);
-
-    PRINT("\nNeighbors 1: ");
-    for (int i=0; i < board_size; i++) PRINT("%i ", neighbors[i]);
 
     for (int i=0; i < shape.depth; i++) {
         int temp[layer_size];
         wrapped_convolve(neighbors + i*layer_size, temp, shape.rows, shape.cols);
     }
 
-    PRINT("\nNeighbors 2: ");
-    for (int i=0; i < board_size; i++) PRINT("%i ", neighbors[i]);
-
     for (int i=0; i < layer_size; i++) {
         violations[i] = check_for_violation(
             board[i + last_layer_idx], board[i], neighbors[i + last_layer_idx]);
-        if (violations[i])  iset_add(&bad_idx, i);
-        if (seeds[i])  iset_add(&seeds_idx, i);
-        if (mask[i]) {
+        if (seeds[i]) {
+            iset_add(&seeds_idx, i);
+        }
+        if (violations[i] && (mask[i] & INCLUDE_VIOLATIONS_MASK)) {
+            iset_add(&bad_idx, i);
+        }
+        if (mask[i] & NEW_CELL_MASK) {
             iset_add(&unmasked_idx, i);
             total_area++;
             int cell_type_idx = idx_for_cell_type2(board[i]);
@@ -733,11 +733,8 @@ int gen_oscillator(
         }
     }
 
-    PRINT("\n\n%i checkpoint...\n", __LINE__);
-
     // Calculate some constants for the loop
-    int max_iter = rel_max_iter * total_area;
-    max_iter *= shape.depth * shape.depth;
+    int max_iter = rel_max_iter * total_area * shape.depth;
     int interior_area = calc_interior_area(mask, shape.rows, shape.cols);
     double effective_area = 0.75 * interior_area + 0.25 * total_area;
     double min_fill = rel_min_fill * effective_area;
@@ -752,8 +749,9 @@ int gen_oscillator(
 
     // And start the loop!
     int num_iter;
+    int not_empty = 0;
     for (num_iter=0; num_iter < max_iter; num_iter++) {
-        int not_empty = total_area - totals[EMPTY_IDX];
+        not_empty = total_area - totals[EMPTY_IDX];
         if (bad_idx.size == 0 && not_empty >= min_fill) {
             break;  // Success!
         }
@@ -787,7 +785,6 @@ int gen_oscillator(
         }
 
         double beta = 1.0 / temperature;
-        double osc_bonus = 0.2;
         int neighborhood_size = (2*shape.depth+1) * (2*shape.depth+1);
         double log_probs[4 * neighborhood_size];
         int16_t cell_types[4 * neighborhood_size];
@@ -800,7 +797,7 @@ int gen_oscillator(
             for (int c = c0 - shape.depth; c <= c0 + shape.depth; c++) {
                 //PRINT("\nr,c = %i,%i\n", r, c);
                 int i1 = _idx(0, r, c, shape);
-                if (!mask[i1]) continue;
+                if (!(mask[i1] & NEW_CELL_MASK)) continue;
                 int16_t current_cell = board[i1];
                 int start_idx = idx_for_cell_type2(current_cell) + 1;
                 int delta_violations = 0;
@@ -808,7 +805,7 @@ int gen_oscillator(
                 for (int j = start_idx; j < start_idx+3; j++) {
                     int16_t target_type = cell_type_array[j & 3];
                     swap_cells_t delta = swap_cells(
-                        board, neighbors, violations, oscillations,
+                        board, neighbors, violations, oscillations, mask,
                         shape, r, c, target_type, NULL);
                     delta_violations += delta.violations;
                     delta_oscillations += delta.oscillations;
@@ -826,7 +823,7 @@ int gen_oscillator(
                 // Then switch back to the old cell type.
                 //PRINT("swap back!\n");
                 swap_cells(
-                    board, neighbors, violations, oscillations,
+                    board, neighbors, violations, oscillations, mask,
                     shape, r, c, current_cell, NULL);
             }
         }
@@ -847,11 +844,11 @@ int gen_oscillator(
                 int cell_idx = switched_idx[k];
                 int16_t old_cell = board[cell_idx];
                 int16_t new_cell = cell_types[k];
-                PRINT("PICK: %c -> %c; i=(%i,%i); m=%i\n",
-                    print_cell(old_cell), print_cell(new_cell),
-                    cell_idx / shape.cols, cell_idx % shape.cols, mask[cell_idx]);
+                // PRINT("PICK: %c -> %c; i=(%i,%i); m=%i\n",
+                //     print_cell(old_cell), print_cell(new_cell),
+                //     cell_idx / shape.cols, cell_idx % shape.cols, mask[cell_idx]);
                 swap_cells(
-                    board, neighbors, violations, oscillations,
+                    board, neighbors, violations, oscillations, mask,
                     shape, cell_idx / shape.cols, cell_idx % shape.cols,
                     new_cell, &bad_idx);
                 totals[idx_for_cell_type2(old_cell)]--;
@@ -860,18 +857,16 @@ int gen_oscillator(
             }
         }
         if (k >= num_switched) {
-            PRINT("no cell picked... %g %g %g\n", target_prob, total_prob, max_log_prob);
+            PRINT("no cell picked... %g %g %g %i\n",
+                target_prob, total_prob, max_log_prob, num_switched);
         }
     }
-
-    PRINT("%i checkpoint...\n", __LINE__);
 
     iset_free(&bad_idx);
     iset_free(&unmasked_idx);
     iset_free(&seeds_idx);
     PRINT("Iterations: %i/%i\n", num_iter, max_iter);
     PRINT("Num alive: %i/%i\n", totals[ALIVE_IDX], total_area);
-    return 0;  // DEBUG!
     return num_iter == max_iter ? MAX_ITER_ERROR : 0;
 }
 

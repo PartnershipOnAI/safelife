@@ -196,6 +196,10 @@ static char gen_oscillator_doc[] =
     "min_fill : float\n"
     "    Minimum fraction of the (unmasked) board that must be populated.\n"
     "temperature : float\n"
+    "osc_bonus : float\n"
+    "    Bonus applied to cells that are oscillating. Defaults to 0.3.\n"
+    "    Larger bonuses encourage oscillators, as opposed to still lifes, but\n"
+    "    may also make the algorithm slow to converge.\n"
     "alive : (float, float)\n"
     "    Penalties for 'life' cells.\n"
     "    First value is penalty at zero density, second is the penalty when\n"
@@ -215,6 +219,7 @@ static PyObject *gen_oscillator_py(PyObject *self, PyObject *args, PyObject *kw)
     double max_iter = 40;
     double min_fill = 0.2;
     double temperature = 0.5;
+    double osc_bonus = 0.3;
     double cp[8] = {
         // intercept and slope of penalty
         0, 0,  // EMPTY (handled separately by min_fill)
@@ -224,15 +229,15 @@ static PyObject *gen_oscillator_py(PyObject *self, PyObject *args, PyObject *kw)
     };
     static char *kwlist[] = {
         "board", "mask", "period", "seeds", "max_iter", "min_fill",
-        "temperature", "alive", "wall", "tree",
+        "temperature", "osc_bonus", "alive", "wall", "tree",
         NULL
     };
 
     if (!PyArg_ParseTupleAndKeywords(
-            args, kw, "OOi|Oddd(dd)(dd)(dd)(dd)(dd)(dd)(dd):gen_still_life",
+            args, kw, "OOi|Odddd(dd)(dd)(dd):gen_still_life",
             kwlist,
             &board_obj, &mask_obj, &period, &seeds_obj,
-            &max_iter, &min_fill, &temperature,
+            &max_iter, &min_fill, &temperature, &osc_bonus,
             cp+4, cp+5, cp+2, cp+3, cp+6, cp+7)) {
         return NULL;
     }
@@ -247,7 +252,7 @@ static PyObject *gen_oscillator_py(PyObject *self, PyObject *args, PyObject *kw)
         NPY_ARRAY_IN_ARRAY | NPY_ARRAY_ENSURECOPY | NPY_ARRAY_FORCECAST);
     mask = (PyArrayObject *)PyArray_FROM_OTF(
         mask_obj, NPY_INT32,
-        NPY_ARRAY_IN_ARRAY | NPY_ARRAY_ENSURECOPY);
+        NPY_ARRAY_IN_ARRAY | NPY_ARRAY_ENSURECOPY | NPY_ARRAY_FORCECAST);
     // Make seeds same as mask if not available
     seeds = seeds_obj != Py_None ? (PyArrayObject *)PyArray_FROM_OTF(
         seeds_obj, NPY_INT32,
@@ -287,7 +292,7 @@ static PyObject *gen_oscillator_py(PyObject *self, PyObject *args, PyObject *kw)
         layers,
         (int32_t *)PyArray_DATA(mask),
         (int32_t *)PyArray_DATA(seeds),
-        board_shape, max_iter, min_fill, temperature, cp
+        board_shape, max_iter, min_fill, temperature, osc_bonus, cp
     );
 
     switch (err_code) {
