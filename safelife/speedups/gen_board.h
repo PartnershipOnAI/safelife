@@ -18,12 +18,7 @@ typedef struct {
     int cols;
 } board_shape_t;
 
-int gen_still_life(
-        int16_t *board, int32_t *mask, int32_t *seeds, int nrow, int ncol,
-        double rel_max_iter, double rel_min_fill, double temperature,
-        double *cell_penalties);
-
-int gen_oscillator(
+int gen_pattern(
         int16_t *board, int32_t *mask, int32_t *seeds, board_shape_t shape,
         double rel_max_iter, double rel_min_fill, double temperature, double osc_bonus,
         double *cell_penalties);

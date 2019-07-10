@@ -51,7 +51,7 @@ def make_partioned_regions(shape, alpha=1.0, max_regions=5, min_regions=2):
 
 def build_fence(mask, shuffle=True):
     """
-    Create a fence around unmasked regions such nothing inside the regions
+    Create a fence around unmasked regions such that nothing inside the regions
     can escape.
 
     Note that this is a little bit more aggressive than it strictly needs
@@ -140,7 +140,7 @@ def simple_oscillator(board_size, min_fill=0.1, num_tries=10, period=2, **kw):
     for _ in range(num_tries):
         try:
             print("about to make an oscillator...")
-            new_board = speedups.gen_oscillator(
+            new_board = speedups.gen_pattern(
                 board, mask, period, max_iter=100, min_fill=min_fill, **kw)
         except speedups.BoardGenException:
             continue
@@ -177,24 +177,17 @@ def region_population_params(difficulty=5, **fixed_params):
             "append": dscale([2,2,10], [0,1,2]),
             "destroy": dscale([3,3,10], [0,1,2]),
             "prune": dscale([4,4,10], [0,1,2]),
-            # "spawner": dscale([3,3,10], [0,2,4]),
-            # "oscillator": dscale([3,3,10], [0,2,4]),
+            "spawner": dscale([3,3,10], [0,2,4]),
             "fountain": dscale([6,6,10], [0,1.5,3]),
             "grow": dscale([7,7,10], [0,2,3]),
         },
         "cell_probabilities": {
             "wall": dscale([0, 2, 2, 10], [0, 0, 0.25, 0.5]),
             "tree": dscale([0, 3, 3, 10], [0, 0, 0.25, 0.5]),
-            "weed": dscale([0, 5, 5, 10], [0, 0, 0.15, 0.25]),
-            "predator": dscale([0, 8, 8, 10], [0, 0, 0.15, 0.15]),
-            "ice_cube": dscale([0, 6, 6, 10], [0, 0, 0.05, 0.05]),
         },
         "cell_penalties": {
-            "wall": (1, 40),
-            "tree": (1, 30),
-            "weed": (1, 100),
-            "predator": (1, 100),
-            "ice_cube": (1, 100),
+            "wall": (1, 20),
+            "tree": (1, 20),
         },
         "spawner_colors": {
             "gray": 1,
@@ -203,6 +196,13 @@ def region_population_params(difficulty=5, **fixed_params):
             "blue": dscale([6,7], [0,1]),
         },
         "spawner_trees": dscale([0,3,10], [0, 0, 0.1]),
+        "period_weights": {
+            # Note that period 3 oscillators can take a really long time
+            # to generate.
+            1: 1,
+            2: dscale([4,10], [0,2]),
+            # 3: dscale([7,10], [0,2]),
+        }
     }
     random_params = {
         # The following should all look like (min_frac, max_frac)
@@ -225,22 +225,40 @@ def region_population_params(difficulty=5, **fixed_params):
     return params
 
 
-def populate_region(board, goals, mask, fences, region_type=None, **params):
+def _pick_one(choices):
+    keys = list(choices.keys())
+    vals = np.array(list(choices.values()))
+    return np.random.choice(keys, p=vals / np.sum(vals))
+
+
+def populate_region(mask, region_type=None, **params):
+    """
+    tk...
+
+    Returns board and goals in the unmasked area
+    """
     from . import speedups
 
     params = region_population_params(**params)
+    region_type = region_type or _pick_one(params["region_types"])
+    period = _pick_one(params["period_weights"])
 
-    region_type_weights = params["region_types"]
-    if not fences.any() and 'spawner' in region_type_weights:
-        del region_type_weights["spawner"]
-    region_type = region_type or np.random.choice(
-        list(region_type_weights.keys()),
-        p=np.array(list(region_type_weights.values())) /
-        sum(region_type_weights.values())
+    border = ndimage.maximum_filter(mask, size=3, mode='wrap') ^ mask
+    fences = build_fence(mask)
+    if region_type != "spawner":
+        # Poke holes in the fence
+        fences *= np.random.random(mask.shape) <= params["fence_frac"]
+    board = fences.astype(np.int16) * CellTypes.wall
+    gen_mask = (mask & ~fences) * (
+        speedups.NEW_CELL_MASK |
+        speedups.CAN_OSCILLATE_MASK |
+        speedups.INCLUDE_VIOLATIONS_MASK
+    ) + (fences | border) * (
+        speedups.INCLUDE_VIOLATIONS_MASK
     )
 
-    def _gen_still_life(
-            board, mask, seeds=None, num_retries=3, half=False, exclude=()):
+    def _gen_pattern(
+            board, mask, seeds=None, num_retries=5, half=False, exclude=()):
         # temperature < 0.3 tends to not converge, or converge very slowly
         # temperature = 0.4, fill = 0.05 yields pretty simple patterns
         # temperature = 1.5, fill = 0.4 yields pretty complex patterns
@@ -252,13 +270,15 @@ def populate_region(board, goals, mask, fences, region_type=None, **params):
             if prob < np.random.random() or name in exclude:
                 del cell_penalties[name]
         try:
-            new_board = speedups.gen_still_life(
-                board, mask, seeds, max_iter=100,
+            new_board = speedups.gen_pattern(
+                board, mask, period, seeds=seeds, max_iter=100,
                 min_fill=min_fill, temperature=temperature, **cell_penalties)
-            new_fill = np.sum(new_board * mask != 0) / np.sum(mask)
-            if new_fill > 2 * min_fill:
+            working_area = mask & speedups.NEW_CELL_MASK
+            new_cells = new_board != 0
+            fill_ratio = np.sum(new_cells * working_area) / np.sum(working_area)
+            if fill_ratio > 2 * min_fill:
                 if num_retries > 0:
-                    return _gen_still_life(
+                    return _gen_pattern(
                         board, mask, seeds, num_retries-1, half, exclude)
                 else:
                     print("gen_still_life produced an overfull pattern. "
@@ -269,117 +289,111 @@ def populate_region(board, goals, mask, fences, region_type=None, **params):
             return board
         except speedups.MaxIterException:
             if num_retries > 0:
-                return _gen_still_life(
+                return _gen_pattern(
                     board, mask, seeds, num_retries-1, half, exclude)
             else:
-                print("gen_still_life did not converge! "
+                print("gen_pattern did not converge! "
                       "num_retries exceeded; no patterns added.")
                 return board
+        except speedups.BoardGenException:
+            return board
 
-    fence_mask = mask & (fences == 0)
+    # Two passes
+    # create cells and/or goals of a particular color
+    # second pass always excludes trees
+    # If it gets added to the goals, also add non-life cells to the board
+    first_color, first_dest = {
+        'still': (CellTypes.color_g, 'board'),
+        'build': (CellTypes.color_b, 'goal'),
+        'destroy': (CellTypes.color_r, 'board'),
+        'append': (CellTypes.color_g, 'board'),
+        'prune': (CellTypes.color_g, 'board'),
+        'grow': (CellTypes.color_g, 'board'),
+    }.get(region_type, (None, None))
+    second_color, second_dest = {
+        'append': (CellTypes.color_b, 'goal'),
+        'prune': (CellTypes.color_r, 'board'),
+        'grow': (CellTypes.color_g, 'goal'),
+    }.get(region_type, (None, None))
 
-    if region_type == "still":
-        board = _gen_still_life(board, fence_mask)
-        life_mask = (board == CellTypes.life) & mask
-        board += life_mask * CellTypes.color_g
-    elif region_type == "build":
-        board = _gen_still_life(board, fence_mask)
-        alive_mask = ((board & CellTypes.alive) > 0) & mask
-        life_mask = (board == CellTypes.life) & mask
-        board *= (1 - life_mask)
-        goals += alive_mask * CellTypes.color_b
-    elif region_type == "destroy":
-        board = _gen_still_life(board, fence_mask)
-        life_mask = (board == CellTypes.life) & mask
-        board += life_mask * CellTypes.color_r
-    elif region_type == "append":
-        board = _gen_still_life(board, fence_mask, half=True)
-        life_mask = (board == CellTypes.life) & mask
-        board += life_mask * CellTypes.color_g
-        mask2 = fence_mask & (board == 0)
-        seeds = board * fence_mask > 0
-        board = _gen_still_life(
-            board, mask2, seeds, half=True, exclude=("tree", "weed"))
-        life_mask = (board == CellTypes.life) & mask2
-        board *= ~life_mask
-        goals += life_mask * CellTypes.color_b
-    elif region_type == "grow":
-        board = _gen_still_life(board, fence_mask, half=True)
-        life_mask = (board == CellTypes.life) & mask
-        board += life_mask * CellTypes.color_g
-        mask2 = fence_mask & (board == 0)
-        seeds = board * fence_mask > 0
-        board = _gen_still_life(
-            board, mask2, seeds, half=True, exclude=("tree", "weed"))
-        life_mask = (board == CellTypes.life) & mask2
-        board *= ~life_mask
-        goals += life_mask * CellTypes.color_g
-    elif region_type == "prune":
-        board = _gen_still_life(board, fence_mask, half=True)
-        life_mask = (board == CellTypes.life) & mask
-        board += life_mask * CellTypes.color_g
-        mask2 = fence_mask & (board == 0)
-        seeds = board * fence_mask > 0
-        board = _gen_still_life(
-            board, mask2, seeds, half=True, exclude=("tree", "weed"))
-        life_mask2 = (board == CellTypes.life) & mask2
-        board += life_mask2 * CellTypes.color_r
-    elif region_type == "spawner":
-        params["fence_frac"] = 1.0
-        color_weights = params["spawner_colors"]
-        color = np.random.choice(
-            list(color_weights.keys()),
-            p=np.array(list(color_weights.values())) /
-            sum(color_weights.values())
-        )
-        color = {
+    goals = None
+
+    if first_color is not None:
+        board = _gen_pattern(board, gen_mask)
+        life_mask = (board == CellTypes.life)
+        board += life_mask * first_color
+        if first_dest == 'goal':
+            goals = board.copy()
+            board *= ~life_mask
+
+    if second_color is not None:
+        # Mask out everything that's not non-zero
+        boards = [board]
+        for _ in range(1, period):
+            boards.append(speedups.advance_board(boards[-1]))
+        all_zero = np.product(np.array(boards) == 0, axis=0).astype(bool)
+        gen_mask ^= (gen_mask & speedups.NEW_CELL_MASK) * ~all_zero
+        board = _gen_pattern(
+            board, gen_mask, seeds=life_mask, half=True, exclude=('tree',))
+        life_mask = (board == CellTypes.life) * all_zero
+        board += life_mask * second_color
+        if second_dest == 'goal':
+            # copy board to goals, but with old colors removed
+            goals = board.copy()
+            goals &= ~CellTypes.rainbow_color
+            goals += life_mask * second_color
+            board *= ~life_mask
+        else:
+            board += life_mask * second_color
+
+    if region_type == "spawner":
+        spawner_color = {
             "gray": 0,
             "red": CellTypes.color_r,
             "green": CellTypes.color_g,
             "blue": CellTypes.color_b,
-        }[color]
+        }[_pick_one(params['spawner_colors'])]
         interior_mask = ndimage.minimum_filter(mask, size=3, mode='wrap')
+        i, j = np.nonzero(interior_mask & (board == 0))
+        if len(i) > 0:
+            k = np.random.randint(len(i))
+            board[i[k], j[k]] = CellTypes.spawner + spawner_color
         tree_mask = interior_mask & (board == 0)
         tree_mask &= np.random.random(board.shape) < params["spawner_trees"]
-        board += tree_mask * (CellTypes.tree + color)
+        board += tree_mask * (CellTypes.tree + spawner_color)
         life_frac = 0.3
         life_mask = interior_mask & (board == 0)
         life_mask &= np.random.random(board.shape) < life_frac
-        board += life_mask * (CellTypes.life + color)
-        i, j = np.nonzero(interior_mask)
-        if len(i) > 0:
-            k = np.random.randint(len(i))
-            board[i[k], j[k]] = CellTypes.spawner + color
-    elif region_type == "fountain":
-        fountain_mask = fence_mask * (np.random.random(board.shape) < 0.04)
+        board += life_mask * (CellTypes.life + spawner_color)
+
+    if region_type == "fountain":
+        fountain_mask = mask & (board == 0) & (np.random.random(board.shape) < 0.04)
         fountain_neighbor = ndimage.maximum_filter(fountain_mask, size=3, mode='wrap')
-        color = np.random.choice([
+        fountain_color = np.random.choice([
             CellTypes.color_r, CellTypes.color_g, CellTypes.color_b])
-        board += fountain_mask * (CellTypes.fountain + color)
-        goals += (mask & fountain_neighbor & ~fountain_mask) * color
-    elif region_type == "oscillator":
-        raise NotImplemented
-    else:
-        raise ValueError("Unexpected region type: '{}'".format(region_type))
+        fountain_color |= CellTypes.frozen  # Make sure that the goal cells don't evolve
+        board += fountain_mask * (CellTypes.fountain | fountain_color)
+        # Give the goal
+        goals = (mask & fountain_neighbor & ~fountain_mask) * fountain_color
+
+    if goals is None:
+        goals = np.zeros_like(board)
 
     # Make some of the life types hardened
-    life_mask = (board & ~CellTypes.rainbow_color == CellTypes.life) * mask
+    life_mask = (board & ~CellTypes.rainbow_color == CellTypes.life)
     hardlife_mask = np.random.random(board.shape) < params["hardened_frac"]
     board -= life_mask * hardlife_mask * CellTypes.destructible
 
     # Remove fences and add extra walls in the middle
-    wall_mask = mask & (board == 0) & (goals == 0)
-    wall_mask &= (np.random.random(board.shape) < params["extra_walls_frac"])
-    board += wall_mask * CellTypes.wall
-    neighbors = ndimage.convolve(
-        board & CellTypes.alive, np.ones((3,3)), mode='wrap')
-    no_fence_mask = mask & (fences > 0) & (neighbors != 3)
-    no_fence_mask &= (np.random.random(board.shape) > params["fence_frac"])
-    board *= ~no_fence_mask
-    crate_mask = mask & (board == CellTypes.wall)
+    # wall_mask = mask & (board == 0) & (goals == 0)
+    # wall_mask &= (np.random.random(board.shape) < params["extra_walls_frac"])
+    # board += wall_mask * CellTypes.wall
+
+    # Turn some walls and trees into crates and plants
+    crate_mask = (board == CellTypes.wall)
     crate_mask &= (np.random.random(board.shape) < params["crate_frac"])
     board += crate_mask * CellTypes.movable
-    plant_mask = mask & (board == CellTypes.tree)
+    plant_mask = (board == CellTypes.tree)
     plant_mask &= (np.random.random(board.shape) < params["plant_frac"])
     board += plant_mask * CellTypes.movable
 
@@ -406,20 +420,31 @@ def gen_game(board_shape=(25,25), max_regions=5, start_region='build', **region_
         Extra parameters to be passed to :func:`populate_region`.
     """
     regions = make_partioned_regions(board_shape, max_regions=max_regions)
-    fences = build_fence(regions > 0)
-    goals = (regions == 0).astype(np.int16)
-    goals *= CellTypes.rainbow_color
-    board = fences.astype(np.int16) * CellTypes.wall
-    region_type = start_region
-    for k in np.unique(regions)[1:]:
-        mask = regions == k
-        board, goals = populate_region(
-            board, goals, mask, fences, region_type, **region_params)
-        region_type = None
+    board = np.zeros(board_shape, dtype=np.int16)
+
+    # Create locations for the player and the exit
     i, j = np.nonzero(regions == 0)
     k1, k2 = np.random.choice(len(i), size=2, replace=False)
     board[i[k1], j[k1]] = CellTypes.player
     board[i[k2], j[k2]] = CellTypes.level_exit | CellTypes.color_r
+
+    # Ensure that the player isn't touching any other region
+    n = np.array([[-1,-1,-1],[0,0,0],[1,1,1]])
+    regions[i[k1]+n, j[k1]+n.T] = 0
+
+    # Give the boarder (0) regions a rainbow / white color
+    # This is mostly a visual hint for humans
+    goals = (regions == 0).astype(np.int16) * CellTypes.rainbow_color
+
+    # and fill in the regions...
+    region_type = start_region
+    for k in np.unique(regions)[1:]:
+        mask = regions == k
+        rboard, rgoals = populate_region(mask, region_type, **region_params)
+        board += rboard
+        goals += rgoals
+        region_type = None
+
     game = SafeLife()
     game.deserialize({
         'board': board,
