@@ -242,6 +242,8 @@ def populate_region(mask, region_type=None, **params):
     params = region_population_params(**params)
     region_type = region_type or _pick_one(params["region_types"])
     period = _pick_one(params["period_weights"])
+    if period > 1:
+        params["cell_probabilities"] = {'wall': 1, 'tree': 1}
 
     border = ndimage.maximum_filter(mask, size=3, mode='wrap') ^ mask
     fences = build_fence(mask)
@@ -320,11 +322,12 @@ def populate_region(mask, region_type=None, **params):
 
     if first_color is not None:
         board = _gen_pattern(board, gen_mask)
-        life_mask = (board == CellTypes.life)
+        life_mask = ((board & CellTypes.alive) > 0)
+        frozen_mask = ((board & CellTypes.frozen) > 0)
         board += life_mask * first_color
         if first_dest == 'goal':
             goals = board.copy()
-            board *= ~life_mask
+            board *= frozen_mask
 
     if second_color is not None:
         # Mask out everything that's not non-zero
@@ -335,8 +338,7 @@ def populate_region(mask, region_type=None, **params):
         gen_mask ^= (gen_mask & speedups.NEW_CELL_MASK) * ~all_zero
         board = _gen_pattern(
             board, gen_mask, seeds=life_mask, half=True, exclude=('tree',))
-        life_mask = (board == CellTypes.life) * all_zero
-        board += life_mask * second_color
+        life_mask = ((board & CellTypes.alive) > 0) * all_zero
         if second_dest == 'goal':
             # copy board to goals, but with old colors removed
             goals = board.copy()

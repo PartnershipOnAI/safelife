@@ -25,7 +25,7 @@ class SafeLifeRecorder(video_recorder.VideoRecorder):
             self.trajectory = {
                 "orientation": [],
                 "board": [],
-                "goals": self.env.unwrapped.state.goals
+                "goals": []
             }
 
     def write_metadata(self):
@@ -40,6 +40,7 @@ class SafeLifeRecorder(video_recorder.VideoRecorder):
             state = self.env.unwrapped.state
             self.trajectory['orientation'].append(state.orientation)
             self.trajectory['board'].append(state.board.copy())
+            self.trajectory['goals'].append(state.goals.copy())
 
     def close(self):
         if self.enabled:

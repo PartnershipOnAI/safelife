@@ -173,6 +173,7 @@ class GameLoop(object):
         program = StatefulProgram(game)
         game.is_editing = self.editing
         states = []
+        goals = []
         orientations = []
         state_changed = True
 
@@ -187,6 +188,7 @@ class GameLoop(object):
                 output += "\x1b[1m*** EDIT MODE ***\x1b[0m\n"
             if self.recording and state_changed:
                 states.append(game.board.copy())
+                goals.append(game.goals.copy())
                 orientations.append(game.orientation)
             if self.recording:
                 output += "\x1b[1m*** RECORDING ***\x1b[0m\n"
@@ -230,7 +232,7 @@ class GameLoop(object):
             os.makedirs(self.recording_directory, exist_ok=True)
             np.savez(
                 self.next_recording_name(),
-                board=states, orientation=orientations, goals=game.goals)
+                board=states, orientation=orientations, goals=goals)
 
         if game.game_over != "ABORT LEVEL":
             print("Side effect scores (lower is better):\n")

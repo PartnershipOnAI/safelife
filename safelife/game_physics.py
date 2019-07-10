@@ -671,6 +671,7 @@ class SafeLife(GameWithGoals):
         from .speedups import advance_board
         self.num_steps += 1
         self.board = advance_board(self.board, self.spawn_prob)
+        self.goals = advance_board(self.goals, self.spawn_prob)
 
     @property
     def is_stochastic(self):
