@@ -432,7 +432,7 @@ def gen_game(board_shape=(25,25), max_regions=5, start_region='build', **region_
 
     # Ensure that the player isn't touching any other region
     n = np.array([[-1,-1,-1],[0,0,0],[1,1,1]])
-    regions[i[k1]+n, j[k1]+n.T] = 0
+    regions[(i[k1]+n) % board.shape[0], (j[k1]+n.T) % board.shape[1]] = 0
 
     # Give the boarder (0) regions a rainbow / white color
     # This is mostly a visual hint for humans
