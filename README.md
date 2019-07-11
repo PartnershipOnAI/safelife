@@ -34,33 +34,65 @@ With these desiderata in mind, we settled on a grid-world environment that runs 
 These properties can be mixed and matched, allowing for a large set of interesting interactions. In addition, each cell can have a *color*. Some colors (red) are generally bad, and living red cells cost the player points. Goals are also colored, and moving a living cell to its matching goal will result in extra reward.
 
 
-## Running the environment
+## Installation
 
-The environment can be used for training and running a reinforcement learning agent, or it can be played with human input. To install, run
+The source code is made of both python files and C extensions, the latter of which need to be compiled. To build the extensions locally, run
 
-    python3 setup.py install
+    python3 setup.py build --build-lib ./
 
-If you'd like to install in the current directory, instead run
+from main directory. This should compile a `speedups.so` file and place it in the `safelife` folder alongside the source code. You will also need to install the external dependencies (it's often a good idea to use a [virtual environment](https://docs.python.org/3/tutorial/venv.html) when installing dependencies) using
 
     pip3 install -r requirements.txt
-    python3 setup.py build --build-lib .
 
-which will compile the `speedups.so` extension and place it in the `safelife` folder.
+Note that it is also possible install the package globally using `python3 setup.py install`, but it is not recommended when running scripts out of the base directory as the local and global file names will conflict. Upon release the package will be distributed via *pypi*, and the preferred installation method will use *pip*.
 
-### Playing as a human
 
-To play the game, run
+## Interactive environment
 
-    python3 -m safelife play ./levels
+SafeLife can be played in an interactive mode within a terminal. For example,
 
-That will play all of the levels in the `levels` folder. Other levels can be played using e.g. `play ./levels/mazes`. You can also play a randomized level using e.g.
+    python3 -m safelife play ./levels/puzzles
 
-    python3 -m safelife play --difficulty 5
+will load a sequence of puzzle levels. Other levels can be played using e.g. `play ./levels/mazes`. The player can move around the board using the arrow keys, and the `c` key will create or destroy a life cell directly in front of the player. Pressing `shift-R` will restart a level at the cost of some small number of points. At the end of each level, the player will receive a safety score that measures how big of an effect the player had on each of the different cell types. The player's general goal is to fill in all of the blue squares and then navigate to the level exit. Try not to break anything along the way!
 
-See `python3 -m safelife --help` for more run options.
-Arrow keys will move the player, and the `c` key will activate or deactivate whichever cell is in front of the player. Press `shift-R` to restart a level, although it incurs some point penalty. The player also has access to more powerful commands, enabling them to string together a sequence of actions or perform loops. For more details on exactly which keys do what, see `game_loop.py`.
+### Procedurally generated levels
 
-### Playing as an RL agent
+By default, the `play` command will create a new procedurally generated level. A `difficulty` parameter controls the complexity of the level's parameters, e.g.,
+
+    python3 -m safelife play --difficulty 10
+
+will create levels that are quite difficult to solve, whereas difficulty 1 tends to be pretty easy. Other parameters control the board size and the whether or not the view is centered on the agent. See
+
+    python3 -m safelife play --help
+
+for more info.
+
+### Editing levels
+
+At any point the user can enter edit mode by hitting the \` (backtick / tilde) key. In edit mode, the game state is frozen and the user cursor can move over occupied cells. Edit commands include:
+
+- `x`: clear a cell
+- `z`: add a life cell
+- `Z`: add an indestructible life cell
+- `a`: move the player avatar
+- `w`: add a wall
+- `r`: add a crate
+- `T`: add a tree
+- `t`: add a plant
+- `n`: add a spawner
+- `e`: add the level exit
+- `g`: toggle the goal color
+- `5`: toggle the player and cursor color
+- `s`: save the level
+- `Q`: abort the level (go to the next one)
+
+For a complete list of commands, see the `safelife/gameloop.py` file. To exit edit mode, hit the backtick key a second time.
+
+### Rendering levels
+
+SafeLife supports printing levels to gif and png files. To do so, use the `python3 -m safelife render <saved-level.npz>` command. See `python3 -m safelife render --help` for command options. Currently, non-asci rendering is not supported in interactive mode.
+
+## Training an agent
 
 The `start-job` script will start training an agent. Note that it assumes that the `speedups.so` has been installed locally (i.e., using `python3 setup.py build --build-lib .`). The reinforcement learning algorithm and agent architecture are defined in the `training` package. Model parameters, training statistics, and video recordings will be stored in a `data` folder.
 

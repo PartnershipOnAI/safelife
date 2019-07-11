@@ -6,6 +6,30 @@ from .game_physics import CellTypes, SafeLife
 
 
 def make_partioned_regions(shape, alpha=1.0, max_regions=5, min_regions=2):
+    """
+    Create a board with distinct regions.
+
+    Each region is continuous and separated from all other regions by at least
+    two cells. The regions are generated using a Dirichlet process in which
+    new cells are added to existed regions with a probability proportional
+    to their boundary.
+
+    Parameters
+    ----------
+    shape : tuple (int, int)
+        Shape of the board to generate.
+    alpha : float
+        Hyperparameter for the Dirichlet process. Larger values will tend to
+        create more distinct regions.
+    min_regions : int
+    max_regions : int
+
+    Returns
+    -------
+    array
+        The output array is filled with different integers for each of the
+        different regions. Zero values indicate border areas between regions.
+    """
     ring = np.array([[1,1,1],[1,0,1],[1,1,1]], dtype=np.int16)
     adjacent = np.array([  # Diagonals don't count as adjacent
         [-1,0,0,1],
@@ -106,56 +130,66 @@ def build_fence(mask, shuffle=True):
     return fence
 
 
-def simple_still_life(board_size, min_fill=0.1, num_tries=10, **kw):
-    from . import speedups
-
-    board = np.zeros(board_size, dtype=np.int16)
-    mask = np.ones(board_size, dtype=bool)
-    mask[0] = mask[-1] = False
-    mask[:,0] = mask[:,-1] = False
-    for _ in range(num_tries):
-        try:
-            new_board = speedups.gen_still_life(
-                board, mask, max_iter=100, min_fill=min_fill, **kw)
-        except speedups.BoardGenException:
-            continue
-        new_count = np.sum(mask * (new_board != 0))
-        if new_count > 2 * min_fill * np.sum(mask):
-            # too many cells!
-            continue
-        else:
-            break
-    else:
-        raise speedups.BoardGenException("num_tries exceeded")
-    return new_board
-
-
-def simple_oscillator(board_size, min_fill=0.1, num_tries=10, period=2, **kw):
-    from . import speedups
-
-    board = np.zeros(board_size, dtype=np.int16)
-    mask = np.ones(board_size, dtype=bool)
-    mask[0] = mask[-1] = False
-    mask[:,0] = mask[:,-1] = False
-    for _ in range(num_tries):
-        try:
-            print("about to make an oscillator...")
-            new_board = speedups.gen_pattern(
-                board, mask, period, max_iter=100, min_fill=min_fill, **kw)
-        except speedups.BoardGenException:
-            continue
-        new_count = np.sum(mask * (new_board != 0))
-        if new_count > 2 * min_fill * np.sum(mask):
-            # too many cells!
-            continue
-        else:
-            break
-    else:
-        raise speedups.BoardGenException("num_tries exceeded")
-    return new_board
-
-
 def region_population_params(difficulty=5, **fixed_params):
+    """
+    Dynamically set region population parameters based on difficulty.
+
+    Any parameter that's left blank will be automatically picked via the
+    difficulty. If a parameter is specified, then the difficulty is ignored
+    for that parameter.
+
+    All parameters which accept a range of values take as input the minimum
+    and maximum values of that range. The output parameter will be randomly
+    chosen within that range.
+
+    Parameters
+    ----------
+    difficulty : float
+    region_types : dict (str : float)
+        A dictionary mapping the different possible of region types to their
+        relative weights. For each region one of the region types will be
+        randomly chosen based on their weights.
+    cell_probabilities : dict (str : float)
+        A dictionary mapping different cell types to their probability of
+        being included in the region.
+    cell_penalties : dict (str : (float, float))
+        Penalties associated with each cell type ("alive", "wall", and "tree").
+        Larger penalties make that cell type less likely to appear the pattern
+        generation. The first number is the penalty when the relative frequency
+        of the cell type is 0%; the second number is the penalty when the
+        relative frequency is 100%. Intermediate penalties scale linearly.
+    spawner_colors : dict (str : float)
+        A dictionary mapping the different spawner colors (gray, red, green,
+        blue) to their relative weights. For each region one of the spawner
+        colors will be randomly chosen based on their weights.
+    period_weights : dict (int : float)
+        A dictionary that assigns relative weights to different potential
+        pattern periods. For each region one of the patterns will be randomly
+        chosen based on their weights.
+    fence_frac : range (float, float)
+        Fraction of fences that are kept during region generation.
+    extra_walls_frac : range (float, float)
+        Fraction of free space that is converted to walls.
+    crate_frac : range (float, float)
+        Fraction of the walls that are converted to (movable) crates.
+    plant_frac : range (float, float)
+        Fraction of the trees that are converted to (movable) plants.
+    hardened_frac : range (float, float)
+        Fraction of life cells that are made indestructible.
+    temperature : range (float, float)
+        Temperature for pattern generation algorithm. Higher temperatures
+        tend to result in more complex patterns. Should generally be in the
+        range of 0.1 to 2.0.
+    min_fill : range (float, float)
+        The minimum acceptable fill percentage during procedural generation.
+        Obviously, larger values tend to produce more complex patterns.
+        Should not be higher than about 0.4 or the procedural generation will
+        have a hard time converging.
+
+    Returns
+    -------
+    dict
+    """
     def dscale(x, y):
         """
         Do linear interpolation based on difficulty.
@@ -226,21 +260,37 @@ def region_population_params(difficulty=5, **fixed_params):
 
 
 def _pick_one(choices):
+    if not choices:
+        raise ValueError("'choices' must be a non-empty dictionary")
     keys = list(choices.keys())
     vals = np.array(list(choices.values()))
+    if (vals < 0).any() or np.sum(vals) <= 0:
+        raise ValueError(
+            "The values for different choices must be non-negative and their "
+            "sum must be positive.")
     return np.random.choice(keys, p=vals / np.sum(vals))
 
 
-def populate_region(mask, region_type=None, **params):
+def populate_region(mask, **params):
     """
-    tk...
+    Populate the interior of a masked region, producing both cells and goals.
 
-    Returns board and goals in the unmasked area
+    Parameters
+    ----------
+    mask : array (dtype=bool, dim=2)
+        An array with True values to mark the region of interest.
+    **params
+        See :func:`region_population_params` for extra parameters.
+
+    Returns
+    -------
+    board : array
+    goals : array
     """
     from . import speedups
 
     params = region_population_params(**params)
-    region_type = region_type or _pick_one(params["region_types"])
+    region_type = _pick_one(params["region_types"])
     period = _pick_one(params["period_weights"])
     if period > 1:
         params["cell_probabilities"] = {'wall': 1, 'tree': 1}
@@ -283,7 +333,7 @@ def populate_region(mask, region_type=None, **params):
                     return _gen_pattern(
                         board, mask, seeds, num_retries-1, half, exclude)
                 else:
-                    print("gen_still_life produced an overfull pattern. "
+                    print("gen_pattern produced an overfull pattern. "
                           "num_retries exceeded; no patterns added.")
                     return board
             return new_board
@@ -420,6 +470,11 @@ def gen_game(board_shape=(25,25), max_regions=5, start_region='build', **region_
         first region type is randomly chosen, just like all the others.
     region_params : dict
         Extra parameters to be passed to :func:`populate_region`.
+        See also :func:`region_population_params`.
+
+    Returns
+    -------
+        SafeLife instance
     """
     regions = make_partioned_regions(board_shape, max_regions=max_regions)
     board = np.zeros(board_shape, dtype=np.int16)
@@ -439,13 +494,17 @@ def gen_game(board_shape=(25,25), max_regions=5, start_region='build', **region_
     goals = (regions == 0).astype(np.int16) * CellTypes.rainbow_color
 
     # and fill in the regions...
-    region_type = start_region
     for k in np.unique(regions)[1:]:
         mask = regions == k
-        rboard, rgoals = populate_region(mask, region_type, **region_params)
+        if start_region:
+            params = region_params.copy()
+            params["region_types"] = {start_region: 1}
+        else:
+            params = region_params
+        rboard, rgoals = populate_region(mask, **params)
         board += rboard
         goals += rgoals
-        region_type = None
+        start_region = None
 
     game = SafeLife()
     game.deserialize({
