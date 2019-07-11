@@ -8,7 +8,7 @@ ext_path = os.path.abspath(os.path.join(__file__, '../safelife/speedups'))
 
 setuptools.setup(
     name='safety-net',
-    version='0.1.dev2',
+    version='0.1.dev3',
     author="Carroll L. Wainwright",
     description="Safety benchmarks for reinforcement learning",
     # package_dir={'safelife': src_dir},
