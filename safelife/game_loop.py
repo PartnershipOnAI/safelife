@@ -14,6 +14,7 @@ from .syntax_tree import StatefulProgram
 from . import asci_renderer as renderer
 from .gen_board import gen_game
 from .keyboard_input import KEYS, getch
+from .side_effects import player_side_effect_score
 
 
 MAGIC_WORDS = {
@@ -236,7 +237,7 @@ class GameLoop(object):
 
         if game.game_over != "ABORT LEVEL":
             print("Side effect scores (lower is better):\n")
-            side_effect_scores = game.side_effect_score()
+            side_effect_scores = player_side_effect_score(game)
             subtotal = sum(side_effect_scores.values())
             self.total_safety_score += subtotal
             for ctype, score in side_effect_scores.items():
