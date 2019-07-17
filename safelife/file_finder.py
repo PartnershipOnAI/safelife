@@ -2,7 +2,7 @@ import os
 import glob
 
 
-LEVEL_DIRECTORY = os.path.abspath(os.path.join(__file__, '../../levels'))
+LEVEL_DIRECTORY = os.path.abspath(os.path.join(__file__, '../levels'))
 
 
 def find_files(*paths, ext='npz', use_glob=True):

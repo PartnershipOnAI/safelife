@@ -4,7 +4,10 @@ import setuptools
 import numpy
 
 ext_path = os.path.abspath(os.path.join(__file__, '../safelife/speedups'))
+levels_path = os.path.abspath(os.path.join(__file__, '../safelife/levels'))
 
+data_files = ['*.png']
+data_files += glob.glob(os.path.join(levels_path, '**/*.npz'), recursive=True)
 
 setuptools.setup(
     name='safety-net',
@@ -13,7 +16,7 @@ setuptools.setup(
     description="Safety benchmarks for reinforcement learning",
     # package_dir={'safelife': src_dir},
     packages=['safelife'],
-    package_data={'safelife': ['*.png']},
+    package_data={'safelife': data_files},
     install_requires=[
         "pyemd==0.5.1",
         "numpy>=1.11.0",
