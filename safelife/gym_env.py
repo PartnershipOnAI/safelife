@@ -9,6 +9,7 @@ import numpy as np
 from .game_physics import SafeLife, CellTypes
 from .array_utils import wrapping_array
 from .gen_board import gen_game
+from .file_finder import find_files
 
 
 class SafeLifeEnv(gym.Env):
@@ -111,8 +112,9 @@ class SafeLifeEnv(gym.Env):
         return tuple(level.file_name for level in self._fixed_levels)
 
     @fixed_levels.setter
-    def fixed_levels(self, val):
-        self._fixed_levels = [SafeLife.load(fname) for fname in val]
+    def fixed_levels(self, level_names):
+        files = find_files(*level_names)
+        self._fixed_levels = [SafeLife.load(fname) for fname in files]
         self._level_idx = len(self._fixed_levels)
 
     def seed(self, seed=None):

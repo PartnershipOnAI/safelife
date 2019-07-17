@@ -133,7 +133,7 @@ class SafeLifePPO(SafeLifeBasePPO):
     save_every = 10000
 
     test_every = 100000
-    test_environments = ['levels/benchmarks/test-append.npz']
+    test_environments = ['benchmarks/test-append.npz']
 
     # Training network params
     gamma = np.array([0.9, 0.99], dtype=np.float32)

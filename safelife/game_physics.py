@@ -231,7 +231,7 @@ class GameState(object):
             cls = getattr(mod, cls_name)
         obj = cls(board_size=None)
         obj.file_name = file_name
-        obj.deserialize(np.load(file_name))
+        obj.deserialize(data)
         return obj
 
     @property
