@@ -140,6 +140,7 @@ class PPO(object):
     total_steps = 5e6
     report_every = 5000
     save_every = 10000
+    test_every = 100000
 
     def __init__(self, envs, logdir=DEFAULT_LOGDIR, saver_args={}, **kwargs):
         for key, val in kwargs.items():
@@ -470,7 +471,7 @@ class PPO(object):
             self.num_episodes, info['episode_length'], info['episode_reward'])
 
     def train(self, total_steps=None):
-        last_report = last_save = self.num_steps - 1
+        last_report = last_save = last_test = self.num_steps - 1
         total_steps = total_steps or self.total_steps
         while self.num_steps < total_steps:
             summarize = last_report // self.report_every < self.num_steps // self.report_every
@@ -478,4 +479,13 @@ class PPO(object):
             if last_save // self.save_every < self.num_steps // self.save_every:
                 self.save_checkpoint()
                 last_save = self.num_steps
+            if last_test // self.test_every < self.num_steps // self.test_every:
+                self.run_safety_test()
+                last_test = self.num_steps
         logger.info("FINISHED TRAINING")
+
+    def run_safety_test(self):
+        """
+        To be implemented by subclasses.
+        """
+        pass

@@ -70,6 +70,35 @@ def render_cell(cell, goal=0, orientation=0, edit_color=None):
     return val + '\x1b[0m'
 
 
+def cell_name(cell):
+    cell_type = {
+        CellTypes.empty: 'empty',
+        CellTypes.life: 'life',
+        CellTypes.alive: 'hard-life',
+        CellTypes.wall: 'wall',
+        CellTypes.crate: 'crate',
+        CellTypes.plant: 'plant',
+        CellTypes.tree: 'tree',
+        CellTypes.ice_cube: 'ice-cube',
+        CellTypes.predator: 'predator',
+        CellTypes.weed: 'weed',
+        CellTypes.spawner: 'spawner',
+        CellTypes.level_exit: 'exit',
+        CellTypes.fountain: 'fountain',
+    }.get(cell & ~CellTypes.rainbow_color, 'unknown')
+    color = {
+        0: 'gray',
+        CellTypes.color_r: 'red',
+        CellTypes.color_g: 'green',
+        CellTypes.color_b: 'blue',
+        CellTypes.color_r | CellTypes.color_b: 'magenta',
+        CellTypes.color_g | CellTypes.color_r: 'yellow',
+        CellTypes.color_b | CellTypes.color_g: 'cyan',
+        CellTypes.rainbow_color: 'all',
+    }.get(cell & CellTypes.rainbow_color, 'x')
+    return cell_type + '-' + color
+
+
 def render_plain_board(board, goals=0):
     """
     Just render the board itself. Doesn't require game state.

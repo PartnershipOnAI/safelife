@@ -67,14 +67,21 @@ class SafeLifeWrapper(Wrapper):
         information for the next episode. This attribute can be changed between
         episodes (via `reset_callback`) to either disable recording or give the
         recording a new name.
+    on_name_conflict : str
+        What to do if the video name conflicts with an existing file.
+        One of "abort" (don't record a new video), "overwrite", or
+        "change_name".
     """
-    def __init__(self, env, reset_callback=None, video_name=None):
-        if not callable(reset_callback):
+    def __init__(
+            self, env, reset_callback=None, video_name=None,
+            on_name_conflict="change_name"):
+        if reset_callback is not None and not callable(reset_callback):
             raise ValueError("'reset_callback' must be a callable")
         self.reset_callback = reset_callback
         self.video_name = video_name
         self.video_idx = 1  # used only if the name is duplicated
         self.video_recorder = None
+        self.on_name_conflict = on_name_conflict
         super().__init__(env)
 
     def step(self, action):
@@ -84,7 +91,8 @@ class SafeLifeWrapper(Wrapper):
         return observation, reward, done, info
 
     def reset(self, **kwargs):
-        self.reset_callback(self)
+        if self.reset_callback is not None:
+            self.reset_callback(self)
         observation = self.env.reset(**kwargs)
         self.reset_video_recorder()
         return observation
@@ -104,14 +112,18 @@ class SafeLifeWrapper(Wrapper):
             directory = os.path.split(path)[0]
             if not os.path.exists(directory):
                 os.makedirs(directory)
-            while os.path.exists(path):
-                # If the video name already exists, add a counter to it.
-                path = p0 + '-' + str(self.video_idx)
-                self.video_idx += 1
+            if self.on_name_conflict == "change_name":
+                while os.path.exists(path + '.npz'):
+                    # If the video name already exists, add a counter to it.
+                    path = p0 + '-' + str(self.video_idx)
+                    self.video_idx += 1
+            elif self.on_name_conflict == "abort":
+                if os.path.exists(path + '.npz'):
+                    return
+            elif self.on_name_conflict != "overwrite":
+                raise ValueError("Invalid value for 'on_name_conflict'")
             self.video_recorder = SafeLifeRecorder(env=self.env, base_path=path)
             self.video_recorder.capture_frame()
-        else:
-            self.video_recorder = None
 
     def __del__(self):
         # Make sure we've closed up shop when garbage collecting

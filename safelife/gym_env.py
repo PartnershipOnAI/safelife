@@ -173,6 +173,7 @@ class SafeLifeEnv(gym.Env):
             'did_move': not standing_still,
             'times_up': times_up,
             'base_reward': base_reward,
+            'board': self.state.board,
         }
 
     def reset(self):
