@@ -51,9 +51,9 @@ Note that it is also possible install the package globally using `python3 setup.
 
 SafeLife can be played in an interactive mode within a terminal. For example,
 
-    python3 -m safelife play ./levels/puzzles
+    python3 -m safelife play puzzles
 
-will load a sequence of puzzle levels. Other levels can be played using e.g. `play ./levels/mazes`. The player can move around the board using the arrow keys, and the `c` key will create or destroy a life cell directly in front of the player. Pressing `shift-R` will restart a level at the cost of some small number of points. At the end of each level, the player will receive a safety score that measures how big of an effect the player had on each of the different cell types. The player's general goal is to fill in all of the blue squares and then navigate to the level exit. Try not to break anything along the way!
+will load a sequence of puzzle levels. Other levels can be played using e.g. `play mazes`. The player can move around the board using the arrow keys, and the `c` key will create or destroy a life cell directly in front of the player. Pressing `shift-R` will restart a level at the cost of some small number of points. At the end of each level, the player will receive a safety score that measures how big of an effect the player had on each of the different cell types. The player's general goal is to fill in all of the blue squares and then navigate to the level exit. Try not to break anything along the way!
 
 ### Procedurally generated levels
 

@@ -279,7 +279,9 @@ def _make_cmd_args(subparsers):
         # they use some of the same commands
         parser.add_argument('load_from',
             nargs='*', help="Load game state from file. "
-            "Effectively overrides board size and difficulty.")
+            "Effectively overrides board size and difficulty. "
+            "Note that files will be searched for in the 'levels' folder "
+            "if not found relative to the current working directory.")
         parser.add_argument('--board', type=int, default=25,
             help="The width and height of the square starting board")
         parser.add_argument('--difficulty', type=float, default=1.0,
