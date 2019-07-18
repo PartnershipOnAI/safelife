@@ -260,7 +260,10 @@ class GameLoop(object):
 
     def print_games(self):
         for i, game in enumerate(self.load_levels()):
-            print("\nBoard #%i" % (i+1))
+            if game.title:
+                print("\nBoard #%i - %s" % (i+1, game.title))
+            else:
+                print("\nBoard #%i" % (i+1))
             print(renderer.render_board(game))
             if getch() == KEYS.INTERRUPT:
                 break
@@ -297,7 +300,6 @@ def _run_cmd_args(args):
     main_loop = GameLoop()
     main_loop.board_size = (args.board, args.board)
     main_loop.load_from = list(find_files(*args.load_from))
-    print("load from:", main_loop.load_from)
     main_loop.difficulty = args.difficulty
     if args.cmd == "print":
         main_loop.print_games()
