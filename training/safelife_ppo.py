@@ -133,7 +133,7 @@ class SafeLifePPO(SafeLifeBasePPO):
     save_every = 10000
 
     test_every = 100000
-    test_environments = ['benchmarks/test-append.npz']
+    test_environments = ['benchmarks/test-prune-3.npz']
 
     # Training network params
     gamma = np.array([0.9, 0.99], dtype=np.float32)
@@ -159,13 +159,13 @@ class SafeLifePPO(SafeLifeBasePPO):
     }
     board_gen_params = {
         'board_shape': (25, 25),
-        'difficulty': 4.5,
+        'difficulty': 3.9,
         'max_regions': 4,
         'region_types': {
             'destroy': 1,
             'prune': 2,
-            'build': 1,
-            'append': 2,
+            # 'build': 1,
+            # 'append': 2,
         },
         'start_region': None,
     }
