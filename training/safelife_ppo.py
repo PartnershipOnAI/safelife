@@ -130,10 +130,10 @@ class SafeLifePPO(SafeLifeBasePPO):
     epochs_per_batch = 3
     total_steps = 5e6
     report_every = 5000
-    save_every = 10000
+    save_every = 50000
 
-    test_every = 100000
-    test_environments = ['benchmarks/test-prune-3.npz']
+    test_every = 500000
+    test_environments = ['benchmarks/test-append.npz']
 
     # Training network params
     gamma = np.array([0.9, 0.99], dtype=np.float32)
@@ -152,7 +152,8 @@ class SafeLifePPO(SafeLifeBasePPO):
     # Environment params
     environment_params = {
         'max_steps': 1200,
-        'no_movement_penalty': 0.002,
+        'movement_bonus': 0.04,
+        'movement_bonus_power': 0.01,
         'remove_white_goals': True,
         'view_shape': (15, 15),
         'output_channels': tuple(range(15)),
@@ -162,10 +163,10 @@ class SafeLifePPO(SafeLifeBasePPO):
         'difficulty': 3.9,
         'max_regions': 4,
         'region_types': {
-            'destroy': 1,
-            'prune': 2,
-            # 'build': 1,
-            # 'append': 2,
+            # 'destroy': 1,
+            # 'prune': 2,
+            'build': 1,
+            'append': 2,
         },
         'start_region': None,
     }
