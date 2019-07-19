@@ -192,14 +192,27 @@ def region_population_params(difficulty=5, **fixed_params):
     """
     def dscale(x, y):
         """
-        Do linear interpolation based on difficulty.
+        Interpolate a piecewise linear difficulty function
+        
+        Parameters
+        ----------
+
+        x : arraylike
+            a list of x positions that are the ends of the linear pieces
+            repeated values cause steplike changes to the right
+        y : arraylike
+            a list of y values for each of those points
+
         """
         x = np.asanyarray(x)
         y = np.asanyarray(y)
         assert len(x) == len(y)
+        # k is the first position > difficulty
         k = np.searchsorted(x, difficulty, side='right')
+        # k1 is a position to the left of that, but clamped at the beginning
         k1 = max(0, k-1)
         k2 = min(k, len(x) - 1)
+        # k1 == k2 means we were inserting at the begining or end
         r = 1 if k1 == k2 else (difficulty - x[k1]) / (x[k2] - x[k1])
         y = np.array(y)
         return ((1-r) * y[k1] + r * y[k2]).tolist()

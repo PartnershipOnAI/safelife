@@ -4,6 +4,7 @@ import tensorflow as tf
 
 from safelife.gym_env import SafeLifeEnv
 from safelife.side_effects import policy_side_effect_score
+from safelife.gen_board import region_population_params
 from . import ppo
 from .wrappers import SafeLifeWrapper
 
@@ -36,7 +37,7 @@ class SafeLifeBasePPO(ppo.PPO):
     hyperparameters.
     """
     video_freq = 100
-    video_counter = None
+    video_counter = None      # counter for filenames to save videos in
     video_name = "episode-{episode}-{steps}"
     test_video_name = "test-{env_name}-{steps}"
     test_environments = []
@@ -109,6 +110,35 @@ class SafeLifeBasePPO(ppo.PPO):
             print("")
 
 
+def make_curriculum():
+
+    levels = []
+    taught_unmaking = False
+    for x in np.linspace(1, 7, 13):
+        # before we mix in destroy tasks, train on some tasks 
+        # that are just destroying things
+        if region_population_params(x)["region_types"]["destroy"] > 0:
+            if not taught_unmaking:
+                taught_unmaking = True
+                levels.append({
+                    'board_shape': (25, 25),
+                    'difficulty': 1,
+                    'max_regions': 4,
+                    'region_types': {
+                        'build': 0,
+                        'destroy': 1
+                    }
+                    })
+
+        levels.append({
+            'board_shape': (25, 25),
+            'difficulty': x,
+            'max_regions': 4,
+            'start_region': None
+            })
+    return levels
+
+
 class SafeLifePPO(SafeLifeBasePPO):
     """
     Defines the network architecture and parameters for agent training.
@@ -170,7 +200,18 @@ class SafeLifePPO(SafeLifeBasePPO):
         'start_region': None,
     }
 
+    curriculum_params = make_curriculum()
     # --------------
+
+    def update_environment(self, env_wrapper):
+        "Customized variant of update_enviroment to implement curricular learning."
+        super().update_enviroment(env_wrapper)
+        env = env_wrapper.unwrapped
+        self.adjust_to_current_curriculum(env)
+
+    def adjust_to_current_curriculum(self, env):
+        "Modify an environment to fit with the current curriculum stage."
+
 
     def build_logits_and_values(self, img_in, cell_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)
