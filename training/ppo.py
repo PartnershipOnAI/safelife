@@ -350,7 +350,7 @@ class PPO(object):
         reward_mask = []
 
         for _ in range(steps_per_env):
-            new_states = [env.state for env in self.envs]
+            new_states = [env.obs for env in self.envs]
             states.append(new_states)
             fd = {op.states: states[-1:]}
             if cell_states is not None:
@@ -383,7 +383,7 @@ class PPO(object):
                         cell_states[i] *= 0.0
 
         # Get the value of the last state (for discounted rewards)
-        fd = {op.states: [[env.state for env in self.envs]]}
+        fd = {op.states: [[env.obs for env in self.envs]]}
         if cell_states is not None:
             fd[op.cell_states_in] = cell_states
         values.append(session.run(op.v, feed_dict=fd)[0])

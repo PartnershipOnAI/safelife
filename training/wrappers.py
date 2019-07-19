@@ -137,15 +137,15 @@ class AutoResetWrapper(Wrapper):
     """
     def __init__(self, env, reset_callback=None):
         super().__init__(env)
-        self._state = None
+        self._obs = None
         self.num_episodes = -1
         self.reset_callback = reset_callback
 
     @property
-    def state(self):
-        if self._state is None:
-            self._state = self.reset()
-        return self._state
+    def obs(self):
+        if self._obs is None:
+            self._obs = self.reset()
+        return self._obs
 
     def reset(self, **kwargs):
         self.episode_length = 0
@@ -164,5 +164,5 @@ class AutoResetWrapper(Wrapper):
         info['num_episodes'] = self.num_episodes
         if done:
             obs = self.reset()
-        self._state = obs
+        self._obs = obs
         return obs, reward, done, info
