@@ -335,12 +335,38 @@ class PPO(object):
         'states', 'actions', 'rewards', 'end_episode', 'times_up', 'rnn_states')
     def run_agents(self, steps_per_env):
         """
-        Create state/action sequence for each environment.
+        Create state/action sequences for each environment.
 
-        Note that prior environment observations are stored on the environments
-        themselves. This makes bookkeeping a little bit easier.
+        This can be overridden by subclasses to use e.g. a replay buffer
+        instead of sampling new states. The number of output environments
+        doesn't have to equal the number of instantiated environments, although
+        it does in this instantiation.
 
-        Note that this also advances ``self.num_steps``.
+        Note that in addition to running the agents in the environment, this
+        function also calls :method:`log_episode` function whenever an
+        episode is complete, and it increments ``self.num_steps`` for each
+        action taken.
+
+        Parameters
+        ----------
+        steps_per_env : int
+
+        Returns
+        -------
+        states : ndarray shape(steps_per_env+1, num_env, ...)
+            There should be one more state than steps taken so as to include
+            both the initial and final state.
+        actions : ndarray shape(steps_per_env, num_env)
+        rewards : ndarray shape(steps_per_env, num_env)
+        end_episode : ndarray shape(steps_per_env, num_env), dtype bool
+            True if the episode ended on that step, False otherwise.
+        times_up : ndarray shape(steps_per_env, num_env), dtype bool
+            True if the episode ended on that step due to the time limit being
+            exceeded, False otherwise.
+        rnn_states : ndarray shape(num_env, ...)
+            The initial internal state of the RNN for each environment at
+            the beginning of each sequence. If an RNN isn't in use, this can
+            be None or anything else.
         """
         op = self.op
         session = self.session
@@ -351,10 +377,10 @@ class PPO(object):
         rewards = []
         end_episode = []
         times_up = []
-        rnn_states = [[]]
+        initial_rnn_states = []
         if op.rnn_states_in is not None:
             rnn_zero_state = np.zeros(
-                op.rnn_states_in.shape[2:].as_list(),
+                op.rnn_states_in.shape[1:].as_list(),
                 dtype=op.rnn_states_in.dtype.as_numpy_dtype)
         else:
             rnn_zero_state = None
@@ -363,23 +389,22 @@ class PPO(object):
                 env._ppo_last_obs = env.reset()
                 env._ppo_rnn_state = rnn_zero_state
             obs.append(env._ppo_last_obs)
-            rnn_states[0].append(env._ppo_rnn_state)
+            initial_rnn_states.append(env._ppo_rnn_state)
+        new_rnn_states = initial_rnn_states
         for _ in range(steps_per_env):
             if op.rnn_states_in is not None:
                 policies, new_rnn_states = session.run(
                     [op.policy, op.rnn_states_out],
                     feed_dict={
                         op.states: [obs[-num_env:]],
-                        op.rnn_states_in: [rnn_states[-num_env:]]
+                        op.rnn_states_in: new_rnn_states
                     })
-                rnn_states.append(new_rnn_states[0])
             else:
                 policies = session.run(op.policy, feed_dict={
                     op.states: [obs[-num_env:]]
                 })
-                new_rnn_states = [[None] * num_env]
             for env, policy, rnn_state in zip(
-                    self.envs, policies[0], new_rnn_states[0]):
+                    self.envs, policies[0], new_rnn_states):
                 action = np.random.choice(len(policy), p=policy)
                 new_obs, reward, done, info = env.step(action)
                 if done:
@@ -397,21 +422,21 @@ class PPO(object):
 
         out_shape = (steps_per_env, num_env)
         obs_shape = (steps_per_env+1, num_env) + obs[-1].shape
-        if op.rnn_states_in is not None:
-            rnn_states = np.array(rnn_states)
-        else:
-            rnn_states = None
         return (
             np.array(obs).reshape(obs_shape),
             np.array(actions).reshape(out_shape),
             np.array(rewards).reshape(out_shape),
             np.array(end_episode).reshape(out_shape),
             np.array(times_up).reshape(out_shape),
-            rnn_states,
+            np.array(initial_rnn_states),
         )
 
     @named_output('s', 'a', 'pi', 'r', 'G', 'A', 'v', 'm', 'c')
     def gen_training_batch(self, steps_per_env):
+        """
+        Create a batch of training data, including discounted rewards and
+        advantages.
+        """
         op = self.op
         session = self.session
 
@@ -420,7 +445,7 @@ class PPO(object):
         # Note that there should be one more state than action/reward for
         # each environment.
         fd = {op.states: states}
-        if rnn_states is not None:
+        if op.rnn_states_in is not None:
             fd[op.rnn_states_in] = rnn_states
         policies, values = session.run([op.policy, op.v], feed_dict=fd)
         num_actions = policies.shape[-1]
