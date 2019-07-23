@@ -2,6 +2,7 @@
 #include <numpy/arrayobject.h>
 #include "advance_board.h"
 #include "gen_board.h"
+#include "wrapped_label.h"
 
 #define PY_RUN_ERROR(msg) {PyErr_SetString(PyExc_RuntimeError, msg); goto error;}
 #define PY_VAL_ERROR(msg) {PyErr_SetString(PyExc_ValueError, msg); goto error;}
@@ -38,6 +39,50 @@ static PyObject *advance_board_py(PyObject *self, PyObject *args) {
     );
     Py_DECREF(board_obj);
     return (PyObject *)b2;
+}
+
+
+static char wrapped_label_doc[] =
+    "wrapped_label(data)\n--\n\n"
+    "Similar to :func:`ndimage.label`, but uses wrapped boundary conditions.\n"
+    "\n"
+    "Parameters\n"
+    "----------\n"
+    "data : ndarray\n"
+    "    Data from which to select labels. Must be two-dimensional.\n"
+    "    Non-zero elements are treated as features, while zero elements are\n"
+    "    treated as background.\n"
+    "\n"
+    "Returns\n"
+    "-------\n"
+    "labels : ndarray\n"
+    "    An integer array of labels. Same shape as input.\n"
+    "num_features : int\n";
+
+
+static PyObject *wrapped_label_py(PyObject *self, PyObject *args) {
+    PyObject *data;
+    PyArrayObject *arr;
+
+    if (!PyArg_ParseTuple(args, "O", &data)) return NULL;
+    data = PyArray_FROM_OTF(
+        data, NPY_INT32,
+        NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST | NPY_ARRAY_ENSURECOPY);
+    if (!data)  return NULL;
+    arr = (PyArrayObject *)data;
+    if (PyArray_NDIM(arr) != 2 || PyArray_SIZE(arr) == 0) {
+        Py_DECREF(data);
+        return NULL;
+    }
+    int num_labels = wrapped_label(
+        (int32_t *)PyArray_DATA(arr),
+        PyArray_DIM(arr, 0),
+        PyArray_DIM(arr, 1)
+    );
+
+    PyObject *rval = Py_BuildValue("Oi", data, num_labels);
+    Py_DECREF(data);
+    return rval;
 }
 
 
@@ -211,6 +256,10 @@ static PyMethodDef methods[] = {
     {
         "gen_pattern", (PyCFunction)gen_pattern_py,
         METH_VARARGS | METH_KEYWORDS, gen_pattern_doc
+    },
+    {
+        "wrapped_label", (PyCFunction)wrapped_label_py,
+        METH_VARARGS | METH_KEYWORDS, wrapped_label_doc
     },
     {
         "seed", (PyCFunction)seed_py, METH_VARARGS,
