@@ -14,7 +14,7 @@ from functools import wraps
 import numpy as np
 import tensorflow as tf
 
-from .wrappers import AutoResetWrapper
+from .wrappers import RewardsTracker
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +150,7 @@ class PPO(object):
             else:
                 raise ValueError("Unrecognized parameter: '%s'" % (key,))
 
-        self.envs = [AutoResetWrapper(env) for env in envs]
+        self.envs = [RewardsTracker(env) for env in envs]
 
         self.op = SimpleNamespace()
         self.num_steps = 0
@@ -211,16 +211,16 @@ class PPO(object):
         op.old_value = tf.placeholder(tf.float32, [None, None, n_gamma], name="old_value")
         op.learning_rate = tf.constant(self.learning_rate, name="learning_rate")
         op.eps_clip = tf.constant(self.eps_clip, name="eps_clip")
-        op.cell_mask = tf.fill(tf.shape(op.states)[:2], True, name="cell_mask")
+        op.rnn_mask = tf.fill(tf.shape(op.states)[:2], True, name="rnn_mask")
         op.policy_discount_weights = tf.constant(self.policy_discount_weights, name="policy_discount_weights")
         op.value_discount_weights = tf.constant(self.value_discount_weights, name="value_discount_weights")
         op.num_steps = tf.get_variable('num_steps', initializer=tf.constant(0))
         op.num_episodes = tf.get_variable('num_episodes', initializer=tf.constant(0))
 
         with tf.name_scope("policy"):
-            op.cell_states_in = None
-            op.cell_states_out = None
-            op.logits, op.v = self.build_logits_and_values(op.states, op.cell_mask)
+            op.rnn_states_in = None
+            op.rnn_states_out = None
+            op.logits, op.v = self.build_logits_and_values(op.states, op.rnn_mask)
             op.policy = tf.nn.softmax(op.logits)
             num_actions = op.policy.shape[-1].value
         with tf.name_scope("policy_loss"):
@@ -325,98 +325,129 @@ class PPO(object):
         discount factors (gamma).
 
         If the policy function uses an RNN, it should store the input and
-        output cell states in self.op.cell_states_in and cell_states_out.
+        output cell states in self.op.rnn_states_in and rnn_states_out.
 
         To be implemented by subclasses.
         """
         raise NotImplementedError
 
-    @named_output('s', 'a', 'pi', 'r', 'G', 'A', 'v', 'm', 'c')
-    def gen_batch(self, steps_per_env, cell_states=None):
-        # Except for cell states ('c') all outputs should have shape
-        # (steps_per_env, num_env, ...). All outputs are numpy arrays.
-        # The cell state is just shape (num_env, ...), which is the last
-        # state of the input cell.
+    @named_output(
+        'states', 'actions', 'rewards', 'end_episode', 'times_up', 'rnn_states')
+    def run_agents(self, steps_per_env):
+        """
+        Create state/action sequence for each environment.
+
+        Note that prior environment observations are stored on the environments
+        themselves. This makes bookkeeping a little bit easier.
+
+        Note that this also advances ``self.num_steps``.
+        """
         op = self.op
         session = self.session
         num_env = len(self.envs)
 
-        states = []
+        obs = []
         actions = []
-        action_prob = []
         rewards = []
-        values = []
-        cell_mask = []
-        reward_mask = []
-
+        end_episode = []
+        times_up = []
+        rnn_states = [[]]
+        if op.rnn_states_in is not None:
+            rnn_zero_state = np.zeros(
+                op.rnn_states_in.shape[2:].as_list(),
+                dtype=op.rnn_states_in.dtype.as_numpy_dtype)
+        else:
+            rnn_zero_state = None
+        for env in self.envs:
+            if not hasattr(env, '_ppo_last_obs'):
+                env._ppo_last_obs = env.reset()
+                env._ppo_rnn_state = rnn_zero_state
+            obs.append(env._ppo_last_obs)
+            rnn_states[0].append(env._ppo_rnn_state)
         for _ in range(steps_per_env):
-            new_states = [env.obs for env in self.envs]
-            states.append(new_states)
-            fd = {op.states: states[-1:]}
-            if cell_states is not None:
-                fd[op.cell_states_in] = cell_states
-            if op.cell_states_out is not None:
-                policies, vals, cell_states = session.run(
-                    [op.policy, op.v, op.cell_states_out], feed_dict=fd)
+            if op.rnn_states_in is not None:
+                policies, new_rnn_states = session.run(
+                    [op.policy, op.rnn_states_out],
+                    feed_dict={
+                        op.states: [obs[-num_env:]],
+                        op.rnn_states_in: [rnn_states[-num_env:]]
+                    })
+                rnn_states.append(new_rnn_states[0])
             else:
-                policies, vals = session.run([op.policy, op.v], feed_dict=fd)
-            values.append(vals[0])
-            for i in range(num_env):
-                env = self.envs[i]
-                policy = policies[0, i]
-                self.num_steps += 1
+                policies = session.run(op.policy, feed_dict={
+                    op.states: [obs[-num_env:]]
+                })
+                new_rnn_states = [[None] * num_env]
+            for env, policy, rnn_state in zip(
+                    self.envs, policies[0], new_rnn_states[0]):
                 action = np.random.choice(len(policy), p=policy)
-                _, reward, done, info = env.step(action)
-                rewards.append(reward)
-                cell_mask.append(not done)
-                # Only mask out rewards if the agent gets stuck.
-                # This effectively makes it a continuing (not episodic)
-                # environment.
-                reward_mask.append(not info.get('times_up', done))
-                actions.append(action)
-                action_prob.append(policy[action])
+                new_obs, reward, done, info = env.step(action)
                 if done:
-                    self.log_episode(info)
-                    if cell_states is not None:
-                        # Zero out the cell state so that it starts
-                        # fresh at the beginning of the next episode.
-                        cell_states[i] *= 0.0
+                    self.log_episode(env)
+                    new_obs = env.reset()
+                    rnn_state = rnn_zero_state
+                env._ppo_last_obs = new_obs
+                env._ppo_rnn_state = rnn_state
+                obs.append(new_obs)
+                actions.append(action)
+                rewards.append(reward)
+                end_episode.append(done)
+                times_up.append(info.get('times_up', done))
+        self.num_steps += len(actions)
 
-        # Get the value of the last state (for discounted rewards)
-        fd = {op.states: [[env.obs for env in self.envs]]}
-        if cell_states is not None:
-            fd[op.cell_states_in] = cell_states
-        values.append(session.run(op.v, feed_dict=fd)[0])
+        out_shape = (steps_per_env, num_env)
+        obs_shape = (steps_per_env+1, num_env) + obs[-1].shape
+        if op.rnn_states_in is not None:
+            rnn_states = np.array(rnn_states)
+        else:
+            rnn_states = None
+        return (
+            np.array(obs).reshape(obs_shape),
+            np.array(actions).reshape(out_shape),
+            np.array(rewards).reshape(out_shape),
+            np.array(end_episode).reshape(out_shape),
+            np.array(times_up).reshape(out_shape),
+            rnn_states,
+        )
 
-        # Convert everything to a numpy array
-        states = np.array(states)
-        actions = np.array(actions).reshape(steps_per_env, num_env)
-        action_prob = np.array(action_prob).reshape(steps_per_env, num_env)
-        rewards = np.array(rewards).reshape(steps_per_env, num_env, 1)
-        values = np.array(values).reshape(steps_per_env + 1, num_env, -1)
-        reward_mask = np.array(reward_mask).reshape(steps_per_env, num_env, 1)
-        cell_mask = np.array(cell_mask).reshape(steps_per_env, num_env)
-        cell_mask = np.roll(cell_mask, 1, axis=0)
-        cell_mask[0] = True
+    @named_output('s', 'a', 'pi', 'r', 'G', 'A', 'v', 'm', 'c')
+    def gen_training_batch(self, steps_per_env):
+        op = self.op
+        session = self.session
+
+        states, actions, rewards, end_episode, times_up, rnn_states = \
+            self.run_agents(steps_per_env)
+        # Note that there should be one more state than action/reward for
+        # each environment.
+        fd = {op.states: states}
+        if rnn_states is not None:
+            fd[op.rnn_states_in] = rnn_states
+        policies, values = session.run([op.policy, op.v], feed_dict=fd)
+        num_actions = policies.shape[-1]
+        action_one_hot = np.eye(num_actions)[actions]
+        action_prob = np.sum(policies[:-1] * action_one_hot, axis=-1)
 
         if self.reward_clip > 0:
             rewards = np.clip(rewards, -self.reward_clip, self.reward_clip)
 
-        # Calculate the discounted returns and advantages
-        # Both have shape (steps_per_env, num_env, n_gamma)
+        reward_mask = ~times_up[..., np.newaxis]
+        rnn_mask = np.roll(~end_episode, 1, axis=0)
+        rnn_mask[0] = True
+        rewards = rewards[..., np.newaxis]
+
         gamma = self.gamma
         lmda = self.lmda * gamma
         n_gamma = len(gamma)
         advantages = rewards + gamma * reward_mask * values[1:] - values[:-1]
-        returns = np.broadcast_to(rewards, (steps_per_env, num_env, n_gamma)).copy()
+        returns = np.broadcast_to(rewards, rewards.shape[:-1] + (n_gamma,)).copy()
         returns[-1] += reward_mask[-1] * gamma * values[-1]
         for i in range(steps_per_env - 2, -1, -1):
             returns[i] += gamma * reward_mask[i] * returns[i+1]
             advantages[i] += lmda * reward_mask[i] * advantages[i+1]
 
         return (
-            states, actions, action_prob, rewards[...,0], returns, advantages,
-            values[:-1], cell_mask, cell_states
+            states[:-1], actions, action_prob, rewards[...,0], returns, advantages,
+            values[:-1], rnn_mask, rnn_states
         )
 
     def train_batch(self, summarize=False):
@@ -426,7 +457,7 @@ class PPO(object):
         env_idx = np.arange(num_env)
         assert num_env % self.envs_per_minibatch == 0
 
-        batch = self.gen_batch(self.steps_per_env)
+        batch = self.gen_training_batch(self.steps_per_env)
 
         for _ in range(self.epochs_per_batch):
             np.random.shuffle(env_idx)
@@ -438,10 +469,10 @@ class PPO(object):
                     op.old_value: batch.v[:,idx],
                     op.returns: batch.G[:,idx],
                     op.advantages: batch.A[:,idx],
-                    op.cell_mask: batch.m[:,idx],
+                    op.rnn_mask: batch.m[:,idx],
                 }
-                if op.cell_states_in is not None:
-                    fd[op.cell_states_in] = batch.c[idx]
+                if op.rnn_states_in is not None:
+                    fd[op.rnn_states_in] = batch.c[idx]
                 session.run(op.train, feed_dict=fd)
 
         if summarize:
@@ -452,23 +483,23 @@ class PPO(object):
                 op.old_value: batch.v,
                 op.returns: batch.G,
                 op.advantages: batch.A,
-                op.cell_mask: batch.m,
+                op.rnn_mask: batch.m,
             }
-            if op.cell_states_in is not None:
-                fd[op.cell_states_in] = batch.c
+            if op.rnn_states_in is not None:
+                fd[op.rnn_states_in] = batch.c
             summary = session.run(op.summary, feed_dict=fd)
             self.logger.add_summary(summary, self.num_steps)
 
-    def log_episode(self, info):
+    def log_episode(self, env):
         self.num_episodes += 1
         summary = tf.Summary()
-        summary.value.add(tag='episode/reward', simple_value=info['episode_reward'])
-        summary.value.add(tag='episode/length', simple_value=info['episode_length'])
+        summary.value.add(tag='episode/reward', simple_value=env.episode_reward)
+        summary.value.add(tag='episode/length', simple_value=env.episode_length)
         summary.value.add(tag='episode/completed', simple_value=self.num_episodes)
         self.logger.add_summary(summary, self.num_steps)
         logger.info(
             "Episode %i: length=%i, reward=%0.1f",
-            self.num_episodes, info['episode_length'], info['episode_reward'])
+            self.num_episodes, env.episode_length, env.episode_reward)
 
     def train(self, total_steps=None):
         last_report = last_save = last_test = self.num_steps - 1

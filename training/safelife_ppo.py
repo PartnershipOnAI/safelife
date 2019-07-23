@@ -50,7 +50,7 @@ class SafeLifeBasePPO(ppo.PPO):
         envs = [
             SafeLifeWrapper(
                 SafeLifeEnv(**self.environment_params),
-                self.update_environment
+                reset_callback=self.update_environment,
             ) for _ in range(self.num_env)
         ]
         super().__init__(envs, logdir=logdir, **kwargs)
@@ -77,10 +77,10 @@ class SafeLifeBasePPO(ppo.PPO):
         def policy(obs, memory):
             fd = {op.states: [[obs]]}
             if memory is not None:
-                fd[op.cell_states_in] = memory
-            if op.cell_states_out is not None:
+                fd[op.rnn_states_in] = memory
+            if op.rnn_states_out is not None:
                 policy, memory = self.session.run(
-                    [op.policy, op.cell_states_out], feed_dict=fd)
+                    [op.policy, op.rnn_states_out], feed_dict=fd)
             else:
                 policy = self.session.run(op.policy, feed_dict=fd)
             policy = policy[0, 0]
@@ -173,7 +173,7 @@ class SafeLifePPO(SafeLifeBasePPO):
 
     # --------------
 
-    def build_logits_and_values(self, img_in, cell_mask, use_lstm=False):
+    def build_logits_and_values(self, img_in, rnn_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)
         # Need to get it into shape (batch_size, ...) for convolution.
         img_shape = tf.shape(img_in)
@@ -201,26 +201,26 @@ class SafeLifePPO(SafeLifeBasePPO):
         y_size = y.shape[1] * y.shape[2] * y.shape[3]
         y = tf.reshape(y, tf.concat([batch_shape, [y_size]], axis=0))
         if use_lstm:
-            cell_mask = tf.cast(cell_mask, tf.float32)
+            rnn_mask = tf.cast(rnn_mask, tf.float32)
             lstm = tf.nn.rnn_cell.LSTMCell(512, name="lstm_layer", state_is_tuple=False)
             n_steps = batch_shape[0]
-            self.op.cell_states_in = lstm.zero_state(batch_shape[1], tf.float32)
+            self.op.rnn_states_in = lstm.zero_state(batch_shape[1], tf.float32)
 
             def loop_cond(n, *args):
                 return n < n_steps
 
             def loop_body(n, state, array_out):
                 y_in = y[n]
-                state = state * cell_mask[n,:,None]
+                state = state * rnn_mask[n,:,None]
                 y_out, state = lstm(y_in, state)
                 return n + 1, state, array_out.write(n, y_out)
 
             n, states, y = tf.while_loop(loop_cond, loop_body, (
                 tf.constant(0, dtype=tf.int32),
-                self.op.cell_states_in,
+                self.op.rnn_states_in,
                 tf.TensorArray(tf.float32, n_steps),
             ))
-            self.op.cell_states_out = states
+            self.op.rnn_states_out = states
             self.op.layer4 = y = y.stack()
         else:
             self.op.layer4 = y = tf.layers.dense(
