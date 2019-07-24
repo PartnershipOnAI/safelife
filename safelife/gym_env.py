@@ -89,6 +89,8 @@ class SafeLifeEnv(gym.Env):
     view_shape = (15, 15)
     output_channels = tuple(range(15))  # default to all channels
 
+    rescale_rewards = 1/3.0  # Divide rewards by 3 to keep the build points at 1.0
+
     _fixed_levels = []
     randomize_fixed_levels = True
 
@@ -136,9 +138,16 @@ class SafeLifeEnv(gym.Env):
         speedups.seed(seed)
         return [seed]
 
-    def _get_obs(self):
-        board = self.state.board.copy()
-        goals = self.state.goals.copy()
+    def get_obs(self, board=None, goals=None, agent_loc=None):
+        if board is None:
+            board = self.state.board
+        if goals is None:
+            goals = self.state.goals
+        if agent_loc is None:
+            agent_loc = self.state.agent_loc
+
+        board = board.copy()
+        goals = goals.copy()
 
         # Get rid of the frozen flag for the agent and exit.
         # (maybe a minor optimization)
@@ -156,7 +165,7 @@ class SafeLifeEnv(gym.Env):
 
         # And center the array on the agent.
         h, w = self.view_shape
-        x0, y0 = self.state.agent_loc
+        x0, y0 = agent_loc
         x0 -= w // 2
         y0 -= h // 2
         board = board.view(wrapping_array)[y0:y0+h, x0:x0+w]
@@ -181,7 +190,7 @@ class SafeLifeEnv(gym.Env):
         self._num_steps += 1
         times_up = self._num_steps >= self.max_steps
         done = self.state.game_over or times_up
-        reward = base_reward / 3.0
+        reward = base_reward * self.rescale_rewards
 
         p0 = self.state.agent_loc
         n = self.movement_bonus_period
@@ -200,10 +209,12 @@ class SafeLifeEnv(gym.Env):
         reward += self.movement_bonus * speed**self.movement_bonus_power
         self._prior_positions.append(self.state.agent_loc)
 
-        return self._get_obs(), reward, done, {
+        return self.get_obs(), reward, done, {
             'times_up': times_up,
             'base_reward': base_reward,
             'board': self.state.board,
+            'goals': self.state.goals,
+            'agent_loc': self.state.agent_loc,
         }
 
     def reset(self):
@@ -224,7 +235,7 @@ class SafeLifeEnv(gym.Env):
         self._num_steps = 0
         self._prior_positions = queue.deque(
             [self.state.agent_loc], self.movement_bonus_period)
-        return self._get_obs()
+        return self.get_obs()
 
     def render(self, mode='ansi'):
         if mode == 'ansi':

@@ -555,8 +555,12 @@ class GameWithGoals(GameState):
         else:
             return super().execute_edit(command)
 
-    def current_points(self):
-        goals = (self.goals & CellTypes.rainbow_color) >> CellTypes.color_bit
+    def current_points(self, board=None, goals=None):
+        if board is None:
+            board = self.board
+        if goals is None:
+            goals = self.goals
+        goals = (goals & CellTypes.rainbow_color) >> CellTypes.color_bit
         cell_colors = (self.board & CellTypes.rainbow_color) >> CellTypes.color_bit
         alive = self.board & CellTypes.alive > 0
         cell_points = self.reward_table[goals, cell_colors] * alive

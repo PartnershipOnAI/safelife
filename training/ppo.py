@@ -331,8 +331,18 @@ class PPO(object):
         """
         raise NotImplementedError
 
+    @property
+    def rnn_zero_state(self):
+        if self.op.rnn_states_in is not None:
+            return np.zeros(
+                self.op.rnn_states_in.shape[1:].as_list(),
+                dtype=self.op.rnn_states_in.dtype.as_numpy_dtype)
+        else:
+            return None
+
     @named_output(
-        'states', 'actions', 'rewards', 'end_episode', 'times_up', 'rnn_states')
+        'states', 'actions', 'rewards', 'end_episode', 'times_up',
+        'rnn_states', 'info')
     def run_agents(self, steps_per_env):
         """
         Create state/action sequences for each environment.
@@ -367,6 +377,8 @@ class PPO(object):
             The initial internal state of the RNN for each environment at
             the beginning of each sequence. If an RNN isn't in use, this can
             be None or anything else.
+        info : ndarray shape(steps_per_env, num_env)
+            An array of info dictionaries for each environment.
         """
         op = self.op
         session = self.session
@@ -378,12 +390,8 @@ class PPO(object):
         end_episode = []
         times_up = []
         initial_rnn_states = []
-        if op.rnn_states_in is not None:
-            rnn_zero_state = np.zeros(
-                op.rnn_states_in.shape[1:].as_list(),
-                dtype=op.rnn_states_in.dtype.as_numpy_dtype)
-        else:
-            rnn_zero_state = None
+        infos = []
+        rnn_zero_state = self.rnn_zero_state
         for env in self.envs:
             if not hasattr(env, '_ppo_last_obs'):
                 env._ppo_last_obs = env.reset()
@@ -418,6 +426,7 @@ class PPO(object):
                 rewards.append(reward)
                 end_episode.append(done)
                 times_up.append(info.get('times_up', done))
+                infos.append(info)
         self.num_steps += len(actions)
 
         out_shape = (steps_per_env, num_env)
@@ -429,6 +438,7 @@ class PPO(object):
             np.array(end_episode).reshape(out_shape),
             np.array(times_up).reshape(out_shape),
             np.array(initial_rnn_states),
+            np.array(infos).reshape(out_shape),
         )
 
     @named_output('s', 'a', 'pi', 'r', 'G', 'A', 'v', 'm', 'c')
@@ -440,7 +450,7 @@ class PPO(object):
         op = self.op
         session = self.session
 
-        states, actions, rewards, end_episode, times_up, rnn_states = \
+        states, actions, rewards, end_episode, times_up, rnn_states, info = \
             self.run_agents(steps_per_env)
         # Note that there should be one more state than action/reward for
         # each environment.
