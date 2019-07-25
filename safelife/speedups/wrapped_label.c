@@ -1,5 +1,5 @@
-#import "wrapped_label.h"
-#import "iset.h"
+#include "wrapped_label.h"
+#include "iset.h"
 
 
 int wrapped_label(int32_t *data, int nrow, int ncol) {
