@@ -1,10 +1,10 @@
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 #include "constants.h"
 #include "iset.h"
 #include "gen_board.h"
+#include "random.h"
 
 #if 0
     #include <Python.h>
@@ -167,7 +167,7 @@ static int check_for_violation(int16_t src, int16_t dst, int neighbors) {
     return rval;
 }
 
-static char print_cell(int16_t cell) {
+/*static char print_cell(int16_t cell) {
     // debugging only
     switch (cell) {
         case 0:
@@ -183,7 +183,7 @@ static char print_cell(int16_t cell) {
         default:
             return '?';
     }
-}
+}*/
 
 
 static swap_cells_t swap_cells(
@@ -469,7 +469,7 @@ int gen_pattern(
             total_prob += exp(log_probs[k] - max_log_prob);
             cum_probs[k] = total_prob;
         }
-        double target_prob = rand() * total_prob / RAND_MAX;
+        double target_prob = random_float() * total_prob;
         int k;
         for (k=0; k < num_switched; k++) {
             if (cum_probs[k] > target_prob) {

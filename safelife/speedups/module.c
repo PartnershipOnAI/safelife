@@ -4,6 +4,7 @@
 #include "advance_board.h"
 #include "gen_board.h"
 #include "wrapped_label.h"
+#include "random.h"
 
 #define PY_RUN_ERROR(msg) {PyErr_SetString(PyExc_RuntimeError, msg); goto error;}
 #define PY_VAL_ERROR(msg) {PyErr_SetString(PyExc_ValueError, msg); goto error;}
@@ -243,7 +244,7 @@ static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {
 static PyObject *seed_py(PyObject *self, PyObject *args) {
     unsigned long long i;
     if (!PyArg_ParseTuple(args, "K", &i)) return NULL;
-    srand(i);
+    random_seed(i);
     Py_INCREF(Py_None);
     return Py_None;
 }
