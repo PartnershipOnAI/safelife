@@ -248,6 +248,8 @@ class SafeLifePPO(SafeLifeBasePPO):
 
         return logits, values
 
+
+class SafeLifePPO_experience_replay(SafeLifePPO):
     def run_agents(self, steps_per_env):
         """
         Episode rollout using experience replay and optimal goals.
