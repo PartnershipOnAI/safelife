@@ -1,4 +1,3 @@
-import random
 import numpy as np
 from scipy import ndimage, signal
 
@@ -48,7 +47,8 @@ def make_partioned_regions(shape, alpha=1.0, max_regions=5, min_regions=2):
             weights[1:] = 1e-10
         weights /= np.sum(weights)
         k = np.random.choice(len(perimeters), p=weights)
-        i, j = random.sample(perimeters[k], 1)[0]
+        plist = list(perimeters[k])
+        i, j = plist[np.random.randint(len(plist))]
         perimeters[0].discard((i, j))
         perimeters[k].discard((i, j))
         if (i, j) in exclusions[k]:
