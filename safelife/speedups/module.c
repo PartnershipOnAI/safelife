@@ -242,9 +242,10 @@ static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {
 
 
 static PyObject *seed_py(PyObject *self, PyObject *args) {
-    unsigned long long i;
-    if (!PyArg_ParseTuple(args, "K", &i)) return NULL;
-    random_seed(i);
+    unsigned int i;
+    if (!PyArg_ParseTuple(args, "I", &i)) return NULL;
+    int error = random_seed(i);
+    if (error) return NULL;
     Py_INCREF(Py_None);
     return Py_None;
 }
