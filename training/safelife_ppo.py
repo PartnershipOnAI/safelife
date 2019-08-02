@@ -118,7 +118,7 @@ def make_curriculum():
     levels = []
     taught_unmaking = False
     for x in np.linspace(1, 7, 13):
-        # before we mix in destroy tasks, train on some tasks 
+        # before we mix in destroy tasks, train on some tasks
         # that are just destroying things
         if region_population_params(x)["region_types"]["destroy"] > 0:
             if not taught_unmaking:
@@ -132,7 +132,7 @@ def make_curriculum():
                         'build': 0,
                         'destroy': 1
                     }
-                    })
+                })
                 # more advanced unmaking
                 levels.append({
                     'board_shape': (25, 25),
@@ -142,14 +142,14 @@ def make_curriculum():
                         'build': 0,
                         'destroy': 1
                     }
-                    })
+                })
 
         levels.append({
             'board_shape': (25, 25),
             'difficulty': x,
             'max_regions': 4,
             'start_region': None
-            })
+        })
     return levels
 
 
@@ -220,18 +220,20 @@ class SafeLifePPO(SafeLifeBasePPO):
     curriculum_stage = 0
     curr_progression_mid = 0.62
     curr_progression_span = 0.12
-    sig_clip = 6.0 # sigmoid(6.0) = 0.998 ~= 1.0
-    progression_lottery_ticket = 0.3 # max chance of progression is 30% per epoch
-    revision_param = 2.0 # pareto param, lower -> more revision of past curriculum grades
+    sig_clip = 6.0                    # sigmoid(6.0) = 0.998 ~= 1.0
+    progression_lottery_ticket = 0.3  # max chance of progression is 30% per epoch
+    revision_param = 2.0              # pareto param, lower -> more revision of past curriculum grades
+
     def probability_of_progression(self, score):
         """
-        The probability of graduating to the next curriculum stage is a sigmoid over peformance 
+        The probability of graduating to the next curriculum stage is a sigmoid over peformance
         on the current one, active between curr_progression_mid +/- span.
         """
-        sigmoid = lambda x:1.0 / (1 + np.exp(-x))
+        def sigmoid(x):
+            return 1.0 / (1 + np.exp(-x))
 
         rel_score = (score - self.curr_progression_mid) * 6.0 \
-                  / (self.curr_progression_span)
+                    / (self.curr_progression_span)
 
         return sigmoid(rel_score) * self.progression_lottery_ticket
     # --------------
@@ -240,10 +242,7 @@ class SafeLifePPO(SafeLifeBasePPO):
         "Customized variant of update_enviroment to implement curricular learning."
         env = env_wrapper.unwrapped
         self.adjust_to_current_curriculum(env)
-        import ipdb
-        ipdb.set_trace()
-        super().update_enviroment(env_wrapper)
-
+        super().update_environment(env_wrapper)
 
     def check_performance(self, game, min_board_pts=10):
         """
@@ -275,7 +274,10 @@ class SafeLifePPO(SafeLifeBasePPO):
 
     def adjust_to_current_curriculum(self, env):
         "Modify an environment to fit with the current curriculum stage."
-        performance = self.check_performance(env.state) if env.state else 0.0
+        if env.state is not None:
+            performance = self.check_performance(env.state)
+        else:
+            performance = 0.0
 
         if coinflip(self.probability_of_progression(performance)):
             if self.curriculum_stage < len(self.curriculum_params) - 1:
@@ -283,7 +285,6 @@ class SafeLifePPO(SafeLifeBasePPO):
         revision = int(np.clip(npr.pareto(self.revision_param), 0, self.curriculum_stage))
         level = self.curriculum_stage - revision
         self.board_gen_params = self.curriculum_params[level]
-
 
     def build_logits_and_values(self, img_in, rnn_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)
