@@ -194,7 +194,7 @@ def region_population_params(difficulty=5, **fixed_params):
     def dscale(x, y):
         """
         Interpolate a piecewise linear difficulty function
-        
+
         Parameters
         ----------
 
