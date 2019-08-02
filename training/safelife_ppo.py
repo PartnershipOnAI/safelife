@@ -1,9 +1,12 @@
 import os
 import numpy as np
+import numpy.random as npr
 import tensorflow as tf
 
+from safelife.helper_utils import coinflip
 from safelife.gym_env import SafeLifeEnv
 from safelife.side_effects import policy_side_effect_score
+from safelife.game_physics import CellTypes
 from safelife.gen_board import region_population_params
 from . import ppo
 from .wrappers import SafeLifeWrapper
@@ -120,9 +123,20 @@ def make_curriculum():
         if region_population_params(x)["region_types"]["destroy"] > 0:
             if not taught_unmaking:
                 taught_unmaking = True
+                # basic unmaking
                 levels.append({
                     'board_shape': (25, 25),
                     'difficulty': 1,
+                    'max_regions': 4,
+                    'region_types': {
+                        'build': 0,
+                        'destroy': 1
+                    }
+                    })
+                # more advanced unmaking
+                levels.append({
+                    'board_shape': (25, 25),
+                    'difficulty': 4,
                     'max_regions': 4,
                     'region_types': {
                         'build': 0,
@@ -188,30 +202,87 @@ class SafeLifePPO(SafeLifeBasePPO):
         'view_shape': (15, 15),
         'output_channels': tuple(range(15)),
     }
-    board_gen_params = {
-        'board_shape': (25, 25),
-        'difficulty': 3.9,
-        'max_regions': 4,
-        'region_types': {
-            # 'destroy': 1,
-            # 'prune': 2,
-            'build': 1,
-            'append': 2,
-        },
-        'start_region': None,
-    }
+#    board_gen_params = {
+#        'board_shape': (25, 25),
+#        'difficulty': 3.9,
+#        'max_regions': 4,
+#        'region_types': {
+#            # 'destroy': 1,
+#            # 'prune': 2,
+#            'build': 1,
+#            'append': 2,
+#        },
+#        'start_region': None,
+#    }
 
     curriculum_params = make_curriculum()
+    board_gen_params = curriculum_params[0]
+    curriculum_stage = 0
+    curr_progression_mid = 0.62
+    curr_progression_span = 0.12
+    sig_clip = 6.0 # sigmoid(6.0) = 0.998 ~= 1.0
+    progression_lottery_ticket = 0.3 # max chance of progression is 30% per epoch
+    revision_param = 2.0 # pareto param, lower -> more revision of past curriculum grades
+    def probability_of_progression(self, score):
+        """
+        The probability of graduating to the next curriculum stage is a sigmoid over peformance 
+        on the current one, active between curr_progression_mid +/- span.
+        """
+        sigmoid = lambda x:1.0 / (1 + np.exp(-x))
+
+        rel_score = (score - self.curr_progression_mid) * 6.0 \
+                  / (self.curr_progression_span)
+
+        return sigmoid(rel_score) * self.progression_lottery_ticket
     # --------------
 
     def update_environment(self, env_wrapper):
         "Customized variant of update_enviroment to implement curricular learning."
-        super().update_enviroment(env_wrapper)
         env = env_wrapper.unwrapped
         self.adjust_to_current_curriculum(env)
+        import ipdb
+        ipdb.set_trace()
+        super().update_enviroment(env_wrapper)
+
+
+    def check_performance(self, game, min_board_pts=10):
+        """
+        Calculate the fraction of a game board that's been solved.
+
+        Parameters
+        ----------
+        game : SafeLife instance
+        min_board_pts : int
+            The total available points is forced to be no smaller than this.
+            This way, the performance for a very easy board won't automatically
+            be 100%.
+        """
+        points_at_end = game.current_points()
+        game_state = game.serialize()
+        game.revert()
+        points_at_start = game.current_points()
+        total_goals = np.sum((game.goals & CellTypes.color_b) > 0)
+        total_red = np.sum((game.board & CellTypes.color_r) > 0)
+        total_possible = total_goals + total_red
+        possible_increase = total_possible - points_at_start
+        actual_increase = points_at_end - points_at_start
+        if possible_increase <= 0:
+            performance = 0
+        else:
+            performance = actual_increase / max(min_board_pts, possible_increase)
+        game.deserialize(game_state)  # reset to where we were before
+        return performance
 
     def adjust_to_current_curriculum(self, env):
         "Modify an environment to fit with the current curriculum stage."
+        performance = self.check_performance(env.state) if env.state else 0.0
+
+        if coinflip(self.probability_of_progression(performance)):
+            if self.curriculum_stage < len(self.curriculum_params) - 1:
+                self.curriculum_stage += 1
+        revision = int(np.clip(npr.pareto(self.revision_param), 0, self.curriculum_stage))
+        level = self.curriculum_stage - revision
+        self.board_gen_params = self.curriculum_params[level]
 
 
     def build_logits_and_values(self, img_in, rnn_mask, use_lstm=False):
