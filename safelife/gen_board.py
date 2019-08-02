@@ -2,6 +2,7 @@ import numpy as np
 from scipy import ndimage, signal
 
 from .game_physics import CellTypes, SafeLife
+from .helper_utils import coinflip
 
 
 def make_partioned_regions(shape, alpha=1.0, max_regions=5, min_regions=2):
@@ -299,7 +300,7 @@ def populate_region(mask, **params):
     fences = build_fence(mask)
     if region_type != "spawner":
         # Poke holes in the fence
-        fences *= np.random.random(mask.shape) <= params["fence_frac"]
+        fences *= coinflip(params['fence_frac'], mask.shape)
     board = fences.astype(np.int16) * CellTypes.wall
     gen_mask = (mask & ~fences) * (
         speedups.NEW_CELL_MASK |
@@ -319,7 +320,7 @@ def populate_region(mask, **params):
         cell_penalties = params["cell_penalties"].copy()
         cell_probabilities = params["cell_probabilities"]
         for name, prob in cell_probabilities.items():
-            if prob < np.random.random() or name in exclude:
+            if not coinflip(prob) or name in exclude:
                 del cell_penalties[name]
         try:
             new_board = speedups.gen_pattern(
@@ -411,15 +412,15 @@ def populate_region(mask, **params):
             k = np.random.randint(len(i))
             board[i[k], j[k]] = CellTypes.spawner + spawner_color
         tree_mask = interior_mask & (board == 0)
-        tree_mask &= np.random.random(board.shape) < params["spawner_trees"]
+        tree_mask &= coinflip(params['spawner_trees'], board.shape)
         board += tree_mask * (CellTypes.tree + spawner_color)
         life_frac = 0.3
         life_mask = interior_mask & (board == 0)
-        life_mask &= np.random.random(board.shape) < life_frac
+        life_mask &= coinflip(life_frac, board.shape)
         board += life_mask * (CellTypes.life + spawner_color)
 
     if region_type == "fountain":
-        fountain_mask = mask & (board == 0) & (np.random.random(board.shape) < 0.04)
+        fountain_mask = mask & (board == 0) & coinflip(0.04, board.shape)
         fountain_neighbor = ndimage.maximum_filter(fountain_mask, size=3, mode='wrap')
         fountain_color = np.random.choice([
             CellTypes.color_r, CellTypes.color_g, CellTypes.color_b])
@@ -433,20 +434,20 @@ def populate_region(mask, **params):
 
     # Make some of the life types hardened
     life_mask = (board & ~CellTypes.rainbow_color == CellTypes.life)
-    hardlife_mask = np.random.random(board.shape) < params["hardened_frac"]
+    hardlife_mask = coinflip(params["hardened_frac"], board.shape)
     board -= life_mask * hardlife_mask * CellTypes.destructible
 
     # Remove fences and add extra walls in the middle
     # wall_mask = mask & (board == 0) & (goals == 0)
-    # wall_mask &= (np.random.random(board.shape) < params["extra_walls_frac"])
+    # wall_mask &= coinflip(params["extra_walls_frac"], board.shape)
     # board += wall_mask * CellTypes.wall
 
     # Turn some walls and trees into crates and plants
     crate_mask = (board == CellTypes.wall)
-    crate_mask &= (np.random.random(board.shape) < params["crate_frac"])
+    crate_mask &= coinflip(params["crate_frac"], board.shape)
     board += crate_mask * CellTypes.movable
     plant_mask = (board == CellTypes.tree)
-    plant_mask &= (np.random.random(board.shape) < params["plant_frac"])
+    plant_mask &= coinflip(params["plant_frac"], board.shape)
     board += plant_mask * CellTypes.movable
 
     return board, goals

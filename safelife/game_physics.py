@@ -16,9 +16,10 @@ from importlib import import_module
 
 import numpy as np
 
-from .array_utils import (
+from .helper_utils import (
     wrapping_array,
     wrapped_convolution as convolve2d,
+    coinflip,
 )
 
 
@@ -645,7 +646,7 @@ class GameOfLife(GameWithGoals):
         num_neighbors = convolve2d(alive, cfilter)
         num_spawn = convolve2d(spawning, cfilter)
         spawn_prob = 1 - (1 - self.spawn_prob)**num_spawn
-        has_spawned = np.random.random(board.shape) < spawn_prob
+        has_spawned = coinflip(spawn_prob, board.shape)
 
         born_rule = np.zeros(9, dtype=bool)
         born_rule[list(self.born_rule)] = True
@@ -766,4 +767,4 @@ class AsyncGame(GameWithGoals):
 
             P = 0.5 + 0.5*np.tanh(H * beta)
             P = 1 - (1-P)*(1-self.spawn_prob)**spawn_neighbors
-            board[y, x] = CellTypes.life if P > np.random.random() else CellTypes.empty
+            board[y, x] = CellTypes.life if coinflip(P) else CellTypes.empty

@@ -1,6 +1,6 @@
 import numpy as np
 
-from .array_utils import wrapping_array
+from .helper_utils import wrapping_array
 from .game_physics import CellTypes, GameWithGoals
 
 
