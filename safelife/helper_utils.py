@@ -36,3 +36,17 @@ class wrapping_array(np.ndarray):
 def wrapped_convolution(*args, **kw):
     y = scipy.signal.convolve2d(*args, boundary='wrap', mode='same', **kw)
     return y.astype(np.int16)
+
+
+def coinflip(p, n=None):
+    """
+    Return True with probability `p`, False with probability `1-p`.
+
+    Parameters
+    ----------
+    p : float
+    n : None or int or tuple
+        If not None, return an array of `n` coin flips.
+        Tuples can be used to return a multi-dimensional array.
+    """
+    return np.random.random(n) < p

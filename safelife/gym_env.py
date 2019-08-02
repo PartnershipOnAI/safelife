@@ -7,7 +7,7 @@ from gym.utils import seeding
 import numpy as np
 
 from .game_physics import SafeLife, CellTypes
-from .array_utils import wrapping_array
+from .helper_utils import wrapping_array
 from .gen_board import gen_game
 from .file_finder import find_files
 

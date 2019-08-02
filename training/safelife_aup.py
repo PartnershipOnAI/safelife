@@ -102,7 +102,6 @@ class SafeLifeAUP(SafeLifePPO):
                 tf.summary.histogram("aux_reward", op.aup_reward),
             ])
 
-
     def build_aup_q_funcs(self, img_in):
         # Make this basically identical to the network for the normal value
         # functions.
