@@ -223,9 +223,9 @@ class PPO(object):
             op.logits, op.v = self.build_logits_and_values(op.states, op.rnn_mask)
             op.policy = tf.nn.softmax(op.logits)
             num_actions = op.policy.shape[-1].value
+        op.hot_actions = tf.one_hot(op.actions, num_actions, dtype=tf.float32)
         with tf.name_scope("policy_loss"):
-            hot_actions = tf.one_hot(op.actions, num_actions, dtype=tf.float32)
-            a_policy = tf.reduce_sum(op.policy * hot_actions, axis=-1)
+            a_policy = tf.reduce_sum(op.policy * op.hot_actions, axis=-1)
             prob_diff = tf.sign(op.advantages) * (1 - a_policy / op.old_policy)[..., None]
             if self.rescale_policy_eps:
                 # Scaling the clipping by 1 - old_policy ensures that
@@ -545,7 +545,7 @@ class PPO(object):
             if last_save // self.save_every < self.num_steps // self.save_every:
                 self.save_checkpoint()
                 last_save = self.num_steps
-            if last_test // self.test_every < self.num_steps // self.test_every:
+            if self.test_every and last_test // self.test_every < self.num_steps // self.test_every:
                 self.run_safety_test()
                 last_test = self.num_steps
         logger.info("FINISHED TRAINING")
