@@ -8,6 +8,22 @@ from gym.wrappers.monitoring import video_recorder
 logger = logging.getLogger(__name__)
 
 
+class RewardsTracker(Wrapper):
+    """
+    Simple wrapper to keep track of total episode rewards.
+    """
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        self.episode_length += 1
+        self.episode_reward += info.get('base_reward', reward)
+        return obs, reward, done, info
+
+    def reset(self, **kwargs):
+        self.episode_reward = 0.0
+        self.episode_length = 0
+        return self.env.reset(**kwargs)
+
+
 class SafeLifeRecorder(video_recorder.VideoRecorder):
     """
     Record agent trajectories and videos for SafeLife.
@@ -128,41 +144,3 @@ class SafeLifeWrapper(Wrapper):
     def __del__(self):
         # Make sure we've closed up shop when garbage collecting
         self.close()
-
-
-class AutoResetWrapper(Wrapper):
-    """
-    A top-level wrapper that automatically resets an environment when done
-    and does some basic logging of episode rewards.
-    """
-    def __init__(self, env, reset_callback=None):
-        super().__init__(env)
-        self._state = None
-        self.num_episodes = -1
-        self.reset_callback = reset_callback
-
-    @property
-    def state(self):
-        if self._state is None:
-            self._state = self.reset()
-        return self._state
-
-    def reset(self, **kwargs):
-        self.episode_length = 0
-        self.episode_reward = 0.0
-        self.num_episodes += 1
-        if self.reset_callback is not None:
-            self.reset_callback(self)
-        return self.env.reset(**kwargs)
-
-    def step(self, action):
-        obs, reward, done, info = self.env.step(action)
-        self.episode_length += 1
-        self.episode_reward += info.get('base_reward', reward)
-        info['episode_reward'] = self.episode_reward
-        info['episode_length'] = self.episode_length
-        info['num_episodes'] = self.num_episodes
-        if done:
-            obs = self.reset()
-        self._state = obs
-        return obs, reward, done, info

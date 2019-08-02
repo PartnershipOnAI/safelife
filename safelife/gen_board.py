@@ -1,4 +1,3 @@
-import random
 import numpy as np
 from scipy import ndimage, signal
 
@@ -48,7 +47,8 @@ def make_partioned_regions(shape, alpha=1.0, max_regions=5, min_regions=2):
             weights[1:] = 1e-10
         weights /= np.sum(weights)
         k = np.random.choice(len(perimeters), p=weights)
-        i, j = random.sample(perimeters[k], 1)[0]
+        plist = list(perimeters[k])
+        i, j = plist[np.random.randint(len(plist))]
         perimeters[0].discard((i, j))
         perimeters[k].discard((i, j))
         if (i, j) in exclusions[k]:
@@ -237,7 +237,7 @@ def region_population_params(difficulty=5, **fixed_params):
             "tree": (1, 20),
         },
         "spawner_colors": {
-            "gray": 1,
+            # "gray": 1,
             "green": 1,
             "red": dscale([5,6], [0,0.5]),
             "blue": dscale([6,7], [0,1]),
@@ -526,6 +526,52 @@ def gen_game(board_shape=(25,25), max_regions=5, start_region='build', **region_
         'agent_loc': (j[k1], i[k1]),
     })
     return game
+
+
+def stability_mask(board, period=6, remove_agent=True):
+    """
+    Highlights separable regions that stable with the given period.
+
+    A "separable" region is one which can be removed from the board
+    without effecting any of the rest of the board.
+
+    Parameters
+    ----------
+    board : array
+    period : int
+        The stability period to check for. A period of 1 means that it's a
+        still life only. A period of 0 allows for any pattern, stable or not.
+    remove_agent : bool
+        If True, the agent is removed from the board before checking for
+        stability. This means that the agent's freezing power doesn't
+        affect the stability.
+    """
+    from . import speedups
+
+    if remove_agent:
+        board = board * ((board & CellTypes.agent) == 0)
+
+    neighborhood = np.ones((3,3))
+    alive = (board & CellTypes.alive) // CellTypes.alive
+    neighbors = ndimage.convolve(alive, neighborhood, mode='wrap')
+    max_neighbors = neighbors
+    ever_alive = alive
+    orig_board = board
+    for _ in range(period):
+        board = speedups.advance_board(board)
+        alive = (board & CellTypes.alive) // CellTypes.alive
+        neighbors = ndimage.convolve(alive, neighborhood, mode='wrap')
+        ever_alive |= alive
+        max_neighbors = np.maximum(max_neighbors, neighbors)
+    is_boundary = (board & CellTypes.frozen > 0)
+    is_boundary |= (ever_alive == 0) & (max_neighbors <= 2)
+    labels, num_labels = speedups.wrapped_label(~is_boundary)
+    mask = np.zeros(board.shape, dtype=bool)
+    for idx in range(1, num_labels+1):
+        region = labels == idx
+        if (board[region] == orig_board[region]).all():
+            mask |= region
+    return mask
 
 
 def _main(play=True):

@@ -1,7 +1,7 @@
-#include <stdlib.h>
 #include <string.h>
 #include "advance_board.h"
 #include "constants.h"
+#include "random.h"
 
 static const int16_t ALIVE_BITS = (1 << 4) - 1;
 static const int16_t DESTRUCTIBLE2 = 1 << 8;
@@ -107,7 +107,7 @@ void advance_board(
                 b2[i] = ALIVE |
                     ((b2[i] & (COLORS << 4)) >> 4) |
                     ((b2[i] & (DESTRUCTIBLE2 << 4)) >> 9);
-            } else if (b2[i] & SPAWNING && rand() < spawn_prob * RAND_MAX) {
+            } else if (b2[i] & SPAWNING && random_float() < spawn_prob) {
                 // add a spawned cell
                 b2[i] = ALIVE | DESTRUCTIBLE |
                     ((b2[i] & (COLORS << 4)) >> 4);

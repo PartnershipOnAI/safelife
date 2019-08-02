@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include "iset.h"
+#include "random.h"
 
 
 iset iset_alloc(int max_size) {
@@ -56,8 +57,6 @@ int iset_contains(iset *s, int val) {
 
 int iset_sample(iset *s) {
     // If the size is zero, sample from the whole array.
-    // Note that the below rand() function is pretty dumb.
-    // Will be slightly non-uniform, not very random, yadda yadda.
-    int k = rand() % (s->size ? s->size : s->max_size);
+    int k = random_int(s->size ? s->size : s->max_size);
     return s->set[k];
 }
