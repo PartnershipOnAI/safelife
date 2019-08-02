@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+from scipy.interpolate import interp1d
 
 from safelife.game_physics import CellTypes
 from .safelife_ppo import SafeLifePPO, ortho_init
@@ -9,28 +10,37 @@ class SafeLifeAUP(SafeLifePPO):
     aup_num_rewards = 100
     aup_filter_size = 5
     aup_discount = 0.9
-    aup_penalty_coef = 0.0
+    aup_penalty_schedule = interp1d([0, 2e5, 2e6, 1e20], [0, 0, 0.05, 0.05])
     aup_channels = [CellTypes.alive_bit, CellTypes.frozen_bit]
     aup_learning_rate = 1e-3
-    aup_clip = 1.0
+    aup_clip1 = 5.0  # clipping of qfunc training inputs
+    aup_clip2 = 1.0  # clipping of penalty from qfunc
+    # test_every = 0
 
     @property
     def aup_penalty_coef(self):
-        return 0.0 if self.num_steps < 2e5 else 0.05
+        return float(self.aup_penalty_schedule(self.num_steps))
 
     def build_graph(self):
         super().build_graph()
         op = self.op
 
         self.aup_filters = np.random.randn(
+            self.aup_filter_size *
+            self.aup_filter_size *
+            len(self.aup_channels),
+            self.aup_num_rewards,
+        ).astype(np.float32)
+        # Normalize the filters such that the sum of all weights in a single
+        # filter has zero mean and unit deviation.
+        self.aup_filters -= np.average(self.aup_filters, axis=0)
+        self.aup_filters /= np.sqrt(np.sum(self.aup_filters**2, axis=0))
+        self.aup_filters = self.aup_filters.reshape(
             self.aup_filter_size,
             self.aup_filter_size,
             len(self.aup_channels),
             self.aup_num_rewards,
-        ).astype(np.float32)
-        # Divide the filters by sqrt N so that the sum of individual weights
-        # in an individual output channel is normally distributed with unit width.
-        self.aup_filters /= np.sqrt(self.aup_filters[...,0].size)
+        )
 
         with tf.name_scope("aup_utility"):
             n = self.aup_filter_size
@@ -139,6 +149,7 @@ class SafeLifeAUP(SafeLifePPO):
         aup_utility = session.run(op.aup_utility, feed_dict={op.full_boards:boards})
         aup_utility = aup_utility.reshape(batch.info.shape + aup_utility.shape[1:])
         delta_utility = aup_utility[1:] - aup_utility[:-1]  # shape (num_steps-1, num_env, num_aux)
+        delta_utility = np.clip(delta_utility, -self.aup_clip1, self.aup_clip1)
         mask = ~(batch.end_episode[1:] | batch.end_episode[:-1])    # shape (num_steps-1, num_env)
         session.run(op.aup_train, feed_dict={
             op.states: batch.states[1:],  # shape (num_steps, num_env, ...)
@@ -152,9 +163,9 @@ class SafeLifeAUP(SafeLifePPO):
             self.num_steps)
 
         # Then modify the rewards to take into account AUP
-        aup_penalty = self.aup_penalty_coef * session.run(op.aup_penalty, feed_dict={
+        aup_penalty = session.run(op.aup_penalty, feed_dict={
             op.states: batch.states[:-1],
             op.actions: batch.actions
         })
-        aup_penalty = np.clip(aup_penalty, -self.aup_clip, self.aup_clip)
-        return batch._replace(rewards=batch.rewards - aup_penalty)
+        aup_penalty = np.clip(aup_penalty, -self.aup_clip2, self.aup_clip2)
+        return batch._replace(rewards=batch.rewards - self.aup_penalty_coef * aup_penalty)
