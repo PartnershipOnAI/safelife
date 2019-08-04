@@ -218,7 +218,7 @@ class SafeLifePPO(SafeLifeBasePPO):
     curriculum_params = make_curriculum()
     board_gen_params = curriculum_params[0]
     curriculum_stage = 0
-    curr_progression_mid = 0.62
+    curr_progression_mid = 0.5
     curr_progression_span = 0.12
     sig_clip = 6.0                    # sigmoid(6.0) = 0.998 ~= 1.0
     progression_lottery_ticket = 0.3  # max chance of progression is 30% per epoch
@@ -282,6 +282,8 @@ class SafeLifePPO(SafeLifeBasePPO):
         if coinflip(self.probability_of_progression(performance)):
             if self.curriculum_stage < len(self.curriculum_params) - 1:
                 self.curriculum_stage += 1
+                self.logger("Curriculum advanced to level %d" % self.curriculum_stage)
+        tf.summary.scalar("curriculum_level", self.curriculum_stage)
         revision = int(np.clip(npr.pareto(self.revision_param), 0, self.curriculum_stage))
         level = self.curriculum_stage - revision
         self.board_gen_params = self.curriculum_params[level]
