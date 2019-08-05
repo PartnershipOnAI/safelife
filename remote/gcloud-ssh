@@ -1,4 +1,4 @@
 #! /bin/sh
 host="$1"
 shift
-exec gcloud compute ssh "$host" -- "$@"
+exec gcloud compute ssh --zone us-west1-b "$host" -- "$@"

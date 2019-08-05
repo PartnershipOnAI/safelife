@@ -279,14 +279,19 @@ class SafeLifePPO(SafeLifeBasePPO):
         else:
             performance = 0.0
 
-        if coinflip(self.probability_of_progression(performance)):
+        pop = self.probability_of_progression(performance)
+        if coinflip(pop):
             if self.curriculum_stage < len(self.curriculum_params) - 1:
                 self.curriculum_stage += 1
                 self.logger("Curriculum advanced to level %d" % self.curriculum_stage)
-        tf.summary.scalar("curriculum_level", self.curriculum_stage)
         revision = int(np.clip(npr.pareto(self.revision_param), 0, self.curriculum_stage))
         level = self.curriculum_stage - revision
         self.board_gen_params = self.curriculum_params[level]
+
+        summary = tf.Summary()
+        summary.value.add(tag='curriculum/stage', simple_value=self.curriculum_stage)
+        summary.value.add(tag='curriculum/pr_progression', simple_value=pop)
+        summary.value.add(tag='curriculum/level', simple_value=level)
 
     def build_logits_and_values(self, img_in, rnn_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)
