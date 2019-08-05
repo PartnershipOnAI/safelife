@@ -2,6 +2,7 @@ import numpy as np
 from scipy import ndimage, signal
 
 from .game_physics import CellTypes, SafeLife
+from . import speedups
 
 
 def make_partioned_regions(shape, alpha=1.0, max_regions=5, min_regions=2):
@@ -287,8 +288,6 @@ def populate_region(mask, **params):
     board : array
     goals : array
     """
-    from . import speedups
-
     params = region_population_params(**params)
     region_type = _pick_one(params["region_types"])
     period = _pick_one(params["period_weights"])
@@ -533,8 +532,6 @@ def stability_mask(board, period=6, remove_agent=True):
         stability. This means that the agent's freezing power doesn't
         affect the stability.
     """
-    from . import speedups
-
     if remove_agent:
         board = board * ((board & CellTypes.agent) == 0)
 

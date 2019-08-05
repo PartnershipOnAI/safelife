@@ -1,4 +1,4 @@
-from . import (
+from . import (  # noqa: F401
     game_physics,
     game_loop,
     asci_renderer,
@@ -8,6 +8,10 @@ from . import (
 )
 
 try:
-    from . import speedups
+    from . import speedups  # noqa: F401
 except ImportError:
-    pass
+    raise ImportError(
+        "Cannot import module 'speedups'. "
+        "Make sure that the package is correctly built and compiled using, "
+        "e.g., `python3 setup.py build`."
+    )

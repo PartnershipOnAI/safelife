@@ -3,7 +3,7 @@ import glob
 import setuptools
 import numpy
 
-ext_path = os.path.abspath(os.path.join(__file__, '../safelife/speedups'))
+ext_path = os.path.abspath(os.path.join(__file__, '../safelife/speedups_src'))
 levels_path = os.path.abspath(os.path.join(__file__, '../safelife/levels'))
 
 data_files = ['*.png']

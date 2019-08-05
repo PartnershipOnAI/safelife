@@ -6,6 +6,7 @@ from gym import spaces
 from gym.utils import seeding
 import numpy as np
 
+from safelife import speedups
 from .game_physics import SafeLife, CellTypes
 from .array_utils import wrapping_array
 from .gen_board import gen_game
@@ -133,7 +134,6 @@ class SafeLifeEnv(gym.Env):
         self._level_idx = len(self._fixed_levels)
 
     def seed(self, seed=None):
-        from safelife import speedups
         self.np_random, seed = seeding.np_random(seed)
         speedups.seed(seed)
         return [seed]
