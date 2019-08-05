@@ -38,7 +38,7 @@ These properties can be mixed and matched, allowing for a large set of interesti
 
 The source code is made of both python files and C extensions, the latter of which need to be compiled. To build the extensions locally, run
 
-    python3 setup.py build --build-lib ./
+    python3 setup.py build
 
 from main directory. This should compile a `speedups.so` file and place it in the `safelife` folder alongside the source code. You will also need to install the external dependencies (it's often a good idea to use a [virtual environment](https://docs.python.org/3/tutorial/venv.html) when installing dependencies) using
 
