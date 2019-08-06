@@ -180,7 +180,9 @@ class GameLoop(object):
                 output += "\x1b[1m%s\x1b[0m\n" % game.title
             output += "Score: \x1b[1m%i\x1b[0m\n" % self.total_points
             output += "Steps: \x1b[1m%i\x1b[0m\n" % self.total_steps
+            output += "Completed: %s / %s\n" % game.completion_ratio()
             output += "Powers: \x1b[3m%s\x1b[0m\n" % renderer.agent_powers(game)
+            game.update_exit_colors()
             if self.editing:
                 output += "\x1b[1m*** EDIT MODE ***\x1b[0m\n"
             if self.recording and state_changed:

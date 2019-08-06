@@ -21,6 +21,7 @@ from .helper_utils import (
     wrapped_convolution as convolve2d,
     coinflip,
 )
+from .speedups import advance_board
 
 
 ORIENTATION = {
@@ -143,6 +144,9 @@ class GameState(object):
         cancels out the "alive" and "spawning" powers.
     can_toggle_colors : bool
         If true, players can also absorb the colors of indestructible blocks.
+    min_completion : float
+        Don't allow the agent to exit the level until the level is at least
+        this fraction completed. If negative, the agent can always exit.
     """
     spawn_prob = 0.3
     orientation = 1
@@ -153,6 +157,7 @@ class GameState(object):
     game_over = False
     points_on_level_exit = +1
     num_steps = 0
+    min_completion = -1
 
     can_toggle_powers = False
     can_toggle_colors = False
@@ -177,7 +182,8 @@ class GameState(object):
             "orientation": self.orientation,
             "agent_loc": self.agent_loc,
             "board": self.board.copy(),
-            "class": "%s.%s" % (cls.__module__, cls.__name__)
+            "class": "%s.%s" % (cls.__module__, cls.__name__),
+            "min_completion": self.min_completion,
         }
 
     def deserialize(self, data):
@@ -190,6 +196,9 @@ class GameState(object):
             self.orientation = int(data['orientation'])
         if 'agent_loc' in data:
             self.agent_loc = tuple(data['agent_loc'])
+        if 'min_completion' in data:
+            self.min_completion = float(data['min_completion'])
+        self.exit_locs = np.nonzero(self.board & CellTypes.exit)
         self.game_over = False
         self.num_steps = 0
 
@@ -267,7 +276,7 @@ class GameState(object):
         x0, y0 = self.agent_loc
         return (x0 + dx) % self.width, (y0 + dy) % self.height
 
-    def move_agent(self, dy, dx=0, can_exit=True, can_push=True):
+    def move_agent(self, dy, dx=0):
         """
         Move the agent to a new location if that location is empty.
 
@@ -281,11 +290,11 @@ class GameState(object):
             board[y1, x1] = board[y0, x0]
             board[y0, x0] = CellTypes.empty
             self.agent_loc = (x1, y1)
-        elif (board[y1, x1] & CellTypes.exit) and can_exit:
+        elif (board[y1, x1] & CellTypes.exit) and self.can_exit():
             # Don't actually move the agent, just mark as exited.
             self.game_over = True
             reward += self.points_on_level_exit
-        elif (dx, dy) == (0, 1) and board[y1, x1] & CellTypes.movable and can_push:
+        elif (dx, dy) == (0, 1) and board[y1, x1] & CellTypes.movable:
             x2, y2 = self.relative_loc(+2)
             if board[y2, x2] == CellTypes.empty:
                 # Push the cell forward one.
@@ -443,6 +452,7 @@ class GameState(object):
                 return "No saved state; cannot revert."
         elif command == "ABORT LEVEL":
             self.game_over = "ABORT LEVEL"
+        self.exit_locs = np.nonzero(self.board & CellTypes.exit)
 
     def shift_board(self, dx, dy):
         """Utility function. Translate the entire board (edges wrap)."""
@@ -496,6 +506,23 @@ class GameState(object):
 
     def current_points(self):
         return 0
+
+    def completion_ratio(self):
+        return 0, 0
+
+    def can_exit(self):
+        if self.min_completion < 0:
+            return True
+        completed, total = self.completion_ratio()
+        return completed >= self.min_completion * total
+
+    def update_exit_colors(self):
+        if self.can_exit():
+            exit_type = CellTypes.level_exit | CellTypes.color_r
+        else:
+            exit_type = CellTypes.level_exit
+        i1, i2 = self.exit_locs
+        self.board[i1, i2] = exit_type
 
 
 class GameWithGoals(GameState):
@@ -567,6 +594,40 @@ class GameWithGoals(GameState):
         cell_points = self.reward_table[goals, cell_colors] * alive
         return np.sum(cell_points)
 
+    def completion_ratio(self, board=None, goals=None):
+        """
+        Calculate how much of the level the agent has completed.
+
+        Note that this only counts blue goal cells and red live cells.
+        Each are given equal weight.
+        """
+        if board is None:
+            board = self.board
+        if goals is None:
+            goals = self.goals
+        if hasattr(self, '_init_data'):
+            start_board = self._init_data['board']
+        else:
+            start_board = board
+
+        blue = CellTypes.color_b
+        life = CellTypes.alive
+        red_life = CellTypes.alive | CellTypes.color_r
+
+        red_start = start_board & red_life == red_life
+        red_now = board & red_life == red_life
+        not_red_now = (board & life == life) & ~red_now
+        blue_goals = goals & CellTypes.rainbow_color == blue
+        num_goals = np.sum(blue_goals)
+        num_filled_goals = np.sum(blue_goals & not_red_now)
+        num_red_start = np.sum(red_start)
+        num_red_now = np.sum(red_now)
+
+        return (
+            num_filled_goals + num_red_start - num_red_now,
+            num_goals + num_red_start
+        )
+
     def shift_board(self, dx, dy):
         """Utility function. Translate the entire board (edges wrap)."""
         super().shift_board(dx, dy)
@@ -592,7 +653,6 @@ class SafeLife(GameWithGoals):
     environment and the basic actions that the player can take.
     """
     def advance_board(self):
-        from .speedups import advance_board
         self.num_steps += 1
         self.board = advance_board(self.board, self.spawn_prob)
         self.goals = advance_board(self.goals, self.spawn_prob)
