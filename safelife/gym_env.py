@@ -151,12 +151,7 @@ class SafeLifeEnv(gym.Env):
             agent_loc = self.state.agent_loc
 
         board = board.copy()
-        goals = goals.copy()
-
-        # Get rid of the frozen flag for the agent and exit.
-        # (maybe a minor optimization)
-        #   agent_or_exit = (board & (CellTypes.agent | CellTypes.exit)) > 0
-        #   board ^= CellTypes.frozen * agent_or_exit
+        goals = goals & CellTypes.rainbow_color
 
         # Get rid of white cells in the goals.
         # They effectively act as just a background pattern, and they can
