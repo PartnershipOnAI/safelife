@@ -1,6 +1,6 @@
 import numpy as np
 
-from .helper_utils import wrapping_array
+from .helper_utils import recenter_view
 from .game_physics import CellTypes, GameWithGoals
 
 
@@ -130,19 +130,14 @@ def render_board(s, centered_view=False, view_size=None, fixed_orientation=False
             view_size = s.board.shape
         if fixed_orientation and s.orientation % 2 == 1:
             # transpose the view
-            view_height, view_width = view_size
-        else:
-            view_width, view_height = view_size
-        x0, y0 = s.agent_loc
-        x0 -= view_width // 2
-        y0 -= view_height // 2
-        board = s.board.view(wrapping_array)[y0:y0+view_height, x0:x0+view_width]
-        goals = s.goals.view(wrapping_array)[y0:y0+view_height, x0:x0+view_width]
+            view_size = (view_size[1], view_size[0])
+        board = recenter_view(s.board, view_size, s.agent_loc[::-1], s.exit_locs)
+        goals = recenter_view(s.goals, view_size, s.agent_loc[::-1])
     else:
-        view_width, view_height = s.width, s.height
+        view_size = (s.height, s.width)
         board = s.board
         goals = s.goals
-    screen = np.empty((view_height+2, view_width+3), dtype=object)
+    screen = np.empty((view_size[0]+2, view_size[1]+3), dtype=object)
     screen[:] = ''
     screen[0] = screen[-1] = ' -'
     screen[:,0] = screen[:,-2] = ' |'

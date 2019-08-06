@@ -8,7 +8,7 @@ import numpy as np
 
 from safelife import speedups
 from .game_physics import SafeLife, CellTypes
-from .helper_utils import wrapping_array
+from .helper_utils import recenter_view
 from .gen_board import gen_game
 from .file_finder import find_files
 
@@ -163,12 +163,8 @@ class SafeLifeEnv(gym.Env):
         board += (goals << 3)
 
         # And center the array on the agent.
-        h, w = self.view_shape
-        x0, y0 = agent_loc
-        x0 -= w // 2
-        y0 -= h // 2
-        board = board.view(wrapping_array)[y0:y0+h, x0:x0+w]
-        board = board.view(np.ndarray)
+        board = recenter_view(
+            board, self.view_shape, agent_loc[::-1], self.state.exit_locs)
 
         # If the environment specifies output channels, output a boolean array
         # with the channels as the third dimension. Otherwise output a bit

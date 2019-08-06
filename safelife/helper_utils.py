@@ -38,6 +38,42 @@ def wrapped_convolution(*args, **kw):
     return y.astype(np.int16)
 
 
+def recenter_view(board, view_size, center, move_to_perimeter=None):
+    """
+    Create a view of the input array centered on a specific location.
+
+    Parameters
+    ----------
+    board : ndarray
+        Two-dimensional array to be centered.
+    view_size : tuple
+    center : tuple
+    move_to_perimeter : ([int], [int]), optional
+        Lists of indices that should be moved to the view perimeter if they
+        would otherwise be out of sight. This the general direction of the
+        features can be provided even if they can't be seen directly.
+    """
+    h, w = view_size
+    bh, bw = board.shape
+    y0, x0 = center
+    x1 = x0 - w // 2
+    y1 = y0 - h // 2
+    board2 = board.view(wrapping_array)[y1:y1+h, x1:x1+w]
+    board2 = board2.view(np.ndarray)
+    if move_to_perimeter is not None:
+        iy, ix = move_to_perimeter
+        # Calculate indices relative to the center point.
+        # Use the modulo operation to wrap to [-bw/2, +bw/2]
+        jy = (iy - y0 + bh // 2) % bh - bh // 2
+        jx = (ix - x0 + bw // 2) % bw - bw // 2
+        # Clip the indices to the view
+        jy = np.clip(jy + h // 2, 0, h-1)
+        jx = np.clip(jx + w // 2, 0, w-1)
+        # and replace the board values.
+        board2[jy, jx] = board[iy, ix]
+    return board2
+
+
 def coinflip(p, n=None):
     """
     Return True with probability `p`, False with probability `1-p`.
