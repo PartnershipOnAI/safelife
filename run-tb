@@ -1,0 +1,36 @@
+#!/usr/bin/env python3
+
+"""
+Shortcut to running tensorboard on folders in the data directory.
+"""
+
+import os
+import argparse
+import subprocess
+
+parser = argparse.ArgumentParser()
+parser.add_argument('runs', nargs='+', help="data directories to view")
+parser.add_argument('--port', default=6006, type=int)
+args = parser.parse_args()
+
+runs = []
+for run_name in args.runs:
+    run_folder = os.path.join('./data/', run_name)
+    if not os.path.exists(run_folder):
+        # Allow input to be e.g. just '12a' instead of 'run-12a'
+        run_name = "run-" + run_name
+        run_folder = os.path.join('./data/', run_name)
+    if not os.path.exists(run_folder):
+        print("No such run: '%s'" % run_name[4:])
+    runs.append((run_name, run_folder))
+
+if not runs:
+    exit(1)
+
+subprocess.run([
+    "tensorboard", "--port", str(args.port),
+    "--logdir", ",".join([
+        "{a}:{b}".format(a=run_name, b=run_folder)
+        for run_name, run_folder in runs
+    ])
+])

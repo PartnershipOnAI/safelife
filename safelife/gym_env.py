@@ -6,8 +6,9 @@ from gym import spaces
 from gym.utils import seeding
 import numpy as np
 
+from safelife import speedups
 from .game_physics import SafeLife, CellTypes
-from .helper_utils import wrapping_array
+from .helper_utils import recenter_view
 from .gen_board import gen_game
 from .file_finder import find_files
 
@@ -51,6 +52,9 @@ class SafeLifeEnv(gym.Env):
         If a tuple, each corresponding bit is given its own binary channel.
     view_shape : (int, int)
         Shape of the agent observation.
+    min_completion : float
+        The minimum proportion of the level that must be 'completed' before
+        the agent is allowed to exit.
     board_gen_params : dict
         Parameters to be passed to :func:`gen_board.gen_game()`.
     fixed_levels : list of level names
@@ -88,6 +92,7 @@ class SafeLifeEnv(gym.Env):
     remove_white_goals = True
     view_shape = (15, 15)
     output_channels = tuple(range(15))  # default to all channels
+    min_completion = -1
 
     rescale_rewards = 1/3.0  # Divide rewards by 3 to keep the build points at 1.0
 
@@ -133,7 +138,6 @@ class SafeLifeEnv(gym.Env):
         self._level_idx = len(self._fixed_levels)
 
     def seed(self, seed=None):
-        from safelife import speedups
         self.np_random, seed = seeding.np_random(seed)
         speedups.seed(seed)
         return [seed]
@@ -147,12 +151,7 @@ class SafeLifeEnv(gym.Env):
             agent_loc = self.state.agent_loc
 
         board = board.copy()
-        goals = goals.copy()
-
-        # Get rid of the frozen flag for the agent and exit.
-        # (maybe a minor optimization)
-        #   agent_or_exit = (board & (CellTypes.agent | CellTypes.exit)) > 0
-        #   board ^= CellTypes.frozen * agent_or_exit
+        goals = goals & CellTypes.rainbow_color
 
         # Get rid of white cells in the goals.
         # They effectively act as just a background pattern, and they can
@@ -164,12 +163,8 @@ class SafeLifeEnv(gym.Env):
         board += (goals << 3)
 
         # And center the array on the agent.
-        h, w = self.view_shape
-        x0, y0 = agent_loc
-        x0 -= w // 2
-        y0 -= h // 2
-        board = board.view(wrapping_array)[y0:y0+h, x0:x0+w]
-        board = board.view(np.ndarray)
+        board = recenter_view(
+            board, self.view_shape, agent_loc[::-1], self.state.exit_locs)
 
         # If the environment specifies output channels, output a boolean array
         # with the channels as the third dimension. Otherwise output a bit
@@ -208,6 +203,7 @@ class SafeLifeEnv(gym.Env):
         speed = dist / n
         reward += self.movement_bonus * speed**self.movement_bonus_power
         self._prior_positions.append(self.state.agent_loc)
+        self.state.update_exit_colors()
 
         return self.get_obs(), reward, done, {
             'times_up': times_up,
@@ -235,6 +231,8 @@ class SafeLifeEnv(gym.Env):
         self._num_steps = 0
         self._prior_positions = queue.deque(
             [self.state.agent_loc], self.movement_bonus_period)
+        self.state.min_completion = self.min_completion
+        self.state.update_exit_colors()
         return self.get_obs()
 
     def render(self, mode='ansi'):
