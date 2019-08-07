@@ -133,6 +133,7 @@ class GameLoop(object):
     view_size = None
     centered_view = False
     fixed_orientation = False
+    gen_params = None
 
     total_points = 0
     total_steps = 0
@@ -147,8 +148,11 @@ class GameLoop(object):
             for fname in self.load_from:
                 yield self.game_cls.load(fname)
         elif self.random_board:
+            gen_params = self.gen_params or {}
+            gen_params.setdefault('difficulty', self.difficulty)
+            gen_params.setdefault('board_shape', self.board_size)
             while True:
-                yield gen_game(self.board_size, difficulty=self.difficulty)
+                yield gen_game(**gen_params)
         else:
             yield self.game_cls(board_size=self.board_size)
 
@@ -288,6 +292,9 @@ def _make_cmd_args(subparsers):
             help="The width and height of the square starting board")
         parser.add_argument('--difficulty', type=float, default=1.0,
             help="Difficulty of the random board. On a scale of 0-10.")
+        parser.add_argument('--gen_params',
+            help="Parameters for random board generation. "
+            "Can either be a json file or a (quoted) json string.")
         parser.set_defaults(run_cmd=_run_cmd_args)
     play_parser.add_argument('--clear', action="store_true",
         help="Starts with an empty board.")
@@ -303,7 +310,15 @@ def _make_cmd_args(subparsers):
 def _run_cmd_args(args):
     main_loop = GameLoop()
     main_loop.board_size = (args.board, args.board)
-    main_loop.load_from = list(find_files(*args.load_from))
+    if args.gen_params:
+        import json
+        if args.gen_params[-5:] == '.json':
+            with open(args.gen_params) as f:
+                main_loop.gen_params = json.load(f)
+        else:
+            main_loop.gen_params = json.loads(args.gen_params)
+    else:
+        main_loop.load_from = list(find_files(*args.load_from))
     main_loop.difficulty = args.difficulty
     if args.cmd == "print":
         main_loop.print_games()
