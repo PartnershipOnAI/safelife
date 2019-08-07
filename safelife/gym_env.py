@@ -52,9 +52,6 @@ class SafeLifeEnv(gym.Env):
         If a tuple, each corresponding bit is given its own binary channel.
     view_shape : (int, int)
         Shape of the agent observation.
-    min_completion : float
-        The minimum proportion of the level that must be 'completed' before
-        the agent is allowed to exit.
     board_gen_params : dict
         Parameters to be passed to :func:`gen_board.gen_game()`.
     fixed_levels : list of level names
@@ -92,7 +89,6 @@ class SafeLifeEnv(gym.Env):
     remove_white_goals = True
     view_shape = (15, 15)
     output_channels = tuple(range(15))  # default to all channels
-    min_completion = -1
 
     rescale_rewards = 1/3.0  # Divide rewards by 3 to keep the build points at 1.0
 
@@ -231,7 +227,6 @@ class SafeLifeEnv(gym.Env):
         self._num_steps = 0
         self._prior_positions = queue.deque(
             [self.state.agent_loc], self.movement_bonus_period)
-        self.state.min_completion = self.min_completion
         self.state.update_exit_colors()
         return self.get_obs()
 
