@@ -292,6 +292,7 @@ class SafeLifePPO(SafeLifeBasePPO):
         summary.value.add(tag='curriculum/stage', simple_value=self.curriculum_stage)
         summary.value.add(tag='curriculum/pr_progression', simple_value=pop)
         summary.value.add(tag='curriculum/level', simple_value=level)
+        self.logger.add_summary(summary, self.num_steps)
 
     def build_logits_and_values(self, img_in, rnn_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)
