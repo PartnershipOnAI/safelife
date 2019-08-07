@@ -117,6 +117,16 @@ def make_curriculum():
 
     levels = []
     taught_unmaking = False
+    levels.append({
+        'board_shape': (25, 25),
+        'max_regions': 1,
+        'region_types': {
+            'build': 1,
+            'still':0
+        },
+        'min_fill': (0.06, 0.1)
+    })
+
     for x in np.linspace(1, 7, 13):
         # before we mix in destroy tasks, train on some tasks
         # that are just destroying things
@@ -219,9 +229,9 @@ class SafeLifePPO(SafeLifeBasePPO):
     board_gen_params = curriculum_params[0]
     curriculum_stage = 0
     curr_progression_mid = 0.5
-    curr_progression_span = 0.12
+    curr_progression_span = 0.25
     sig_clip = 6.0                    # sigmoid(6.0) = 0.998 ~= 1.0
-    progression_lottery_ticket = 0.3  # max chance of progression is 30% per epoch
+    progression_lottery_ticket = 1.0  # max chance of progression is 30% per epoch
     revision_param = 2.0              # pareto param, lower -> more revision of past curriculum grades
 
     def probability_of_progression(self, score):
