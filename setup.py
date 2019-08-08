@@ -8,6 +8,7 @@ levels_path = os.path.abspath(os.path.join(__file__, '../safelife/levels'))
 
 data_files = ['*.png']
 data_files += glob.glob(os.path.join(levels_path, '**/*.npz'), recursive=True)
+data_files += glob.glob(os.path.join(levels_path, '**/*.json'), recursive=True)
 
 setuptools.setup(
     name='safety-net',

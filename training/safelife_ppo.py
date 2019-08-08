@@ -1,9 +1,11 @@
 import os
+import json
 import numpy as np
 import tensorflow as tf
 
 from safelife.gym_env import SafeLifeEnv
 from safelife.side_effects import policy_side_effect_score
+from safelife.file_finder import LEVEL_DIRECTORY
 from . import ppo
 from .wrappers import SafeLifeWrapper
 
@@ -158,22 +160,19 @@ class SafeLifePPO(SafeLifeBasePPO):
         'view_shape': (15, 15),
         'output_channels': tuple(range(15)),
     }
+    gen_params_name = "random/append-still.json"
+
+    def __init__(self, *args, **kw):
+        fname = os.path.join(LEVEL_DIRECTORY, self.gen_params_name)
+        with open(fname) as f:
+            self._base_board_params = json.load(f)
+        super().__init__(*args, **kw)
 
     @property
     def board_gen_params(self):
-        return {
-            'board_shape': (25, 25),
-            'min_completion': 0.8 * np.tanh((self.num_steps-2e5) * 2e-7),
-            'difficulty': 3.9,
-            'max_regions': 4,
-            'region_types': {
-                # 'destroy': 1,
-                # 'prune': 2,
-                'build': 1,
-                'append': 2,
-            },
-            'start_region': None,
-        }
+        params = self._base_board_params.copy()
+        params['min_completion'] = 0.8 * np.tanh((self.num_steps-2e5) * 2e-7)
+        return params
 
     # --------------
 

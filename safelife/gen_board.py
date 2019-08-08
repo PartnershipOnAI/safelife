@@ -208,7 +208,7 @@ def region_population_params(difficulty=5, **fixed_params):
 
     params = {
         "region_types": {
-            "still": dscale([1,1,10], [0,1,3]),
+            "neutral": dscale([1,1,10], [0,1,3]),
             "build": 1,
             "append": dscale([2,2,10], [0,1,2]),
             "destroy": dscale([3,3,10], [0,1,2]),
@@ -291,7 +291,7 @@ def populate_region(mask, **params):
     """
     params = region_population_params(**params)
     region_type = _pick_one(params["region_types"])
-    period = _pick_one(params["period_weights"])
+    period = int(_pick_one(params["period_weights"]))
     if period > 1:
         params["cell_probabilities"] = {'wall': 1, 'tree': 1}
 
@@ -355,7 +355,7 @@ def populate_region(mask, **params):
     # second pass always excludes trees
     # If it gets added to the goals, also add non-life cells to the board
     first_color, first_dest = {
-        'still': (CellTypes.color_g, 'board'),
+        'neutral': (CellTypes.color_g, 'board'),
         'build': (CellTypes.color_b, 'goal'),
         'destroy': (CellTypes.color_r, 'board'),
         'append': (CellTypes.color_g, 'board'),

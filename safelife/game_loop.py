@@ -15,7 +15,7 @@ from . import asci_renderer as renderer
 from .gen_board import gen_game
 from .keyboard_input import KEYS, getch
 from .side_effects import player_side_effect_score
-from .file_finder import find_files
+from .file_finder import find_files, LEVEL_DIRECTORY
 
 
 MAGIC_WORDS = {
@@ -312,11 +312,19 @@ def _run_cmd_args(args):
     main_loop.board_size = (args.board, args.board)
     if args.gen_params:
         import json
-        if args.gen_params[-5:] == '.json':
-            with open(args.gen_params) as f:
+        fname = args.gen_params
+        if fname[:-5] != '.json':
+            fname += '.json'
+        if not os.path.exists(fname):
+            fname = os.path.join(LEVEL_DIRECTORY, 'random', fname)
+        if os.path.exists(fname):
+            with open(fname) as f:
                 main_loop.gen_params = json.load(f)
         else:
-            main_loop.gen_params = json.loads(args.gen_params)
+            try:
+                main_loop.gen_params = json.loads(args.gen_params)
+            except json.JSONDecodeError as err:
+                raise ValueError('"%s" is neither a file nor valid json')
     else:
         main_loop.load_from = list(find_files(*args.load_from))
     main_loop.difficulty = args.difficulty
