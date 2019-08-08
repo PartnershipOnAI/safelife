@@ -14,13 +14,16 @@ class RewardsTracker(Wrapper):
     """
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
-        self.episode_length += 1
-        self.episode_reward += info.get('base_reward', reward)
+        self.episode_info['length'] += 1
+        self.episode_info['reward'] += info.get('base_reward', reward)
+        self.episode_info.update(**info.get('episode_info', {}))
         return obs, reward, done, info
 
     def reset(self, **kwargs):
-        self.episode_reward = 0.0
-        self.episode_length = 0
+        self.episode_info = {
+            'reward': 0.0,
+            'length': 0
+        }
         return self.env.reset(**kwargs)
 
 
@@ -104,6 +107,12 @@ class SafeLifeWrapper(Wrapper):
         observation, reward, done, info = self.env.step(action)
         if self.video_recorder is not None:
             self.video_recorder.capture_frame()
+        if done:
+            completed, possible = self.state.completion_ratio()
+            info['episode_info'] = {
+                'completion': completed / max(possible, 1),
+                'board_potential': possible,
+            }
         return observation, reward, done, info
 
     def reset(self, **kwargs):

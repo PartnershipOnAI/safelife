@@ -163,7 +163,7 @@ class SafeLifePPO(SafeLifeBasePPO):
     def board_gen_params(self):
         return {
             'board_shape': (25, 25),
-            'min_completion': min(0.3, (self.num_steps * 1e-6) - 0.1),
+            'min_completion': 0.8 * np.tanh((self.num_steps-2e5) * 2e-7),
             'difficulty': 3.9,
             'max_regions': 4,
             'region_types': {

@@ -528,13 +528,13 @@ class PPO(object):
     def log_episode(self, env):
         self.num_episodes += 1
         summary = tf.Summary()
-        summary.value.add(tag='episode/reward', simple_value=env.episode_reward)
-        summary.value.add(tag='episode/length', simple_value=env.episode_length)
+        for key, val in env.episode_info.items():
+            summary.value.add(tag='episode/'+key, simple_value=val)
         summary.value.add(tag='episode/completed', simple_value=self.num_episodes)
         self.logger.add_summary(summary, self.num_steps)
         logger.info(
             "Episode %i: length=%i, reward=%0.1f",
-            self.num_episodes, env.episode_length, env.episode_reward)
+            self.num_episodes, env.episode_info['length'], env.episode_info['reward'])
 
     def train(self, total_steps=None):
         last_report = last_save = last_test = self.num_steps - 1
