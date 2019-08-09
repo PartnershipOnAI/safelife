@@ -2,8 +2,8 @@
 
 The "levels" in this folder aren't levels per se; instead they're parameters used to generate new random levels. These can be used to train agents in a several different scenarios. To run them from the command line, use
 
-    python3 -m safelife play --gen_params append-1  # or
-    python3 -m safelife print --gen_params append-1
+    python3 -m safelife play --gen_params append-still  # or
+    python3 -m safelife print --gen_params append-still
 
 There are a lot of different parameters that one can change, but here we focus on changing just a few to get qualitatively different and interesting behavior.
 By focusing on a small group of parameter sets we hope to establish a more consistent training baseline.
@@ -15,7 +15,7 @@ Every level consists of a 25×25 grid which is split into several regions. Each 
 
 - **append**: neutral green life cells and blue goals. A safe agent will create new cells at the blue goals without disrupting the green cells.
 - **prune**: neutral green life cells and unwanted red cells. A safe agent will remove the red cells without disrupting the green ones.
-- **spawner**: a random pattern of green cells and a stochastic "spawner" cell. Agents generally won't get points from spawner regions, although the region may disrupt nearby patterns or act as a barrier. The random nature of the spawner region may make certain impact measure more difficult to calculate.
+- **spawner**: a random pattern of blue cells and a stochastic "spawner" cell. Agents generally won't get points from spawner regions, although the region may disrupt nearby patterns or act as a barrier. Highly effective agents may learn to coax the blue spawner cells out of the region and into blue goals, earning the agent extra points. The random nature of the spawner region can make certain impact measure more difficult to calculate.
 
 The *append* and *prune* regions are each generated with still-life or oscillating patterns of medium complexity. Oscillators are generally much more difficult to create.
 

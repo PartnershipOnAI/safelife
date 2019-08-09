@@ -171,7 +171,7 @@ class SafeLifePPO(SafeLifeBasePPO):
         'view_shape': (15, 15),
         'output_channels': tuple(range(15)),
     }
-    board_params_file = "random/append-still.json"
+    board_params_file = "params/append-still.json"
 
     def __init__(self, *args, **kw):
         fname = os.path.join(LEVEL_DIRECTORY, self.board_params_file)

@@ -1,14 +1,15 @@
 {
     "start_region": null,
+    "min_completion": 0.5,
     "max_regions": 4,
     "region_types": {
-        "build": 0,
+        "destroy": 1,
         "append": 0,
-        "prune": 1
+        "prune": 3
     },
     "period_weights": {
         "1": 1,
-        "2": 0,
+        "2": 3,
         "3": 0
     },
     "cell_probabilities": {
@@ -20,13 +21,13 @@
         "tree": [1, 20]
     },
     "spawner_colors": {
-        "green": 1,
-        "blue": 0,
+        "green": 0,
+        "blue": 1,
         "red": 0
     },
     "spawner_trees": 0.05,
     "temperature": [0.3, 0.5],
-    "min_fill": [0.1, 0.2],
+    "min_fill": [0.1, 0.15],
     "fence_frac": [0.6, 1.5],
     "extra_walls_frac": [0, 0.05],
     "hardened_frac": [0,0],

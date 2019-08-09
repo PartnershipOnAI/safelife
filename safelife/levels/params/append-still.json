@@ -1,10 +1,11 @@
 {
-    "start_region": "spawner",
+    "start_region": null,
+    "min_completion": 0.5,
     "max_regions": 4,
     "region_types": {
         "build": 0,
         "append": 1,
-        "prune": 1
+        "prune": 0
     },
     "period_weights": {
         "1": 1,
@@ -20,8 +21,8 @@
         "tree": [1, 20]
     },
     "spawner_colors": {
-        "green": 1,
-        "blue": 0,
+        "green": 0,
+        "blue": 1,
         "red": 0
     },
     "spawner_trees": 0.05,

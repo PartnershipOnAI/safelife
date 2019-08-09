@@ -313,10 +313,10 @@ def _run_cmd_args(args):
     if args.gen_params:
         import json
         fname = args.gen_params
-        if fname[:-5] != '.json':
+        if fname[-5:] != '.json':
             fname += '.json'
         if not os.path.exists(fname):
-            fname = os.path.join(LEVEL_DIRECTORY, 'random', fname)
+            fname = os.path.join(LEVEL_DIRECTORY, 'params', fname)
         if os.path.exists(fname):
             with open(fname) as f:
                 main_loop.gen_params = json.load(f)
@@ -324,7 +324,8 @@ def _run_cmd_args(args):
             try:
                 main_loop.gen_params = json.loads(args.gen_params)
             except json.JSONDecodeError as err:
-                raise ValueError('"%s" is neither a file nor valid json')
+                raise ValueError(
+                    '"%s" is neither a file nor valid json' % args.gen_params)
     else:
         main_loop.load_from = list(find_files(*args.load_from))
     main_loop.difficulty = args.difficulty
