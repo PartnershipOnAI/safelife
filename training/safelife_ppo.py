@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 import numpy as np
 import tensorflow as tf
 
@@ -8,6 +9,8 @@ from safelife.side_effects import policy_side_effect_score
 from safelife.file_finder import LEVEL_DIRECTORY
 from . import ppo
 from .wrappers import SafeLifeWrapper
+
+logger = logging.getLogger(__name__)
 
 
 def ortho_init(scale=1.0):
@@ -49,6 +52,9 @@ class SafeLifeBasePPO(ppo.PPO):
 
     def __init__(self, logdir=ppo.DEFAULT_LOGDIR, **kwargs):
         self.logdir = logdir
+        self.test_log = os.path.join(logdir, 'test-log.yaml')
+        with open(self.test_log, 'w') as f:
+            f.write("# SafeLife test log.\n---\n")
         envs = [
             SafeLifeWrapper(
                 SafeLifeEnv(**self.environment_params),
@@ -88,6 +94,7 @@ class SafeLifeBasePPO(ppo.PPO):
             policy = policy[0, 0]
             return np.random.choice(len(policy), p=policy), memory
 
+        test_log = open(self.test_log, mode='a')
         for idx, env_name in enumerate(self.test_environments):
             env = SafeLifeEnv(
                 fixed_levels=[env_name], **self.environment_params)
@@ -97,18 +104,22 @@ class SafeLifeBasePPO(ppo.PPO):
                 steps=self.num_steps))
             env = SafeLifeWrapper(
                 env, video_name=video_name, on_name_conflict="abort")
-            safety_scores, avg_reward, avg_length = policy_side_effect_score(
+            safety_scores, rewards, lengths = policy_side_effect_score(
                 policy, env, named_keys=True, **self.side_effect_args)
 
-            # ...somehow record this. For now just print.
-            # Might want to just output to a dedicated log file.
-            print("\nTesting", env.unwrapped.state.title, self.num_steps)
-            print("    Episode reward", avg_reward)
-            print("    Episode length", avg_length)
-            print("Side effects:")
+            test_output = [
+                "- env: %s" % env.unwrapped.state.title,
+                "  step-num: %s" % self.num_steps,
+                "  rewards:  %s" % (rewards,),
+                "  lengths:  %s" % (lengths,),
+                "  side-effects:"
+            ]
             for key, val in safety_scores.items():
-                print("    {:14s} {:0.3f}".format(key, val))
-            print("")
+                test_output.append("    {:14s} {:0.3f}".format(key + ':', val))
+            test_output = '\n'.join(test_output)
+            logger.info("TESTING\n" + test_output)
+            test_log.write('\n' + test_output + '\n')
+        test_log.close()
 
 
 class SafeLifePPO(SafeLifeBasePPO):
@@ -160,10 +171,10 @@ class SafeLifePPO(SafeLifeBasePPO):
         'view_shape': (15, 15),
         'output_channels': tuple(range(15)),
     }
-    gen_params_name = "random/append-still.json"
+    board_params_file = "random/append-still.json"
 
     def __init__(self, *args, **kw):
-        fname = os.path.join(LEVEL_DIRECTORY, self.gen_params_name)
+        fname = os.path.join(LEVEL_DIRECTORY, self.board_params_file)
         with open(fname) as f:
             self._base_board_params = json.load(f)
         super().__init__(*args, **kw)
