@@ -43,7 +43,7 @@ class SafeLifeBasePPO(ppo.PPO):
     """
     video_freq = 100
     video_counter = None      # counter for filenames to save videos in
-    video_name = "episode-{episode}-{steps}"
+    video_name = "episode-{episode}-{steps}{reason}"
     test_video_name = "test-{env_name}-{steps}"
     test_environments = []
 
@@ -61,13 +61,13 @@ class SafeLifeBasePPO(ppo.PPO):
         ]
         super().__init__(envs, logdir=logdir, **kwargs)
 
-    def update_environment(self, env_wrapper):
+    def update_environment(self, env_wrapper, video_reason=None):
         # Called just before an environment resets
         if self.video_counter is None:
             self.video_counter = self.num_episodes
-        if self.video_freq > 0 and self.video_counter % self.video_freq == 0:
+        if (self.video_freq > 0 and self.video_counter % self.video_freq == 0) or video_reason:
             base_name = self.video_name.format(
-                episode=self.video_counter, steps=self.num_steps)
+                episode=self.video_counter, steps=self.num_steps, reason=video_reason)
             env_wrapper.video_name = os.path.join(self.logdir, base_name)
         else:
             env_wrapper.video_name = None
@@ -242,6 +242,11 @@ class SafeLifePPO(SafeLifeBasePPO):
     progression_lottery_ticket = 1.0  # max chance of progression is 30% per epoch
     revision_param = 2.0              # pareto param, lower -> more revision of past curriculum grades
 
+    best_score = 0
+    best_perf = 0.0
+    best_score_by_level = {0:0}
+    best_perf_by_level = {0:0.0}
+
     def probability_of_progression(self, score):
         """
         The probability of graduating to the next curriculum stage is a sigmoid over peformance
@@ -259,8 +264,8 @@ class SafeLifePPO(SafeLifeBasePPO):
     def update_environment(self, env_wrapper):
         "Customized variant of update_enviroment to implement curricular learning."
         env = env_wrapper.unwrapped
-        self.adjust_to_current_curriculum(env)
-        super().update_environment(env_wrapper)
+        advanced = self.adjust_to_current_curriculum(env)
+        super().update_environment(env_wrapper, video_reason=("-leveled" if advanced else None))
 
     def check_performance(self, game, min_board_pts=10):
         """
@@ -283,35 +288,58 @@ class SafeLifePPO(SafeLifeBasePPO):
         total_possible = total_goals + total_red
         possible_increase = total_possible - points_at_start
         actual_increase = points_at_end - points_at_start
+
+        if actual_increase > self.best_score_by_level[self.level]:
+            self.best_score_by_level[self.level] = actual_increase
+        self.best_score = max(self.best_score, actual_increase)
+
         if possible_increase <= 0:
             performance = 0
         else:
             performance = actual_increase / max(min_board_pts, possible_increase)
+
+        if performance > self.best_perf_by_level[self.level]:
+            self.best_perf_by_level[self.level] = performance
+        self.best_perf = max(self.best_perf, performance)
+
         game.deserialize(game_state)  # reset to where we were before
         return performance
 
     def adjust_to_current_curriculum(self, env):
-        "Modify an environment to fit with the current curriculum stage."
+        """
+        Modify an environment to fit with the current curriculum stage.
+        
+        :returns: True if the curriculum advanced, False otherwise
+        """
         if env.state is not None:
             performance = self.check_performance(env.state)
         else:
             performance = 0.0
 
+        advanced = False
         pop = self.probability_of_progression(performance)
         if self.level == self.curriculum_stage:   # we played at the current curriculum frontier
             if coinflip(pop):
                 if self.curriculum_stage < len(self.curriculum_params) - 1:
                     self.curriculum_stage += 1
+                    self.best_score_by_level[curriculum_stage] = 0
+                    self.best_perf_by_level[curriculum_stage] = 0.
                     logger.info("Curriculum advanced to level %d" % self.curriculum_stage)
+                    advanced = True
         revision = int(np.clip(npr.pareto(self.revision_param), 0, self.curriculum_stage))
         self.level = self.curriculum_stage - revision
         self.board_gen_params = self.curriculum_params[self.level]
 
         summary = tf.Summary()
-        summary.value.add(tag='curriculum/stage', simple_value=self.curriculum_stage)
+        stage = self.curriculum_stage
+        summary.value.add(tag='episode/performance', simple_value=performance)
+        summary.value.add(tag='curriculum/stage', simple_value=stage)
         summary.value.add(tag='curriculum/pr_progression', simple_value=pop)
         summary.value.add(tag='curriculum/level', simple_value=self.level)
+        summary.value.add(tag='curriculum/best_score_this_lvl', simple_value=self.best_score_by_level[stage])
+        summary.value.add(tag='curriculum/best_perf_this_lvl', simple_value=self.best_perf_by_level[stage])
         self.logger.add_summary(summary, self.num_steps)
+        return advanced
 
     def build_logits_and_values(self, img_in, rnn_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)

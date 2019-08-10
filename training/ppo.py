@@ -532,9 +532,10 @@ class PPO(object):
         summary.value.add(tag='episode/length', simple_value=env.episode_length)
         summary.value.add(tag='episode/completed', simple_value=self.num_episodes)
         self.logger.add_summary(summary, self.num_steps)
+        lvl = getattr(self, "level", "N/A")  # curriculum level
         logger.info(
-            "Episode %i: length=%i, reward=%0.1f",
-            self.num_episodes, env.episode_length, env.episode_reward)
+            "Episode %i: level=%s, length=%i, reward=%0.1f",
+            self.num_episodes, lvl, env.episode_length, env.episode_reward)
 
     def train(self, total_steps=None):
         last_report = last_save = last_test = self.num_steps - 1
