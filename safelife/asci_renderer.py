@@ -125,14 +125,18 @@ def render_board(s, centered_view=False, view_size=None, fixed_orientation=False
         If true, the board is re-oriented such that the player is always
         facing up.
     """
+    agent_color = s.board[s.agent_loc[1], s.agent_loc[0]]
+    agent_color &= CellTypes.rainbow_color
     if centered_view or view_size or fixed_orientation:
+        centered_view = True
         if view_size is None:
             view_size = s.board.shape
         if fixed_orientation and s.orientation % 2 == 1:
             # transpose the view
             view_size = (view_size[1], view_size[0])
-        board = recenter_view(s.board, view_size, s.agent_loc[::-1], s.exit_locs)
-        goals = recenter_view(s.goals, view_size, s.agent_loc[::-1])
+        center = s.edit_loc if s.is_editing else s.agent_loc
+        board = recenter_view(s.board, view_size, center[::-1], s.exit_locs)
+        goals = recenter_view(s.goals, view_size, center[::-1])
     else:
         view_size = (s.height, s.width)
         board = s.board
@@ -157,11 +161,13 @@ def render_board(s, centered_view=False, view_size=None, fixed_orientation=False
     else:
         screen[1:-1,1:-2] = render_cell(board, goals, s.orientation)
     if s.is_editing:
-        x0, y0 = s.agent_loc
-        x1, y1 = s.edit_loc
-        color = (board[y0, x0] & CellTypes.rainbow_color) >> CellTypes.color_bit
+        if centered_view:
+            y1 = view_size[0] // 2
+            x1 = view_size[1] // 2
+        else:
+            x1, y1 = s.edit_loc
         val = render_cell(board[y1, x1], goals[y1, x1], s.orientation,
-                          edit_color=color)
+                          edit_color=agent_color >> CellTypes.color_bit)
         screen[y1+1, x1+1] = str(val)
     return ''.join(screen.ravel())
 
