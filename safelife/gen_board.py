@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.random as npr
 from scipy import ndimage, signal
 
 from .game_physics import CellTypes, SafeLife
@@ -520,6 +521,12 @@ def gen_game(board_shape=(25,25), max_regions=5, start_region='build', **region_
         start_region = None
 
     game = SafeLife()
+
+    if "min_completion" in params:
+        mc = params["min_completion"]
+        if coinflip(mc["chance"]):
+            game.min_completion = float(npr.uniform(mc["min"], mc["max"]))
+
     game.deserialize({
         'board': board,
         'goals': goals,

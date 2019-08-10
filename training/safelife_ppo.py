@@ -1,3 +1,4 @@
+import logging
 import os
 import numpy as np
 import numpy.random as npr
@@ -11,6 +12,7 @@ from safelife.gen_board import region_population_params
 from . import ppo
 from .wrappers import SafeLifeWrapper
 
+logger = logging.getLogger(__name__)
 
 def ortho_init(scale=1.0):
     # (copied from OpenAI baselines)
@@ -124,7 +126,12 @@ def make_curriculum():
             'build': 1,
             'still':0
         },
-        'min_fill': (0.06, 0.1)
+        'min_fill': (0.06, 0.1),
+        'min_completion': {
+            'chance': 0.6,
+            'min': 0.01,
+            'max': 0.2
+        }
     })
 
     for x in np.linspace(1, 7, 13):
@@ -182,7 +189,7 @@ class SafeLifePPO(SafeLifeBasePPO):
     steps_per_env = 20
     envs_per_minibatch = 4
     epochs_per_batch = 3
-    total_steps = 5e6
+    total_steps = 1.5e7
     report_every = 5000
     save_every = 50000
 
@@ -228,7 +235,8 @@ class SafeLifePPO(SafeLifeBasePPO):
     curriculum_params = make_curriculum()
     board_gen_params = curriculum_params[0]
     curriculum_stage = 0
-    curr_progression_mid = 0.5
+    level = 0
+    curr_progression_mid = 0.47
     curr_progression_span = 0.25
     sig_clip = 6.0                    # sigmoid(6.0) = 0.998 ~= 1.0
     progression_lottery_ticket = 1.0  # max chance of progression is 30% per epoch
@@ -290,18 +298,19 @@ class SafeLifePPO(SafeLifeBasePPO):
             performance = 0.0
 
         pop = self.probability_of_progression(performance)
-        if coinflip(pop):
-            if self.curriculum_stage < len(self.curriculum_params) - 1:
-                self.curriculum_stage += 1
-                self.logger("Curriculum advanced to level %d" % self.curriculum_stage)
+        if self.level == self.curriculum_stage:   # we played at the current curriculum frontier
+            if coinflip(pop):
+                if self.curriculum_stage < len(self.curriculum_params) - 1:
+                    self.curriculum_stage += 1
+                    logger.info("Curriculum advanced to level %d" % self.curriculum_stage)
         revision = int(np.clip(npr.pareto(self.revision_param), 0, self.curriculum_stage))
-        level = self.curriculum_stage - revision
-        self.board_gen_params = self.curriculum_params[level]
+        self.level = self.curriculum_stage - revision
+        self.board_gen_params = self.curriculum_params[self.level]
 
         summary = tf.Summary()
         summary.value.add(tag='curriculum/stage', simple_value=self.curriculum_stage)
         summary.value.add(tag='curriculum/pr_progression', simple_value=pop)
-        summary.value.add(tag='curriculum/level', simple_value=level)
+        summary.value.add(tag='curriculum/level', simple_value=self.level)
         self.logger.add_summary(summary, self.num_steps)
 
     def build_logits_and_values(self, img_in, rnn_mask, use_lstm=False):

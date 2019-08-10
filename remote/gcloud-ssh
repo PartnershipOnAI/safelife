@@ -1,4 +1,6 @@
 #! /bin/sh
 host="$1"
+zone=`gcloud compute instances list --filter="name=($1)" | tail -1 | awk '{print $2}'`
+#echo sshing to $host in zone $zone
 shift
-exec gcloud compute ssh --zone us-west1-b "$host" -- "$@"
+exec gcloud compute ssh --zone "$zone" "$host" -- "$@"

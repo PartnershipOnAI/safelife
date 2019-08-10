@@ -1,4 +1,5 @@
 #!/bin/bash
 # Use to sync current run data to local.
 # Should be run from whichever folder contains local copy of 'data'
-exec rsync --rsh $(dirname $0)/gcloud-ssh -r $1:~/current_run/data/ ./data
+#exec rsync -az --exclude '*.mp4' --rsh $(dirname $0)/gcloud-ssh -r $1:~/current_run/data/ ./data
+exec rsync -z --rsh $(dirname $0)/gcloud-ssh -r $1:~/current_run/data/ ./data
