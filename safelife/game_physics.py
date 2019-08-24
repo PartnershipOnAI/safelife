@@ -362,7 +362,8 @@ class GameState(object):
     @is_editing.setter
     def is_editing(self, val):
         if val:
-            self.edit_loc = self.edit_loc = self.agent_loc
+            if self.edit_loc is None:
+                self.edit_loc = self.agent_loc
         else:
             self.edit_loc = None
 
