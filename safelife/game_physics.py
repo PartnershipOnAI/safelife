@@ -163,6 +163,7 @@ class GameState(object):
     can_toggle_colors = False
 
     def __init__(self, board_size=(10,10)):
+        self.exit_locs = (np.array([], dtype=int), np.array([], dtype=int))
         if board_size is None:
             # assume we'll load a new board from file
             pass
