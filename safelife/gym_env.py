@@ -232,7 +232,7 @@ class SafeLifeEnv(gym.Env):
 
     def render(self, mode='ansi'):
         if mode == 'ansi':
-            from .asci_renderer import render_board
+            from .ascii_renderer import render_board
             return render_board(self.state, view_size=self.view_shape)
         else:
             from .rgb_renderer import render_game

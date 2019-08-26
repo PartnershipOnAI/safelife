@@ -6,8 +6,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from .game_physics import SafeLife
-# from .syntax_tree import StatefulProgram
-from . import asci_renderer
+from . import ascii_renderer
 from . import rgb_renderer
 from .gen_board import gen_game
 from .keyboard_input import KEYS, getch
@@ -347,7 +346,7 @@ class GameLoop(object):
             output += "\nScore: {bold}{}{clear}".format(state.total_points, **styles)
             output += "\nSteps: {bold}{}{clear}".format(state.total_steps, **styles)
             output += "\nCompleted: {} / {}".format(*game.completion_ratio(), **styles)
-            output += "\nPowers: {italics}{}{clear}".format(asci_renderer.agent_powers(game), **styles)
+            output += "\nPowers: {italics}{}{clear}".format(ascii_renderer.agent_powers(game), **styles)
             if state.editing:
                 output += "\n{bold}*** EDIT MODE ***{clear}".format(**styles)
             if state.recording:
@@ -376,9 +375,9 @@ class GameLoop(object):
         fmt = "    {name:12s} {val:6.2f}\n"
         for ctype, score in self.state.side_effects.items():
             if full_names:
-                name = asci_renderer.cell_name(ctype)
+                name = ascii_renderer.cell_name(ctype)
             else:
-                name = asci_renderer.render_cell(ctype)
+                name = ascii_renderer.render_cell(ctype)
             output += fmt.format(name=name+':', val=score)
         output += "    " + "-"*19 + '\n'
         output += fmt.format(name="Total:", val=subtotal)
@@ -399,7 +398,7 @@ class GameLoop(object):
             game = state.game
             game.update_exit_colors()
             output += self.above_game_message(styled=True) + '\n'
-            output += asci_renderer.render_board(game,
+            output += ascii_renderer.render_board(game,
                 self.centered_view, self.view_size, self.fixed_orientation)
             output += "\n"
             if not self.print_only:
@@ -531,9 +530,9 @@ class GameLoop(object):
 def _make_cmd_args(subparsers):
     # used by __main__.py to define command line tools
     play_parser = subparsers.add_parser(
-        "play", help="Play a game of SafeLife in the terminal.")
+        "play", help="Play a game of SafeLife interactively.")
     print_parser = subparsers.add_parser(
-        "print", help="Generate new game boards and print to terminal.")
+        "print", help="Generate and display new game boards.")
     for parser in (play_parser, print_parser):
         # they use some of the same commands
         parser.add_argument('load_from',

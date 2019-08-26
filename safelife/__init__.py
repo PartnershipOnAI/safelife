@@ -1,7 +1,6 @@
 from . import (  # noqa: F401
     game_physics,
-    game_loop,
-    asci_renderer,
+    ascii_renderer,
     rgb_renderer,
     gen_board,
     gym_env,
