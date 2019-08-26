@@ -492,8 +492,10 @@ class GameLoop(object):
             y0 = window.height - h - margin_top
             render_img(img, x0, y0, w, h)
 
-    def pyglet_key_down(self, symbol, modifier):
+    def pyglet_key_down(self, symbol, modifier, repeat=0.5):
+        import pyglet
         from pyglet.window import key
+        self.state.event_num += 1
         is_ascii = 32 <= symbol < 255
         char = {
             key.LEFT: KEYS.LEFT_ARROW,
@@ -511,6 +513,19 @@ class GameLoop(object):
         if modifier & key.MOD_SHIFT:
             char = char.upper()
         self.handle_input(char)
+        pyglet.clock.schedule_once(self.handle_key_repeat, repeat,
+            symbol, modifier, self.state.event_num)
+
+    def handle_key_repeat(self, dt, symbol, modifier, event_num):
+        from pyglet.window import key
+        if event_num != self.state.event_num:
+            return
+        if not self.key_handler[symbol]:
+            return
+        has_shift = self.key_handler[key.LSHIFT] or self.key_handler[key.RSHIFT]
+        if bool(modifier & key.MOD_SHIFT) != has_shift:
+            return
+        self.pyglet_key_down(symbol, modifier, repeat=0.1)
 
     def run_gl(self):
         try:
@@ -525,6 +540,9 @@ class GameLoop(object):
             self.window = pyglet.window.Window(resizable=True)
             self.window.set_handler('on_draw', self.render_gl)
             self.window.set_handler('on_key_press', self.pyglet_key_down)
+            self.key_handler = pyglet.window.key.KeyStateHandler()
+            self.window.push_handlers(self.key_handler)
+            self.state.event_num = 0
             pyglet.app.run()
 
 
