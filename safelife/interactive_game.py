@@ -1,12 +1,14 @@
 import os
 import sys
 import glob
+import textwrap
 from types import SimpleNamespace
 import numpy as np
 
 from .game_physics import SafeLife
 # from .syntax_tree import StatefulProgram
-from . import asci_renderer as renderer
+from . import asci_renderer
+from . import rgb_renderer
 from .gen_board import gen_game
 from .keyboard_input import KEYS, getch
 from .side_effects import player_side_effect_score
@@ -115,13 +117,6 @@ class GameLoop(object):
             last_command="",
             level_num=0,
         )
-        if self.print_only:
-            try:
-                self.state.game = self.next_level()
-                self.state.screen = "GAME"
-            except StopIteration:
-                self.state.screen = None
-                print("No game boards to print")
 
     def level_generator(self):
         if self.load_from:
@@ -156,6 +151,42 @@ class GameLoop(object):
         fname = 'rec-{:03d}.npz'.format(n)
         return os.path.join(self.recording_directory, fname)
 
+    def record_frame(self):
+        state = self.state
+        if state.game is None or not state.recording:
+            return
+        if state.recording_data is None:
+            state.recording_data = {
+                'board': [],
+                'goals': [],
+                'orientation': [],
+            }
+        state.recording_data['board'].append(state.game.board.copy())
+        state.recording_data['goals'].append(state.game.goals.copy())
+        state.recording_data['orientation'].append(state.game.orientation)
+
+    def save_recording(self):
+        data = self.state.recording_data
+        if data is None or len(data['board']) == 0 or not self.state.recording:
+            self.state.recording_data = None
+            return
+
+        pattern = os.path.join(self.recording_directory, 'rec-*.npz')
+        old_recordings = glob.glob(pattern)
+        if not old_recordings:
+            n = 1
+        else:
+            n = max(
+                int(os.path.split(fname)[1][4:-4])
+                for fname in old_recordings
+            ) + 1
+        fname = 'rec-{:03d}.npz'.format(n)
+        next_recording_name = os.path.join(self.recording_directory, fname)
+
+        os.makedirs(self.recording_directory, exist_ok=True)
+        np.savez(next_recording_name, **data)
+        self.state.recording_data = None
+
     def handle_input(self, key):
         state = self.state
         state.message = ""
@@ -166,6 +197,7 @@ class GameLoop(object):
             # Hit any key to get to the next level
             try:
                 state.game = self.next_level()
+                self.record_frame()
                 state.screen = "GAME"
             except StopIteration:
                 state.game = None
@@ -187,7 +219,9 @@ class GameLoop(object):
             # Hit any key to get back to prior state
             state.screen = state.prior_screen
         elif key == TOGGLE_RECORD:
+            self.save_recording()
             state.recording = not state.recording
+            self.record_frame()
         elif key == TOGGLE_EDIT:
             state.editing = not state.editing
             if state.game is not None:
@@ -217,72 +251,88 @@ class GameLoop(object):
                     action_pts = game.execute_action(command)
                     end_pts = game.current_points()
                     state.total_points += (end_pts - start_pts) + action_pts
-                    # record...
+                    self.record_frame()
             if game.game_over == "RESTART":
                 state.total_points -= game.current_points()
                 game.revert()
                 state.total_points += game.current_points()
+                state.recording_data = None
+                self.record_frame()
             elif game.game_over == "ABORT LEVEL":
-                state.game = self.next_level()
+                try:
+                    state.game = self.next_level()
+                except StopIteration:
+                    state.game = None
+                    state.screen = "GAMEOVER"
+                state.recording_data = None
+                self.record_frame()
             elif game.game_over:
+                self.save_recording()
                 state.screen = "LEVEL SUMMARY"
                 state.side_effects = player_side_effect_score(game)
                 subtotal = sum(state.side_effects.values())
                 state.total_side_effects += subtotal
-        elif state.screen == "GAMEOVER":
-            state.screen = None
+
+    intro_text = """
+    ##########################################################
+    ##                       SafeLife                       ##
+    ##########################################################
+
+    Use the arrow keys to move, 'c' to create or destroy life,
+    and 'enter' to stand still. Try not to make too big of a
+    mess!
+
+    (Hit '?' to access help, or any other key to continue.)
+    """
+
+    help_text = """
+    Play mode
+    ---------
+    arrows:  movement            c:  create / destroy
+    return:  wait                R:  restart level
+
+    `:  toggle edit mode
+    *:  start / stop recording
+    \:  enter shell
+
+    Edit mode
+    ---------
+    x:  empty                    1:  toggle alive
+    a:  agent                    2:  toggle preserving
+    z:  life                     3:  toggle inhibiting
+    Z:  hard life                4:  toggle spawning
+    w:  wall                     5:  change agent color
+    r:  crate                    %:  change agent color (full range)
+    e:  exit                     g:  change goal color
+    i:  icecube                  G:  change goal color (full range)
+    t:  plant                    s:  save
+    T:  tree                     S:  save as
+    p:  predator                 R:  revert level
+    f:  fountain                 Q:  abort level
+    n:  spawner
+    """
+
+    @property
+    def effective_view_size(self):
+        if self.state.game is None:
+            return None
+        elif self.view_size:
+            return self.view_size
+        elif self.centered_view:
+            return self.state.game.board.shape
+        else:
+            return None
 
     def render_asci(self):
-        intro_text = """
-        ############################################################
-        ##                        SafeLife                        ##
-        ############################################################
-
-        Use the arrow keys to move, 'c' to create or destroy life,
-        and 'enter' to stand still. Try not to make too big of a
-        mess!
-
-        (Hit '?' to access help, or any other key to continue.)
-        """
-
-        help_text = """
-        SafeLife
-        ========
-
-        Play mode
-        ---------
-        arrows:  movement            c:  create / destroy
-        return:  wait                R:  restart level
-
-        `:  toggle edit mode
-        *:  start / stop recording
-        \:  enter shell
-
-        Edit mode
-        ---------
-        x:  empty                    1:  toggle alive
-        a:  agent                    2:  toggle preserving
-        z:  life                     3:  toggle inhibiting
-        Z:  hard life                4:  toggle spawning
-        w:  wall                     5:  change agent color
-        r:  crate                    %:  change agent color (full range)
-        e:  exit                     g:  change goal color
-        i:  icecube                  G:  change goal color (full range)
-        t:  plant                    s:  save
-        T:  tree                     S:  save as
-        p:  predator                 R:  revert level
-        f:  fountain                 Q:  abort level
-        n:  spawner
-        """
         if not self.print_only:
             output = "\x1b[H\x1b[J"
         else:
             output = "\n"
         state = self.state
         if state.screen == "INTRO":
-            output += intro_text
+            output += self.intro_text
         elif state.screen == "HELP":
-            output += help_text
+            output += self.help_text
         elif state.screen == "GAME" and state.game is not None:
             game = state.game
             game.update_exit_colors()
@@ -296,12 +346,12 @@ class GameLoop(object):
                 output += "Score: \x1b[1m%i\x1b[0m\n" % state.total_points
                 output += "Steps: \x1b[1m%i\x1b[0m\n" % state.total_steps
                 output += "Completed: %s / %s\n" % game.completion_ratio()
-                output += "Powers: \x1b[3m%s\x1b[0m\n" % renderer.agent_powers(game)
+                output += "Powers: \x1b[3m%s\x1b[0m\n" % asci_renderer.agent_powers(game)
                 if state.editing:
                     output += "\x1b[1m*** EDIT MODE ***\x1b[0m\n"
                 if state.recording:
                     output += "\x1b[1m*** RECORDING ***\x1b[0m\n"
-            output += renderer.render_board(game,
+            output += asci_renderer.render_board(game,
                 self.centered_view, self.view_size, self.fixed_orientation)
             if self.print_only:
                 output += "\n"
@@ -311,27 +361,202 @@ class GameLoop(object):
             output += "Side effect scores (lower is better):\n"
             subtotal = sum(state.side_effects.values())
             for ctype, score in state.side_effects.items():
-                sprite = renderer.render_cell(ctype)
-                output += "       %s: %6.2f" % (sprite, score)
-            output += "    -------------"
-            output += "    Total: %6.2f" % subtotal
+                sprite = asci_renderer.render_cell(ctype)
+                output += "       %s: %6.2f\n" % (sprite, score)
+            output += "    -------------\n"
+            output += "    Total: %6.2f\n" % subtotal
             output += "\n\n(hit any key to continue)"
         elif state.screen == "GAMEOVER":
             output += "\n\nGame over!"
-            output += "\nFinal score:", state.total_points
+            output += "\nFinal score: %s" % state.total_points
             output += "Final safety score: %0.2f" % state.total_side_effects
-            output += "Total steps:", state.total_steps, "\n\n"
+            output += "Total steps: %s\n\n" % state.total_steps
         sys.stdout.write(output)
         sys.stdout.flush()
 
-    def render(self):
-        self.render_asci()
+    def setup_run(self):
+        if self.print_only:
+            try:
+                self.state.game = self.next_level()
+                self.state.screen = "GAME"
+            except StopIteration:
+                self.state.screen = None
+                print("No game boards to print")
 
-    def run(self):
+    def run_asci(self):
+        self.setup_run()
         os.system('clear')
-        while self.state.screen is not None:
-            self.render()
+        self.render_asci()
+        while self.state.screen != "GAMEOVER":
             self.handle_input(getch())
+            self.render_asci()
+
+    def render_gl(self):
+        import pyglet
+        import pyglet.gl as gl
+        state = self.state
+        window = self.window
+        min_width = 550  # not a brilliant way to handle text, but oh well.
+
+        window.clear()
+        if state.screen == "INTRO":
+            label = pyglet.text.Label(textwrap.dedent(self.intro_text[1:-1]),
+                font_name='Courier', font_size=11,
+                x=window.width//2, y=window.height//2,
+                width=min(window.width*0.9, min_width),
+                anchor_x='center', anchor_y='center', multiline=True)
+            label.draw()
+        elif state.screen == "HELP":
+            label = pyglet.text.Label(textwrap.dedent(self.help_text[1:-1]),
+                font_name='Courier', font_size=11,
+                x=window.width//2, y=window.height//2,
+                width=min(window.width*0.9, min_width),
+                anchor_x='center', anchor_y='center', multiline=True)
+            label.draw()
+        elif state.screen == "LEVEL SUMMARY" and state.side_effects is not None:
+            ... # TODO! display level summary info on the screen
+            output = "Side effect scores (lower is better):\n"
+            subtotal = sum(state.side_effects.values())
+            for ctype, score in state.side_effects.items():
+                sprite = asci_renderer.render_cell(ctype)
+                output += "       %s: %6.2f\n" % (sprite, score)
+            output += "    -------------\n"
+            output += "    Total: %6.2f\n" % subtotal
+            output += "\n\n(hit any key to continue)"
+            print(output)
+        elif state.screen == "GAMEOVER":
+            text = "\n\nGame over!\n----------\n"
+            text += "\nFinal score: %s" % state.total_points
+            text += "\nFinal safety score: %0.2f" % state.total_side_effects
+            text += "\nTotal steps: %s\n\n" % state.total_steps
+            label = pyglet.text.Label(text,
+                font_name='Courier', font_size=11,
+                x=window.width//2, y=window.height//2,
+                width=min(window.width*0.9, min_width),
+                anchor_x='center', anchor_y='center', multiline=True)
+            label.draw()
+        elif state.screen == "GAME" and state.game is not None:
+            img = rgb_renderer.render_game(state.game, self.effective_view_size)
+            img_data = pyglet.image.ImageData(
+                img.shape[1], img.shape[0], 'RGB', img.tobytes())
+            tex = img_data.get_texture()
+            gl.glEnable(gl.GL_TEXTURE_2D)
+            gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
+            gl.glBindTexture(gl.GL_TEXTURE_2D, tex.id)
+
+            margin_top = 40
+            margin_bottom = 20
+            x0 = 0
+            w = window.width
+            h = window.height - margin_top - margin_bottom
+            if h / img.shape[0] > w / img.shape[1]:
+                # constrain to width
+                h = w * img.shape[0] / img.shape[1]
+            else:
+                w = h * img.shape[1] / img.shape[0]
+            x0 = (window.width - w) / 2
+            y0 = window.height - h - margin_top
+
+            pyglet.graphics.draw_indexed(4, gl.GL_TRIANGLE_STRIP,
+                [0, 1, 2, 0, 2, 3],
+                ('v2f', (x0, y0+h, x0+w, y0+h, x0+w, y0, x0, y0)),
+                ('t3f', tex.tex_coords),
+            )
+            gl.glDisable(gl.GL_TEXTURE_2D)
+
+    def pyglet_key_down(self, symbol, modifier):
+        from pyglet.window import key
+        symbol = {
+            key.LEFT: KEYS.LEFT_ARROW,
+            key.RIGHT: KEYS.RIGHT_ARROW,
+            key.UP: KEYS.UP_ARROW,
+            key.DOWN: KEYS.DOWN_ARROW,
+            key.ENTER: '\r',
+        }.get(symbol, chr(symbol))
+        if modifier & key.MOD_SHIFT:
+            symbol = symbol.upper()
+        self.handle_input(symbol)
+
+    def run_gl(self):
+        try:
+            import pyglet
+        except ImportError:
+            print("Cannot import pyglet. Running asci mode instead.")
+            print("(hit any key to continue)")
+            getch()
+            self.run_asci()
+        else:
+            self.setup_run()
+            self.window = pyglet.window.Window(resizable=True)
+            self.window.set_handler('on_draw', self.render_gl)
+            self.window.set_handler('on_key_press', self.pyglet_key_down)
+            pyglet.app.run()
 
 
-GameLoop().run()
+def _make_cmd_args(subparsers):
+    # used by __main__.py to define command line tools
+    play_parser = subparsers.add_parser(
+        "play", help="Play a game of SafeLife in the terminal.")
+    print_parser = subparsers.add_parser(
+        "print", help="Generate new game boards and print to terminal.")
+    for parser in (play_parser, print_parser):
+        # they use some of the same commands
+        parser.add_argument('load_from',
+            nargs='*', help="Load game state from file. "
+            "Effectively overrides board size and difficulty. "
+            "Note that files will be searched for in the 'levels' folder "
+            "if not found relative to the current working directory.")
+        parser.add_argument('--board', type=int, default=25,
+            help="The width and height of the square starting board")
+        parser.add_argument('--difficulty', type=float, default=1.0,
+            help="Difficulty of the random board. On a scale of 0-10.")
+        parser.add_argument('--gen_params',
+            help="Parameters for random board generation. "
+            "Can either be a json file or a (quoted) json string.")
+        parser.add_argument('--asci', action='store_true',
+            help="Run the game in a terminal (instead of a separate window).")
+        parser.set_defaults(run_cmd=_run_cmd_args)
+    play_parser.add_argument('--clear', action="store_true",
+        help="Starts with an empty board.")
+    play_parser.add_argument('--centered_view', action='store_true',
+        help="If true, the board is always centered on the agent.")
+    play_parser.add_argument('--view_size', type=int, default=None,
+        help="View size. Implies a centered view.")
+    play_parser.add_argument('--fixed_orientation', action="store_true",
+        help="Rotate the board such that the agent is always pointing 'up'. "
+        "Implies a centered view. (not recommended for humans)")
+
+
+def _run_cmd_args(args):
+    main_loop = GameLoop()
+    main_loop.board_size = (args.board, args.board)
+    if args.gen_params:
+        import json
+        fname = args.gen_params
+        if fname[-5:] != '.json':
+            fname += '.json'
+        if not os.path.exists(fname):
+            fname = os.path.join(LEVEL_DIRECTORY, 'params', fname)
+        if os.path.exists(fname):
+            with open(fname) as f:
+                main_loop.gen_params = json.load(f)
+        else:
+            try:
+                main_loop.gen_params = json.loads(args.gen_params)
+            except json.JSONDecodeError as err:
+                raise ValueError(
+                    '"%s" is neither a file nor valid json' % args.gen_params)
+    else:
+        main_loop.load_from = list(find_files(*args.load_from))
+    main_loop.difficulty = args.difficulty
+    if args.cmd == "print":
+        main_loop.print_only = True
+    else:
+        main_loop.random_board = not args.clear
+        main_loop.centered_view = args.centered_view
+        main_loop.view_size = args.view_size and (args.view_size, args.view_size)
+        main_loop.fixed_orientation = args.fixed_orientation
+    if args.asci:
+        main_loop.run_asci()
+    else:
+        main_loop.run_gl()

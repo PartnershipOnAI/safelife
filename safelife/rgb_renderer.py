@@ -3,6 +3,7 @@ import imageio
 import numpy as np
 
 from .game_physics import CellTypes, GameState
+from .helper_utils import recenter_view
 
 
 sprite_sheet = imageio.imread(os.path.abspath(
@@ -77,19 +78,41 @@ render_cell = np.vectorize(
     render_cell, signature="(),(),()->({s},{s},3)".format(s=SPRITE_SIZE))
 
 
-def render_board(board, goals=0, orientation=0):
+def render_board(board, goals=0, orientation=0, edit_loc=None):
     """
     Just render the board itself. Doesn't require game state.
     """
     data = render_cell(board, goals, orientation)
+    if edit_loc is not None:
+        # should do some error checking to make sure this is in range
+        edit_cell = data[edit_loc[1], edit_loc[0]]
+        red = [255,0,0]
+        edit_cell[0] = red
+        edit_cell[-1] = red
+        edit_cell[:,0] = red
+        edit_cell[:,-1] = red
     data = np.moveaxis(data, -4, -3)
     s = data.shape
     data = data.reshape(s[:-5] + (s[-5]*s[-4], s[-3]*s[-2], s[-1]))
     return data
 
 
-def render_game(game):
-    return render_board(game.board, game.goals, game.orientation)
+def render_game(game, view_size=None):
+    if view_size is not None:
+        if game.is_editing:
+            center = game.edit_loc
+            edit_loc = view_size[1] // 2, view_size[0] // 2
+        else:
+            center = game.agent_loc
+            edit_loc = None
+        center = game.edit_loc if game.is_editing else game.agent_loc
+        board = recenter_view(game.board, view_size, center[::-1], game.exit_locs)
+        goals = recenter_view(game.goals, view_size, center[::-1])
+    else:
+        board = game.board
+        goals = game.goals
+        edit_loc = game.edit_loc if game.is_editing else None
+    return render_board(board, goals, game.orientation, edit_loc)
 
 
 def render_file(fname, duration=0.03):
