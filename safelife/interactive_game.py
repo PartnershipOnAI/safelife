@@ -192,7 +192,7 @@ class GameLoop(object):
         state.message = ""
         state.last_command = ""
         if key == KEYS.INTERRUPT:
-            state.screen = None
+            exit()
         elif self.print_only:
             # Hit any key to get to the next level
             try:
@@ -323,7 +323,69 @@ class GameLoop(object):
         else:
             return None
 
-    def render_asci(self):
+    def above_game_message(self, styled=True):
+        state = self.state
+        game = state.game
+        styles = {
+            'bold': '\x1b[1m',
+            'italics': '\x1b[3m',
+            'clear': '\x1b[0m',
+        } if styled else {
+            'bold': '',
+            'italics': '',
+            'clear': '',
+        }
+        if game is None:
+            return " "
+        if game.title:
+            output = "{bold}{}{clear}".format(game.title, **styles)
+        else:
+            output = "{bold}Board #{}{clear}".format(state.level_num, **styles)
+        if self.print_only:
+            output += "\n"
+        else:
+            output += "\nScore: {bold}{}{clear}".format(state.total_points, **styles)
+            output += "\nSteps: {bold}{}{clear}".format(state.total_steps, **styles)
+            output += "\nCompleted: {} / {}".format(*game.completion_ratio(), **styles)
+            output += "\nPowers: {italics}{}{clear}".format(asci_renderer.agent_powers(game), **styles)
+            if state.editing:
+                output += "\n{bold}*** EDIT MODE ***{clear}".format(**styles)
+            if state.recording:
+                output += "\n{bold}*** RECORDING ***{clear}".format(**styles)
+        return output
+
+    def below_game_message(self):
+        if self.state.message:
+            return self.state.message + '\n'
+        elif self.state.last_command:
+            return 'Action: ' + self.state.last_command + '\n'
+        else:
+            return '\n'
+
+    def gameover_message(self):
+        state = self.state
+        output = "Game over!\n----------"
+        output += "\n\nFinal score: %s" % state.total_points
+        output += "\nFinal safety score: %0.2f" % state.total_side_effects
+        output += "\nTotal steps: %s\n\n" % state.total_steps
+        return output
+
+    def level_summary_message(self, full_names=False):
+        output = "Side effect scores (lower is better):\n\n"
+        subtotal = sum(self.state.side_effects.values())
+        fmt = "    {name:12s} {val:6.2f}\n"
+        for ctype, score in self.state.side_effects.items():
+            if full_names:
+                name = asci_renderer.cell_name(ctype)
+            else:
+                name = asci_renderer.render_cell(ctype)
+            output += fmt.format(name=name+':', val=score)
+        output += "    " + "-"*19 + '\n'
+        output += fmt.format(name="Total:", val=subtotal)
+        output += "\n\n(hit any key to continue)"
+        return output
+
+    def render_ascii(self):
         if not self.print_only:
             output = "\x1b[H\x1b[J"
         else:
@@ -336,41 +398,16 @@ class GameLoop(object):
         elif state.screen == "GAME" and state.game is not None:
             game = state.game
             game.update_exit_colors()
-            if game.title:
-                output += "\x1b[1m%s\x1b[0m\n" % game.title
-            else:
-                output += "\x1b[1mBoard #%i\x1b[0m\n" % state.level_num
-            if self.print_only:
-                output += "\n"
-            else:
-                output += "Score: \x1b[1m%i\x1b[0m\n" % state.total_points
-                output += "Steps: \x1b[1m%i\x1b[0m\n" % state.total_steps
-                output += "Completed: %s / %s\n" % game.completion_ratio()
-                output += "Powers: \x1b[3m%s\x1b[0m\n" % asci_renderer.agent_powers(game)
-                if state.editing:
-                    output += "\x1b[1m*** EDIT MODE ***\x1b[0m\n"
-                if state.recording:
-                    output += "\x1b[1m*** RECORDING ***\x1b[0m\n"
+            output += self.above_game_message(styled=True) + '\n'
             output += asci_renderer.render_board(game,
                 self.centered_view, self.view_size, self.fixed_orientation)
-            if self.print_only:
-                output += "\n"
-            else:
-                output += '\nAction: %s\n%s\n' % (state.last_command, state.message)
+            output += "\n"
+            if not self.print_only:
+                output += self.below_game_message()
         elif state.screen == "LEVEL SUMMARY" and state.side_effects is not None:
-            output += "Side effect scores (lower is better):\n"
-            subtotal = sum(state.side_effects.values())
-            for ctype, score in state.side_effects.items():
-                sprite = asci_renderer.render_cell(ctype)
-                output += "       %s: %6.2f\n" % (sprite, score)
-            output += "    -------------\n"
-            output += "    Total: %6.2f\n" % subtotal
-            output += "\n\n(hit any key to continue)"
+            output += self.level_summary_message()
         elif state.screen == "GAMEOVER":
-            output += "\n\nGame over!"
-            output += "\nFinal score: %s" % state.total_points
-            output += "Final safety score: %0.2f" % state.total_side_effects
-            output += "Total steps: %s\n\n" % state.total_steps
+            output += '\n\n' + self.gameover_message()
         sys.stdout.write(output)
         sys.stdout.flush()
 
@@ -383,13 +420,13 @@ class GameLoop(object):
                 self.state.screen = None
                 print("No game boards to print")
 
-    def run_asci(self):
+    def run_ascii(self):
         self.setup_run()
         os.system('clear')
-        self.render_asci()
+        self.render_ascii()
         while self.state.screen != "GAMEOVER":
             self.handle_input(getch())
-            self.render_asci()
+            self.render_ascii()
 
     def render_gl(self):
         import pyglet
@@ -398,54 +435,51 @@ class GameLoop(object):
         window = self.window
         min_width = 550  # not a brilliant way to handle text, but oh well.
 
-        window.clear()
-        if state.screen == "INTRO":
-            label = pyglet.text.Label(textwrap.dedent(self.intro_text[1:-1]),
+        def fullscreen_msg(msg):
+            pyglet.text.Label(msg,
                 font_name='Courier', font_size=11,
                 x=window.width//2, y=window.height//2,
                 width=min(window.width*0.9, min_width),
-                anchor_x='center', anchor_y='center', multiline=True)
-            label.draw()
-        elif state.screen == "HELP":
-            label = pyglet.text.Label(textwrap.dedent(self.help_text[1:-1]),
-                font_name='Courier', font_size=11,
-                x=window.width//2, y=window.height//2,
-                width=min(window.width*0.9, min_width),
-                anchor_x='center', anchor_y='center', multiline=True)
-            label.draw()
-        elif state.screen == "LEVEL SUMMARY" and state.side_effects is not None:
-            ... # TODO! display level summary info on the screen
-            output = "Side effect scores (lower is better):\n"
-            subtotal = sum(state.side_effects.values())
-            for ctype, score in state.side_effects.items():
-                sprite = asci_renderer.render_cell(ctype)
-                output += "       %s: %6.2f\n" % (sprite, score)
-            output += "    -------------\n"
-            output += "    Total: %6.2f\n" % subtotal
-            output += "\n\n(hit any key to continue)"
-            print(output)
-        elif state.screen == "GAMEOVER":
-            text = "\n\nGame over!\n----------\n"
-            text += "\nFinal score: %s" % state.total_points
-            text += "\nFinal safety score: %0.2f" % state.total_side_effects
-            text += "\nTotal steps: %s\n\n" % state.total_steps
-            label = pyglet.text.Label(text,
-                font_name='Courier', font_size=11,
-                x=window.width//2, y=window.height//2,
-                width=min(window.width*0.9, min_width),
-                anchor_x='center', anchor_y='center', multiline=True)
-            label.draw()
-        elif state.screen == "GAME" and state.game is not None:
-            img = rgb_renderer.render_game(state.game, self.effective_view_size)
+                anchor_x='center', anchor_y='center', multiline=True).draw()
+
+        def render_img(img, x, y, w, h):
             img_data = pyglet.image.ImageData(
                 img.shape[1], img.shape[0], 'RGB', img.tobytes())
             tex = img_data.get_texture()
             gl.glEnable(gl.GL_TEXTURE_2D)
             gl.glTexParameteri(gl.GL_TEXTURE_2D, gl.GL_TEXTURE_MAG_FILTER, gl.GL_NEAREST)
             gl.glBindTexture(gl.GL_TEXTURE_2D, tex.id)
+            pyglet.graphics.draw_indexed(4, gl.GL_TRIANGLE_STRIP,
+                [0, 1, 2, 0, 2, 3],
+                ('v2f', (x, y+h, x+w, y+h, x+w, y, x, y)),
+                ('t3f', tex.tex_coords),
+            )
+            gl.glDisable(gl.GL_TEXTURE_2D)
 
-            margin_top = 40
-            margin_bottom = 20
+        window.clear()
+        if state.screen == "INTRO":
+            fullscreen_msg(textwrap.dedent(self.intro_text[1:-1]))
+        elif state.screen == "HELP":
+            fullscreen_msg(textwrap.dedent(self.help_text[1:-1]))
+        elif state.screen == "LEVEL SUMMARY" and state.side_effects is not None:
+            fullscreen_msg(self.level_summary_message(full_names=True))
+        elif state.screen == "GAMEOVER":
+            fullscreen_msg(self.gameover_message())
+        elif state.screen == "GAME" and state.game is not None:
+            top_label = pyglet.text.Label(self.above_game_message(styled=False),
+                font_name='Courier', font_size=11,
+                x=window.width*0.05, y=window.height-5, width=window.width*0.9,
+                anchor_x='left', anchor_y='top', multiline=True)
+            top_label.draw()
+            bottom_label = pyglet.text.Label(self.below_game_message(),
+                font_name='Courier', font_size=11,
+                x=window.width*0.05, y=5,
+                anchor_x='left', anchor_y='bottom')
+            bottom_label.draw()
+
+            img = rgb_renderer.render_game(state.game, self.effective_view_size)
+            margin_top = 10 + top_label.content_height
+            margin_bottom = 10 + bottom_label.content_height
             x0 = 0
             w = window.width
             h = window.height - margin_top - margin_bottom
@@ -456,35 +490,36 @@ class GameLoop(object):
                 w = h * img.shape[1] / img.shape[0]
             x0 = (window.width - w) / 2
             y0 = window.height - h - margin_top
-
-            pyglet.graphics.draw_indexed(4, gl.GL_TRIANGLE_STRIP,
-                [0, 1, 2, 0, 2, 3],
-                ('v2f', (x0, y0+h, x0+w, y0+h, x0+w, y0, x0, y0)),
-                ('t3f', tex.tex_coords),
-            )
-            gl.glDisable(gl.GL_TEXTURE_2D)
+            render_img(img, x0, y0, w, h)
 
     def pyglet_key_down(self, symbol, modifier):
         from pyglet.window import key
-        symbol = {
+        is_ascii = 32 <= symbol < 255
+        char = {
             key.LEFT: KEYS.LEFT_ARROW,
             key.RIGHT: KEYS.RIGHT_ARROW,
             key.UP: KEYS.UP_ARROW,
             key.DOWN: KEYS.DOWN_ARROW,
             key.ENTER: '\r',
-        }.get(symbol, chr(symbol))
+            key.RETURN: '\r',
+            key.BACKSPACE: chr(127),
+        }.get(symbol, chr(symbol) if is_ascii else None)
+        if not char:
+            # All other characters don't count as a key press
+            # (e.g., function keys, modifier keys, etc.)
+            return
         if modifier & key.MOD_SHIFT:
-            symbol = symbol.upper()
-        self.handle_input(symbol)
+            char = char.upper()
+        self.handle_input(char)
 
     def run_gl(self):
         try:
             import pyglet
         except ImportError:
-            print("Cannot import pyglet. Running asci mode instead.")
+            print("Cannot import pyglet. Running ascii mode instead.")
             print("(hit any key to continue)")
             getch()
-            self.run_asci()
+            self.run_ascii()
         else:
             self.setup_run()
             self.window = pyglet.window.Window(resizable=True)
@@ -513,7 +548,7 @@ def _make_cmd_args(subparsers):
         parser.add_argument('--gen_params',
             help="Parameters for random board generation. "
             "Can either be a json file or a (quoted) json string.")
-        parser.add_argument('--asci', action='store_true',
+        parser.add_argument('--ascii', action='store_true',
             help="Run the game in a terminal (instead of a separate window).")
         parser.set_defaults(run_cmd=_run_cmd_args)
     play_parser.add_argument('--clear', action="store_true",
@@ -556,7 +591,7 @@ def _run_cmd_args(args):
         main_loop.centered_view = args.centered_view
         main_loop.view_size = args.view_size and (args.view_size, args.view_size)
         main_loop.fixed_orientation = args.fixed_orientation
-    if args.asci:
-        main_loop.run_asci()
+    if args.ascii:
+        main_loop.run_ascii()
     else:
         main_loop.run_gl()
