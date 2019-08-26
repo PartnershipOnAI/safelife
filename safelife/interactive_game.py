@@ -476,6 +476,7 @@ class GameLoop(object):
                 anchor_x='left', anchor_y='bottom')
             bottom_label.draw()
 
+            state.game.update_exit_colors()
             img = rgb_renderer.render_game(state.game, self.effective_view_size)
             margin_top = 10 + top_label.content_height
             margin_bottom = 10 + bottom_label.content_height
