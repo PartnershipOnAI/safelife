@@ -430,25 +430,6 @@ class GameState(object):
             board[y0, x0] |= player_color
         elif command.startswith("TOGGLE ") and command[7:] in toggles:
             board[y0, x0] ^= toggles[command[7:]]
-        elif command == "SAVE AS" or command == "SAVE" and not self.file_name:
-            save_name = input('\rsave as: \x1b[J')
-            if save_name:
-                try:
-                    self.save(save_name)
-                    return "Saved successfully."
-                except FileNotFoundError as err:
-                    return "No such file or directory: '%s'" % (err.filename,)
-            else:
-                return "Save aborted."
-        elif command == 'SAVE':
-            from .keyboard_input import getch
-            print("\rsave as '" + self.file_name + "'? (y/n)\x1b[J ", end='')
-            confirm = getch()
-            if confirm in ('y', 'Y'):
-                self.save(self.file_name)
-                return "Saved successfully."
-            else:
-                return "Save aborted."
         elif command == "REVERT":
             if not self.revert():
                 return "No saved state; cannot revert."

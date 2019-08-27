@@ -228,15 +228,43 @@ class GameLoop(object):
                 state.game.is_editing = state.editing
         elif key == START_SHELL:
             from IPython import embed; embed()  # noqa
+        elif state.screen == "CONFIRM_SAVE":
+            if key in ('y', 'Y'):
+                state.game.save(state.game.file_name)
+                state.message = "Saved successfully."
+            else:
+                state.message = "Save aborted."
+            state.screen = "GAME"
         elif state.screen == "GAME":
             game = state.game
             game.is_editing = state.editing
-
             if state.editing and key in EDIT_KEYS:
                 # Execute action immediately.
                 command = EDIT_KEYS[key]
                 state.last_command = command
-                state.message = game.execute_edit(command) or ""
+                if command.startswith("SAVE"):
+                    if command == "SAVE" and game.file_name:
+                        state.screen = "CONFIRM_SAVE"
+                        short_name = os.path.split(game.file_name)[1]
+                        state.message = "Save level as '%s'? (y/n)" % short_name
+                    else:
+                        # User will have to go to the terminal, but oh well.
+                        # Not worth the effort to manage text input.
+                        # Prevent repeat key events.
+                        self.last_key_down = self.last_key_modifier = None
+                        print("\nCurrently file is: ", game.file_name)
+                        save_name = input("Save as: ")
+                        if save_name:
+                            try:
+                                game.save(save_name)
+                                state.message = "Saved successfully."
+                            except FileNotFoundError as err:
+                                state.message = "No such file or directory: '%s'" % (err.filename,)
+                        else:
+                            state.message = "Save aborted."
+                        print(state.message)
+                else:
+                    state.message = game.execute_edit(command) or ""
             elif not state.editing and key in COMMAND_KEYS:
                 command = COMMAND_KEYS[key]
                 state.last_command = command
@@ -306,7 +334,7 @@ class GameLoop(object):
     e:  exit                     g:  change goal color
     i:  icecube                  G:  change goal color (full range)
     t:  plant                    s:  save
-    T:  tree                     S:  save as
+    T:  tree                     S:  save as (in terminal)
     p:  predator                 R:  revert level
     f:  fountain                 Q:  abort level
     n:  spawner
@@ -399,7 +427,7 @@ class GameLoop(object):
             output += self.intro_text
         elif state.screen == "HELP":
             output += self.help_text
-        elif state.screen == "GAME" and state.game is not None:
+        elif state.screen in ("GAME", "CONFIRM_SAVE") and state.game is not None:
             game = state.game
             game.update_exit_colors()
             output += self.above_game_message(styled=True) + '\n'
@@ -433,6 +461,10 @@ class GameLoop(object):
             self.render_ascii()
 
     def render_gl(self):
+        # Note that this routine is pretty inefficient. It only gets around
+        # 15 frames per sec for a 25x25 board. Since there's no animation
+        # that'll hopefully be adequate, although it might feel a little
+        # slugish.
         import pyglet
         import pyglet.gl as gl
         state = self.state
@@ -473,7 +505,7 @@ class GameLoop(object):
             fullscreen_msg(self.level_summary_message(full_names=True))
         elif state.screen == "GAMEOVER":
             fullscreen_msg(self.gameover_message())
-        elif state.screen == "GAME" and state.game is not None:
+        elif state.screen in ("GAME", "CONFIRM_SAVE") and state.game is not None:
             top_label = pyglet.text.Label(self.above_game_message(styled=False),
                 font_name='Courier', font_size=11,
                 x=window.width*0.05, y=window.height-5, width=window.width*0.9,
@@ -481,8 +513,8 @@ class GameLoop(object):
             top_label.draw()
             bottom_label = pyglet.text.Label(self.below_game_message(),
                 font_name='Courier', font_size=11,
-                x=window.width*0.05, y=5,
-                anchor_x='left', anchor_y='bottom')
+                x=window.width*0.05, y=5, width=window.width*0.9,
+                anchor_x='left', anchor_y='bottom', multiline=True)
             bottom_label.draw()
 
             state.game.update_exit_colors()
@@ -507,7 +539,7 @@ class GameLoop(object):
         self.last_key_modifier = modifier
         self.next_key_repeat = time.time() + repeat_in
         self.state.event_num += 1
-        is_ascii = 32 <= symbol < 255
+        is_ascii = 27 <= symbol < 255
         char = {
             key.LEFT: KEYS.LEFT_ARROW,
             key.RIGHT: KEYS.RIGHT_ARROW,
