@@ -2,6 +2,7 @@ import os
 import sys
 import glob
 import textwrap
+import time
 from types import SimpleNamespace
 import numpy as np
 
@@ -246,8 +247,8 @@ class GameLoop(object):
                     # All other commands take one action
                     state.total_steps += 1
                     start_pts = game.current_points()
-                    game.advance_board()
                     action_pts = game.execute_action(command)
+                    game.advance_board()
                     end_pts = game.current_points()
                     state.total_points += (end_pts - start_pts) + action_pts
                     self.record_frame()
@@ -376,9 +377,13 @@ class GameLoop(object):
         for ctype, score in self.state.side_effects.items():
             if full_names:
                 name = ascii_renderer.cell_name(ctype)
+                output += fmt.format(name=name+':', val=score)
             else:
                 name = ascii_renderer.render_cell(ctype)
-            output += fmt.format(name=name+':', val=score)
+                # Formatted padding doesn't really work since we use
+                # extra escape characters. Use replace instead.
+                line = fmt.format(name='zz:', val=score)
+                output += line.replace('zz', str(name))
         output += "    " + "-"*19 + '\n'
         output += fmt.format(name="Total:", val=subtotal)
         output += "\n\n(hit any key to continue)"
@@ -433,6 +438,10 @@ class GameLoop(object):
         state = self.state
         window = self.window
         min_width = 550  # not a brilliant way to handle text, but oh well.
+
+        if self.needs_display < 1:
+            return
+        self.needs_display -= 1
 
         def fullscreen_msg(msg):
             pyglet.text.Label(msg,
@@ -492,9 +501,11 @@ class GameLoop(object):
             y0 = window.height - h - margin_top
             render_img(img, x0, y0, w, h)
 
-    def pyglet_key_down(self, symbol, modifier, repeat=0.5):
-        import pyglet
+    def pyglet_key_down(self, symbol, modifier, repeat_in=0.3):
         from pyglet.window import key
+        self.last_key_down = symbol
+        self.last_key_modifier = modifier
+        self.next_key_repeat = time.time() + repeat_in
         self.state.event_num += 1
         is_ascii = 32 <= symbol < 255
         char = {
@@ -512,20 +523,27 @@ class GameLoop(object):
             return
         if modifier & key.MOD_SHIFT:
             char = char.upper()
+        self.set_needs_display()
         self.handle_input(char)
-        pyglet.clock.schedule_once(self.handle_key_repeat, repeat,
-            symbol, modifier, self.state.event_num)
 
-    def handle_key_repeat(self, dt, symbol, modifier, event_num):
+    def handle_key_repeat(self, dt):
         from pyglet.window import key
-        if event_num != self.state.event_num:
+        if time.time() < self.next_key_repeat:
             return
-        if not self.key_handler[symbol]:
+        symbol, modifier = self.last_key_down, self.last_key_modifier
+        self.last_key_down = self.last_key_modifier = None
+        if not self.keyboard[symbol]:
             return
-        has_shift = self.key_handler[key.LSHIFT] or self.key_handler[key.RSHIFT]
+        has_shift = self.keyboard[key.LSHIFT] or self.keyboard[key.RSHIFT]
         if bool(modifier & key.MOD_SHIFT) != has_shift:
             return
-        self.pyglet_key_down(symbol, modifier, repeat=0.1)
+        self.pyglet_key_down(symbol, modifier, repeat_in=0.045)
+
+    def set_needs_display(self, *args, **kw):
+        # Since we're double-buffered, we need to display at least twice in
+        # a row whenever there's an update. This gets decremented once in
+        # each call to render_gl().
+        self.needs_display = 2
 
     def run_gl(self):
         try:
@@ -537,11 +555,17 @@ class GameLoop(object):
             self.run_ascii()
         else:
             self.setup_run()
+            self.last_key_down = None
+            self.last_key_modifier = None
+            self.next_key_repeat = 0
             self.window = pyglet.window.Window(resizable=True)
             self.window.set_handler('on_draw', self.render_gl)
             self.window.set_handler('on_key_press', self.pyglet_key_down)
-            self.key_handler = pyglet.window.key.KeyStateHandler()
-            self.window.push_handlers(self.key_handler)
+            self.window.set_handler('on_resize', self.set_needs_display)
+            self.window.set_handler('on_show', self.set_needs_display)
+            self.keyboard = pyglet.window.key.KeyStateHandler()
+            self.window.push_handlers(self.keyboard)
+            pyglet.clock.schedule_interval(self.handle_key_repeat, 0.02)
             self.state.event_num = 0
             pyglet.app.run()
 
