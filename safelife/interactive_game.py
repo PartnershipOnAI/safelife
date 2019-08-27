@@ -227,6 +227,7 @@ class GameLoop(object):
             if state.game is not None:
                 state.game.is_editing = state.editing
         elif key == START_SHELL:
+            self.last_key_down = self.last_key_modifier = None
             from IPython import embed; embed()  # noqa
         elif state.screen == "CONFIRM_SAVE":
             if key in ('y', 'Y'):
@@ -461,10 +462,9 @@ class GameLoop(object):
             self.render_ascii()
 
     def render_gl(self):
-        # Note that this routine is pretty inefficient. It only gets around
-        # 15 frames per sec for a 25x25 board. Since there's no animation
-        # that'll hopefully be adequate, although it might feel a little
-        # slugish.
+        # Note that this routine is pretty inefficient. It should be fine
+        # for moderately large (25x25) boards, but it'll get sluggish for
+        # anything really big.
         import pyglet
         import pyglet.gl as gl
         state = self.state

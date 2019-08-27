@@ -42,23 +42,42 @@ foreground_colors = {
     CellTypes.empty: np.array([0.4, 0.4, 0.4]),
     CellTypes.color_r: np.array([0.8, 0.2, 0.2]),
     CellTypes.color_g: np.array([0.2, 0.8, 0.2]),
+    CellTypes.color_g | CellTypes.color_r: np.array([0.8, 0.8, 0.2]),
     CellTypes.color_b: np.array([0.2, 0.2, 0.8]),
-    CellTypes.color_r | CellTypes.color_g: np.array([0.8, 0.8, 0.2]),
-    CellTypes.color_g | CellTypes.color_b: np.array([0.2, 0.8, 0.8]),
     CellTypes.color_b | CellTypes.color_r: np.array([0.8, 0.2, 0.8]),
+    CellTypes.color_b | CellTypes.color_g: np.array([0.2, 0.8, 0.8]),
     CellTypes.rainbow_color: np.array([1.0, 1.0, 1.0])
 }
 
 background_colors = {
     CellTypes.empty: np.array([0.6, 0.6, 0.6]),
     CellTypes.color_r: np.array([0.9, 0.6, 0.6]),
+    CellTypes.color_g | CellTypes.color_r: np.array([0.9, 0.9, 0.6]),
     CellTypes.color_g: np.array([0.6, 0.9, 0.6]),
     CellTypes.color_b: np.array([0.5, 0.5, 0.9]),
-    CellTypes.color_r | CellTypes.color_g: np.array([0.9, 0.9, 0.6]),
-    CellTypes.color_g | CellTypes.color_b: np.array([0.6, 0.9, 0.9]),
     CellTypes.color_b | CellTypes.color_r: np.array([0.9, 0.6, 0.9]),
+    CellTypes.color_b | CellTypes.color_g: np.array([0.6, 0.9, 0.9]),
     CellTypes.rainbow_color: np.array([0.9, 0.9, 0.9])
 }
+
+fg_array = np.array(list(foreground_colors.values()))
+bg_array = np.array(list(background_colors.values()))
+cell_array = np.array([
+    [CellTypes.empty, (5*0 + 0) + 1],
+    [CellTypes.life, (5*1 + 0) + 1],
+    [CellTypes.alive, (5*1 + 1) + 1],
+    [CellTypes.wall, (5*2 + 2) + 1],
+    [CellTypes.crate, (5*2 + 3) + 1],
+    [CellTypes.plant, (5*1 + 3) + 1],
+    [CellTypes.tree, (5*1 + 4) + 1],
+    [CellTypes.ice_cube, (5*2 + 0) + 1],
+    [CellTypes.predator, (5*2 + 4) + 1],
+    [CellTypes.weed, (5*1 + 2) + 1],
+    [CellTypes.spawner, (5*3 + 0) + 1],
+    [CellTypes.level_exit, (5*3 + 1) + 1],
+    [CellTypes.fountain, (5*2 + 1) + 1],
+])
+sprites_array = np.array([load_sprite(n // 5, n % 5) for n in range(20)])
 
 
 def render_cell(cell, goal=0, orientation=0):
@@ -78,11 +97,19 @@ render_cell = np.vectorize(
     render_cell, signature="(),(),()->({s},{s},3)".format(s=SPRITE_SIZE))
 
 
-def render_board(board, goals=0, orientation=0, edit_loc=None):
-    """
-    Just render the board itself. Doesn't require game state.
-    """
-    data = render_cell(board, goals, orientation)
+def render_board(board, goals, orientation, edit_loc=None):
+    agent_idx = ((board & CellTypes.agent) > 0) * (2 + orientation)
+    sprite_idx = -1 + np.sum(
+        ((board[...,None] & ~CellTypes.rainbow_color) == cell_array[:,0])
+        * cell_array[:,1], axis=-1)
+    sprite_idx += agent_idx
+    fg_color = fg_array[(board & CellTypes.rainbow_color) >> 9]
+    bg_color = bg_array[(goals & CellTypes.rainbow_color) >> 9]
+    sprites = sprites_array[sprite_idx]
+    mask, sprite = sprites[...,3:], sprites[...,:3]
+    tile = (1-mask) * bg_color[...,None,None,:]
+    tile += mask * sprite * fg_color[...,None,None,:]
+    data = (255 * tile).astype(np.uint8)
     if edit_loc is not None:
         # should do some error checking to make sure this is in range
         edit_cell = data[edit_loc[1], edit_loc[0]]
