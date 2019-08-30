@@ -226,9 +226,12 @@ class GameLoop(object):
                 state.edit_mode = "GOALS"
             else:
                 state.edit_mode = None
-        elif key == START_SHELL:
+        elif key == START_SHELL and state.edit_mode:
+            # Avoid repeat keys
             self.last_key_down = self.last_key_modifier = None
-            from IPython import embed; embed()  # noqa
+            # Handle the shell command later on in the event loop
+            # after we've had a chance to display something on the screen.
+            state.last_command = "SHELL"
         elif state.screen == "CONFIRM_SAVE":
             if key in ('y', 'Y'):
                 state.game.save(state.game.file_name)
@@ -252,19 +255,8 @@ class GameLoop(object):
                     else:
                         # User will have to go to the terminal, but oh well.
                         # Not worth the effort to manage text input.
-                        # Prevent repeat key events.
                         self.last_key_down = self.last_key_modifier = None
-                        print("\nCurrently file is: ", game.file_name)
-                        save_name = input("Save as: ")
-                        if save_name:
-                            try:
-                                game.save(save_name)
-                                state.message = "Saved successfully."
-                            except FileNotFoundError as err:
-                                state.message = "No such file or directory: '%s'" % (err.filename,)
-                        else:
-                            state.message = "Save aborted."
-                        print(state.message)
+                        state.last_command = "SAVE AS"
                 else:
                     state.message = game.execute_edit(command) or ""
             elif not state.edit_mode and key in COMMAND_KEYS:
@@ -303,6 +295,32 @@ class GameLoop(object):
                 subtotal = sum(state.side_effects.values())
                 state.total_side_effects += subtotal
 
+    def handle_save_as(self):
+        state = self.state
+        game = state.game
+        state.last_command = ""
+        if game is None:
+            return
+        print("\nCurrently file is: ", game.file_name)
+        save_name = input("Save as: ")
+        if save_name:
+            try:
+                game.save(save_name)
+                state.message = "Saved successfully."
+            except FileNotFoundError as err:
+                state.message = "No such file or directory: '%s'" % (err.filename,)
+        else:
+            state.message = "Save aborted."
+        print(state.message)
+        self.set_needs_display()
+
+    def handle_shell(self):
+        state = self.state
+        game = state.game  # noqa, just tee up local variables for the shell
+        state.last_command = ""
+        from IPython import embed; embed()  # noqa
+        self.set_needs_display()
+
     intro_text = """
     ##########################################################
     ##                       SafeLife                       ##
@@ -323,23 +341,22 @@ class GameLoop(object):
 
     `:  toggle edit mode
     *:  start / stop recording
-    \:  enter shell
 
     Edit mode
     ---------
-    x:  empty                    1:  toggle alive
-    a:  agent                    2:  toggle preserving
-    c:  life                     3:  toggle inhibiting
-    C:  hard life                4:  toggle spawning
-    w:  wall                     5:  change edit color
-    r:  crate                    %:  change edit color (full range)
-    e:  exit                     s:  save
-    i:  icecube                  S:  save as (in terminal)
-    t:  plant                    R:  revert level
-    T:  tree                     Q:  abort level
-    p:  predator
-    f:  fountain
-    n:  spawner
+    x:  clear cell               1:  toggle alive
+    a:  move agent               2:  toggle preserving
+    c:  add life                 3:  toggle inhibiting
+    C:  add hard life            4:  toggle spawning
+    w:  add wall                 5:  change edit color
+    r:  add crate                %:  change edit color (full range)
+    e:  add exit                 s:  save
+    i:  add icecube              S:  save as (in terminal)
+    t:  add plant                R:  revert level
+    T:  add tree                 Q:  abort level
+    p:  add predator             \:  enter shell
+    f:  add fountain
+    n:  add spawner
     """
 
     @property
@@ -460,6 +477,10 @@ class GameLoop(object):
         self.render_ascii()
         while self.state.screen != "GAMEOVER":
             self.handle_input(getch())
+            if self.state.last_command == "SHELL":
+                self.handle_shell()
+            elif self.state.last_command == "SAVE AS":
+                self.handle_save_as()
             self.render_ascii()
 
     def render_gl(self):
@@ -496,6 +517,23 @@ class GameLoop(object):
                 ('t3f', tex.tex_coords),
             )
             gl.glDisable(gl.GL_TEXTURE_2D)
+
+        def overlay_text(line1, line2):
+            l1 = pyglet.text.Label(line1,
+                font_name='Courier', font_size=18,
+                x=window.width / 2, y=window.height / 2,
+                anchor_x='center', anchor_y='bottom')
+            l2 = pyglet.text.Label(line2,
+                font_name='Courier', font_size=11,
+                x=window.width / 2, y=window.height / 2 - 4,
+                anchor_x='center', anchor_y='top')
+            w = max(l1.content_width, l2.content_width) + 15
+            x1 = (window.width - w) / 2
+            y1 = window.height / 2 - 4 - l2.content_height - 5
+            y2 = window.height / 2 + l1.content_height + 5
+            render_img(np.zeros((2,2,3), dtype=np.uint8), x1, y1, w, y2-y1)
+            l1.draw()
+            l2.draw()
 
         window.clear()
         if state.screen == "INTRO":
@@ -535,12 +573,16 @@ class GameLoop(object):
             y0 = window.height - h - margin_top
             render_img(img, x0, y0, w, h)
 
+        if state.last_command == "SAVE AS":
+            overlay_text("SAVE AS...", "(go to terminal)")
+        elif state.last_command == "SHELL":
+            overlay_text("START SHELL", "(go to terminal)")
+
     def pyglet_key_down(self, symbol, modifier, repeat_in=0.3):
         from pyglet.window import key
         self.last_key_down = symbol
         self.last_key_modifier = modifier
         self.next_key_repeat = time.time() + repeat_in
-        self.state.event_num += 1
         is_ascii = 27 <= symbol < 255
         char = {
             key.LEFT: KEYS.LEFT_ARROW,
@@ -562,6 +604,10 @@ class GameLoop(object):
 
     def handle_key_repeat(self, dt):
         from pyglet.window import key
+        if self.state.last_command == "SHELL":
+            return self.handle_shell()
+        elif self.state.last_command == "SAVE AS":
+            return self.handle_save_as()
         if time.time() < self.next_key_repeat:
             return
         symbol, modifier = self.last_key_down, self.last_key_modifier
@@ -600,7 +646,6 @@ class GameLoop(object):
             self.keyboard = pyglet.window.key.KeyStateHandler()
             self.window.push_handlers(self.keyboard)
             pyglet.clock.schedule_interval(self.handle_key_repeat, 0.02)
-            self.state.event_num = 0
             pyglet.app.run()
 
 
