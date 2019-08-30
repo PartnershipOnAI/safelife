@@ -39,6 +39,7 @@ sprites = {
 }
 
 foreground_colors = {
+    # These should be ordered dicts for python < 3.6
     CellTypes.empty: np.array([0.4, 0.4, 0.4]),
     CellTypes.color_r: np.array([0.8, 0.2, 0.2]),
     CellTypes.color_g: np.array([0.2, 0.8, 0.2]),
@@ -52,8 +53,8 @@ foreground_colors = {
 background_colors = {
     CellTypes.empty: np.array([0.6, 0.6, 0.6]),
     CellTypes.color_r: np.array([0.9, 0.6, 0.6]),
-    CellTypes.color_g | CellTypes.color_r: np.array([0.9, 0.9, 0.6]),
     CellTypes.color_g: np.array([0.6, 0.9, 0.6]),
+    CellTypes.color_g | CellTypes.color_r: np.array([0.9, 0.9, 0.6]),
     CellTypes.color_b: np.array([0.5, 0.5, 0.9]),
     CellTypes.color_b | CellTypes.color_r: np.array([0.9, 0.6, 0.9]),
     CellTypes.color_b | CellTypes.color_g: np.array([0.6, 0.9, 0.9]),
@@ -63,7 +64,7 @@ background_colors = {
 fg_array = np.array(list(foreground_colors.values()))
 bg_array = np.array(list(background_colors.values()))
 cell_array = np.array([
-    [CellTypes.empty, (5*0 + 0) + 1],
+    # [CellTypes.empty, (5*0 + 0) + 1],
     [CellTypes.life, (5*1 + 0) + 1],
     [CellTypes.alive, (5*1 + 1) + 1],
     [CellTypes.wall, (5*2 + 2) + 1],
@@ -80,28 +81,15 @@ cell_array = np.array([
 sprites_array = np.array([load_sprite(n // 5, n % 5) for n in range(20)])
 
 
-def render_cell(cell, goal=0, orientation=0):
-    fg_color = foreground_colors[cell & CellTypes.rainbow_color]
-    bg_color = background_colors[goal & CellTypes.rainbow_color]
-    cell = cell & ~CellTypes.rainbow_color
-    if cell & CellTypes.agent:
-        sprite = sprites[CellTypes.agent][orientation]
-    else:
-        sprite = sprites.get(cell, sprites[0])
-    mask, sprite = sprite[:,:,3:], sprite[:,:,:3]
-    tile = (1-mask) * bg_color + mask * sprite * fg_color
-    return (255 * tile).astype(np.uint8)
+def render_board(board, goals, orientation, edit_loc=None, edit_color=0):
+    if edit_loc and (edit_loc[0] >= board.shape[0] or edit_loc[1] >= board.shape[1]):
+        edit_loc = None
 
-
-render_cell = np.vectorize(
-    render_cell, signature="(),(),()->({s},{s},3)".format(s=SPRITE_SIZE))
-
-
-def render_board(board, goals, orientation, edit_loc=None):
     agent_idx = ((board & CellTypes.agent) > 0) * (2 + orientation)
     sprite_idx = -1 + np.sum(
         ((board[...,None] & ~CellTypes.rainbow_color) == cell_array[:,0])
         * cell_array[:,1], axis=-1)
+    sprite_idx *= board > 0
     sprite_idx += agent_idx
     fg_color = fg_array[(board & CellTypes.rainbow_color) >> 9]
     bg_color = bg_array[(goals & CellTypes.rainbow_color) >> 9]
@@ -113,33 +101,54 @@ def render_board(board, goals, orientation, edit_loc=None):
     if edit_loc is not None:
         # should do some error checking to make sure this is in range
         edit_cell = data[edit_loc[1], edit_loc[0]]
-        red = [255,0,0]
-        edit_cell[0] = red
-        edit_cell[-1] = red
-        edit_cell[:,0] = red
-        edit_cell[:,-1] = red
+        edit_cell[[0,1,-1,-2]] = edit_color
+        edit_cell[:,[0,1,-1,-2]] = edit_color
     data = np.moveaxis(data, -4, -3)
     s = data.shape
     data = data.reshape(s[:-5] + (s[-5]*s[-4], s[-3]*s[-2], s[-1]))
     return data
 
 
-def render_game(game, view_size=None):
+def render_game(game, view_size=None, edit_mode=None):
+    """
+    Render the game as a numpy rgb array.
+
+    Parameters
+    ----------
+    game : SafeLife instance
+    view_size : (int, int) or None
+        Shape of the view port, or None if the full board should be rendered.
+        If not None, the view will be centered on either the agent or the
+        current edit location.
+    edit_mode : None, "BOARD", or "GOALS"
+        Determines whether or not the game should be drawn in edit mode with
+        the edit cursor. If "GOALS", the goals and normal board are swapped so
+        that the goals can be edited directly.
+
+    Returns
+    -------
+    numpy array
+        Has shape (view_size) + (3,).
+    """
     if view_size is not None:
-        if game.is_editing:
+        if edit_mode:
             center = game.edit_loc
             edit_loc = view_size[1] // 2, view_size[0] // 2
         else:
             center = game.agent_loc
             edit_loc = None
-        center = game.edit_loc if game.is_editing else game.agent_loc
+        center = game.edit_loc if edit_mode else game.agent_loc
         board = recenter_view(game.board, view_size, center[::-1], game.exit_locs)
         goals = recenter_view(game.goals, view_size, center[::-1])
     else:
         board = game.board
         goals = game.goals
-        edit_loc = game.edit_loc if game.is_editing else None
-    return render_board(board, goals, game.orientation, edit_loc)
+        edit_loc = game.edit_loc if edit_mode else None
+    edit_color = foreground_colors.get(game.edit_color, 0) * 255
+    if edit_mode == "GOALS":
+        # Render goals instead. Swap board and goals.
+        board, goals = goals, board
+    return render_board(board, goals, game.orientation, edit_loc, edit_color)
 
 
 def render_file(fname, duration=0.03):

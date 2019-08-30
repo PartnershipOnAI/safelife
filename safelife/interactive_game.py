@@ -53,8 +53,8 @@ EDIT_KEYS = {
     KEYS.DOWN_ARROW: "MOVE DOWN",
     'x': "PUT EMPTY",
     'a': "PUT AGENT",
-    'z': "PUT LIFE",
-    'Z': "PUT HARD LIFE",
+    'c': "PUT LIFE",
+    'C': "PUT HARD LIFE",
     'w': "PUT WALL",
     'r': "PUT CRATE",
     'e': "PUT EXIT",
@@ -70,9 +70,7 @@ EDIT_KEYS = {
     '3': "TOGGLE INHIBITING",
     '4': "TOGGLE SPAWNING",
     '5': "CHANGE COLOR",
-    'g': "CHANGE GOAL",
     '%': "CHANGE COLOR FULL CYCLE",
-    'G': "CHANGE GOAL FULL CYCLE",
     's': "SAVE",
     'S': "SAVE AS",
     'R': "REVERT",
@@ -96,7 +94,6 @@ class GameLoop(object):
     load_from = None
     view_size = None
     centered_view = False
-    fixed_orientation = False
     gen_params = None
     print_only = False
     recording_directory = "./plays/"
@@ -108,7 +105,7 @@ class GameLoop(object):
             total_points=0,
             total_steps=0,
             total_safety_score=0,
-            editing=False,
+            edit_mode=0,
             recording=False,
             recording_data=None,
             side_effects=None,
@@ -223,9 +220,12 @@ class GameLoop(object):
             state.recording = not state.recording
             self.record_frame()
         elif key == TOGGLE_EDIT:
-            state.editing = not state.editing
-            if state.game is not None:
-                state.game.is_editing = state.editing
+            if not state.edit_mode:
+                state.edit_mode = "BOARD"
+            elif state.edit_mode == "BOARD":
+                state.edit_mode = "GOALS"
+            else:
+                state.edit_mode = None
         elif key == START_SHELL:
             self.last_key_down = self.last_key_modifier = None
             from IPython import embed; embed()  # noqa
@@ -238,11 +238,12 @@ class GameLoop(object):
             state.screen = "GAME"
         elif state.screen == "GAME":
             game = state.game
-            game.is_editing = state.editing
-            if state.editing and key in EDIT_KEYS:
+            if state.edit_mode and key in EDIT_KEYS:
                 # Execute action immediately.
                 command = EDIT_KEYS[key]
                 state.last_command = command
+                if command.startswith("PUT") and state.edit_mode == "GOALS":
+                    command = "GOALS " + command
                 if command.startswith("SAVE"):
                     if command == "SAVE" and game.file_name:
                         state.screen = "CONFIRM_SAVE"
@@ -266,7 +267,7 @@ class GameLoop(object):
                         print(state.message)
                 else:
                     state.message = game.execute_edit(command) or ""
-            elif not state.editing and key in COMMAND_KEYS:
+            elif not state.edit_mode and key in COMMAND_KEYS:
                 command = COMMAND_KEYS[key]
                 state.last_command = command
                 if command.startswith("TURN "):
@@ -328,16 +329,16 @@ class GameLoop(object):
     ---------
     x:  empty                    1:  toggle alive
     a:  agent                    2:  toggle preserving
-    z:  life                     3:  toggle inhibiting
-    Z:  hard life                4:  toggle spawning
-    w:  wall                     5:  change agent color
-    r:  crate                    %:  change agent color (full range)
-    e:  exit                     g:  change goal color
-    i:  icecube                  G:  change goal color (full range)
-    t:  plant                    s:  save
-    T:  tree                     S:  save as (in terminal)
-    p:  predator                 R:  revert level
-    f:  fountain                 Q:  abort level
+    c:  life                     3:  toggle inhibiting
+    C:  hard life                4:  toggle spawning
+    w:  wall                     5:  change edit color
+    r:  crate                    %:  change edit color (full range)
+    e:  exit                     s:  save
+    i:  icecube                  S:  save as (in terminal)
+    t:  plant                    R:  revert level
+    T:  tree                     Q:  abort level
+    p:  predator
+    f:  fountain
     n:  spawner
     """
 
@@ -377,8 +378,8 @@ class GameLoop(object):
             output += "\nSteps: {bold}{}{clear}".format(state.total_steps, **styles)
             output += "\nCompleted: {} / {}".format(*game.completion_ratio(), **styles)
             output += "\nPowers: {italics}{}{clear}".format(ascii_renderer.agent_powers(game), **styles)
-            if state.editing:
-                output += "\n{bold}*** EDIT MODE ***{clear}".format(**styles)
+            if state.edit_mode:
+                output += "\n{bold}*** EDIT {} ***{clear}".format(state.edit_mode, **styles)
             if state.recording:
                 output += "\n{bold}*** RECORDING ***{clear}".format(**styles)
         return output
@@ -432,8 +433,8 @@ class GameLoop(object):
             game = state.game
             game.update_exit_colors()
             output += self.above_game_message(styled=True) + '\n'
-            output += ascii_renderer.render_board(game,
-                self.centered_view, self.view_size, self.fixed_orientation)
+            output += ascii_renderer.render_game(
+                state.game, self.effective_view_size, state.edit_mode)
             output += "\n"
             if not self.print_only:
                 output += self.below_game_message()
@@ -518,7 +519,8 @@ class GameLoop(object):
             bottom_label.draw()
 
             state.game.update_exit_colors()
-            img = rgb_renderer.render_game(state.game, self.effective_view_size)
+            img = rgb_renderer.render_game(
+                state.game, self.effective_view_size, state.edit_mode)
             margin_top = 10 + top_label.content_height
             margin_bottom = 10 + bottom_label.content_height
             x0 = 0
@@ -631,9 +633,6 @@ def _make_cmd_args(subparsers):
         help="If true, the board is always centered on the agent.")
     play_parser.add_argument('--view_size', type=int, default=None,
         help="View size. Implies a centered view.")
-    play_parser.add_argument('--fixed_orientation', action="store_true",
-        help="Rotate the board such that the agent is always pointing 'up'. "
-        "Implies a centered view. (not recommended for humans)")
 
 
 def _run_cmd_args(args):
@@ -664,7 +663,6 @@ def _run_cmd_args(args):
         main_loop.random_board = not args.clear
         main_loop.centered_view = args.centered_view
         main_loop.view_size = args.view_size and (args.view_size, args.view_size)
-        main_loop.fixed_orientation = args.fixed_orientation
     if args.ascii:
         main_loop.run_ascii()
     else:

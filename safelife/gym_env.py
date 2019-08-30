@@ -172,9 +172,9 @@ class SafeLifeEnv(gym.Env):
 
     def step(self, action):
         assert self.state is not None, "State not initialized."
-        self.state.advance_board()
         action_name = self.action_names[action]
         base_reward = self.state.execute_action(action_name)
+        self.state.advance_board()
         new_state_value = self.state.current_points()
         base_reward += new_state_value - self._old_state_value
         self._old_state_value = new_state_value
@@ -232,8 +232,8 @@ class SafeLifeEnv(gym.Env):
 
     def render(self, mode='ansi'):
         if mode == 'ansi':
-            from .ascii_renderer import render_board
-            return render_board(self.state, view_size=self.view_shape)
+            from .ascii_renderer import render_game
+            return render_game(self.state, view_size=self.view_shape)
         else:
             from .rgb_renderer import render_game
             return render_game(self.state)
