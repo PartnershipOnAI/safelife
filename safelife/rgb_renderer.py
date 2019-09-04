@@ -178,11 +178,27 @@ def render_mov(fname, steps, duration=0.03):
 
 def _make_cmd_args(subparsers):
     # used by __main__.py to define command line tools
+    from argparse import RawDescriptionHelpFormatter
+    import textwrap
     parser = subparsers.add_parser(
-        "render", help="Convert a SafeLife level to either a png or a gif.")
-    parser.add_argument('fnames', help="File to render.", nargs='+')
-    parser.add_argument('--steps', default=0, type=int)
-    parser.add_argument('--duration', default=0.03, type=float)
+        "render", help="Convert a SafeLife level to either a png or a gif.",
+        description=textwrap.dedent("""
+        Convert a SafeLife level to either a png or a gif.
+
+        Static SafeLife levels can be saved while editing them during
+        interactive play, and an agent's actions can be saved either during
+        training or while recording interactive play. Either way, the data
+        will be saved in .npz files. Static files will get rendered to png,
+        while recorded actions will be compiled into an animated gif.
+        """), formatter_class=RawDescriptionHelpFormatter)
+    parser.add_argument('fnames', help="File(s) to render.", nargs='+')
+    parser.add_argument('--steps', default=0, type=int,
+        help="Static output can be turned into animated output by setting"
+        " this to be non-zero. If non-zero, it determines the number of"
+        " steps that the board animation runs during animation, with one"
+        " step for each frame.")
+    parser.add_argument('--fps', default=30, type=float,
+        help="Frames per second for animated outputs.")
     parser.set_defaults(run_cmd=_run_cmd_args)
 
 
@@ -190,9 +206,9 @@ def _run_cmd_args(args):
     for fname in args.fnames:
         try:
             if args.steps == 0:
-                render_file(fname, args.duration)
+                render_file(fname, 1/args.fps)
             else:
-                render_mov(fname, args.steps, args.duration)
+                render_mov(fname, args.steps, 1/args.fps)
             print("Success:", fname)
         except Exception:
             print("Failed:", fname)

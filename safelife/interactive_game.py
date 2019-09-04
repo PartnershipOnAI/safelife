@@ -651,38 +651,60 @@ class GameLoop(object):
 
 def _make_cmd_args(subparsers):
     # used by __main__.py to define command line tools
+    from argparse import RawDescriptionHelpFormatter
+    long_desc = textwrap.dedent("""
+    Game boards can either be specified explicitly via their file names,
+    or new boards can be procedurally generated for never-ending play.
+    Additionally, the view can either show the whole board a subset
+    centered on the player.
+
+    **Note**: if you wish to run SafeLife in a graphical display
+    (not text-based), then you must have 'pyglet' installed.
+    Use e.g. 'pip3 install pyglet'.
+    """)
+    desc = "Play a game of SafeLife interactively."
     play_parser = subparsers.add_parser(
-        "play", help="Play a game of SafeLife interactively.")
+        "play", help=desc, description=desc + '\n\n' + long_desc,
+        formatter_class=RawDescriptionHelpFormatter)
+    desc = "Generate and display new game boards."
     print_parser = subparsers.add_parser(
-        "print", help="Generate and display new game boards.")
+        "print", help=desc, description=desc + '\n\n' + long_desc,
+        formatter_class=RawDescriptionHelpFormatter)
     for parser in (play_parser, print_parser):
         # they use some of the same commands
         parser.add_argument('load_from',
-            nargs='*', help="Load game state from file. "
-            "Effectively overrides board size and difficulty. "
-            "Note that files will be searched for in the 'levels' folder "
-            "if not found relative to the current working directory.")
-        parser.add_argument('--board', type=int, default=25,
-            help="The width and height of the square starting board")
+            nargs='*', help="Load levels from file(s)."
+            " Note that this effectively overrides all procedural generation"
+            " command options. Files will be searched for in the 'levels'"
+            " folder if not found in the current working directory.")
+        parser.add_argument('-t', '--text_mode', action='store_true',
+            help="Run the game in the terminal instead of using a graphical"
+            " display.")
+    for parser in (play_parser,):
+        play_parser.add_argument('--centered', action='store_true',
+            help="If set, the board is always centered on the agent.")
+        play_parser.add_argument('--view_size', type=int, default=None,
+            help="View size. Implies a centered view.", metavar="SIZE")
+        play_parser.add_argument('-c', '--clear', action="store_true",
+            help="Skip procedural generation: start with an empty board.")
+    for parser in (play_parser, print_parser):
+        parser.add_argument('--board_size', type=int, default=25,
+            help="Width and height of the procedurally generated board.",
+            metavar="SIZE")
         parser.add_argument('--difficulty', type=float, default=1.0,
-            help="Difficulty of the random board. On a scale of 0-10.")
-        parser.add_argument('--gen_params',
-            help="Parameters for random board generation. "
-            "Can either be a json file or a (quoted) json string.")
-        parser.add_argument('--ascii', action='store_true',
-            help="Run the game in a terminal (instead of a separate window).")
+            help="“Difficulty” of the procedurally generated board on a"
+            " scale of 0-10.",
+            metavar="X")
+        parser.add_argument('--gen_params', metavar="PARAMS",
+            help="Parameters for procedural board generation."
+            " Can either be a json file or a (quoted) json string."
+            " See the files in 'safelife/levels/params/' for examples.")
         parser.set_defaults(run_cmd=_run_cmd_args)
-    play_parser.add_argument('--clear', action="store_true",
-        help="Starts with an empty board.")
-    play_parser.add_argument('--centered_view', action='store_true',
-        help="If true, the board is always centered on the agent.")
-    play_parser.add_argument('--view_size', type=int, default=None,
-        help="View size. Implies a centered view.")
 
 
 def _run_cmd_args(args):
     main_loop = GameLoop()
-    main_loop.board_size = (args.board, args.board)
+    main_loop.board_size = (args.board_size, args.board_size)
     if args.gen_params:
         import json
         fname = args.gen_params
@@ -706,9 +728,9 @@ def _run_cmd_args(args):
         main_loop.print_only = True
     else:
         main_loop.random_board = not args.clear
-        main_loop.centered_view = args.centered_view
+        main_loop.centered_view = args.centered
         main_loop.view_size = args.view_size and (args.view_size, args.view_size)
-    if args.ascii:
+    if args.text_mode:
         main_loop.run_ascii()
     else:
         main_loop.run_gl()
