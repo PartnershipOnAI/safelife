@@ -44,7 +44,7 @@ def render_cell(cell, goal=0, orientation=0, edit_color=None):
     cell_color = (cell & CellTypes.rainbow_color) >> CellTypes.color_bit
     goal_color = (goal & CellTypes.rainbow_color) >> CellTypes.color_bit
     val = background_colors[goal_color]
-    val += ' ' if edit_color is None else foreground_colors[edit_color] + '•'
+    val += ' ' if edit_color is None else foreground_colors[edit_color] + '∎'
     val += foreground_colors[cell_color]
 
     if cell & CellTypes.agent:
@@ -99,16 +99,30 @@ def cell_name(cell):
     return cell_type + '-' + color
 
 
-def render_plain_board(board, goals=0):
+def render_board(board, goals=0, orientation=0, edit_loc=None, edit_color=0):
     """
     Just render the board itself. Doesn't require game state.
     """
-    screen = render_cell(board, goals).astype(object)
-    screen[:, -1] += '\n'
+    if edit_loc and (edit_loc[0] >= board.shape[0] or edit_loc[1] >= board.shape[1]):
+        edit_loc = None
+    goals = np.broadcast_to(goals, board.shape)
+
+    screen = np.empty((board.shape[0]+2, board.shape[1]+3,), dtype=object)
+    screen[:] = ''
+    screen[0] = screen[-1] = ' -'
+    screen[:,0] = screen[:,-2] = ' |'
+    screen[:,-1] = '\n'
+    screen[0,0] = screen[0,-2] = screen[-1,0] = screen[-1,-2] = ' +'
+    screen[1:-1,1:-2] = render_cell(board, goals, orientation)
+
+    if edit_loc:
+        x1, y1 = edit_loc
+        val = render_cell(board[y1, x1], goals[y1, x1], orientation, edit_color)
+        screen[y1+1, x1+1] = str(val)
     return ''.join(screen.ravel())
 
 
-def render_board(s, centered_view=False, view_size=None, fixed_orientation=False):
+def render_game_BAD(s, centered_view=False, view_size=None, fixed_orientation=False, edit_mode=None):
     """
     Renders the game state `s`. Does not include scores, etc.
 
@@ -125,22 +139,6 @@ def render_board(s, centered_view=False, view_size=None, fixed_orientation=False
         If true, the board is re-oriented such that the player is always
         facing up.
     """
-    agent_color = s.board[s.agent_loc[1], s.agent_loc[0]]
-    agent_color &= CellTypes.rainbow_color
-    if centered_view or view_size or fixed_orientation:
-        centered_view = True
-        if view_size is None:
-            view_size = s.board.shape
-        if fixed_orientation and s.orientation % 2 == 1:
-            # transpose the view
-            view_size = (view_size[1], view_size[0])
-        center = s.edit_loc if s.is_editing else s.agent_loc
-        board = recenter_view(s.board, view_size, center[::-1], s.exit_locs)
-        goals = recenter_view(s.goals, view_size, center[::-1])
-    else:
-        view_size = (s.height, s.width)
-        board = s.board
-        goals = s.goals
     screen = np.empty((view_size[0]+2, view_size[1]+3), dtype=object)
     screen[:] = ''
     screen[0] = screen[-1] = ' -'
@@ -160,16 +158,54 @@ def render_board(s, centered_view=False, view_size=None, fixed_orientation=False
         screen[1:-1,1:-2] = cells
     else:
         screen[1:-1,1:-2] = render_cell(board, goals, s.orientation)
-    if s.is_editing:
+    if edit_mode:
         if centered_view:
             y1 = view_size[0] // 2
             x1 = view_size[1] // 2
         else:
             x1, y1 = s.edit_loc
         val = render_cell(board[y1, x1], goals[y1, x1], s.orientation,
-                          edit_color=agent_color >> CellTypes.color_bit)
+                          edit_color=s.edit_color >> CellTypes.color_bit)
         screen[y1+1, x1+1] = str(val)
     return ''.join(screen.ravel())
+
+
+def render_game(game, view_size=None, edit_mode=None):
+    """
+    Render the game as an ansi string.
+
+    Parameters
+    ----------
+    game : SafeLife instance
+    view_size : (int, int) or None
+        Shape of the view port, or None if the full board should be rendered.
+        If not None, the view will be centered on either the agent or the
+        current edit location.
+    edit_mode : None, "BOARD", or "GOALS"
+        Determines whether or not the game should be drawn in edit mode with
+        the edit cursor. If "GOALS", the goals and normal board are swapped so
+        that the goals can be edited directly.
+    """
+    if view_size is not None:
+        if edit_mode:
+            center = game.edit_loc
+            edit_loc = view_size[1] // 2, view_size[0] // 2
+        else:
+            center = game.agent_loc
+            edit_loc = None
+        center = game.edit_loc if edit_mode else game.agent_loc
+        board = recenter_view(game.board, view_size, center[::-1], game.exit_locs)
+        goals = recenter_view(game.goals, view_size, center[::-1])
+    else:
+        board = game.board
+        goals = game.goals
+        edit_loc = game.edit_loc if edit_mode else None
+    edit_color = (game.edit_color & CellTypes.rainbow_color) >> CellTypes.color_bit
+    if edit_mode == "GOALS":
+        # Render goals instead. Swap board and goals.
+        board, goals = goals, board
+
+    return render_board(board, goals, game.orientation, edit_loc, edit_color)
 
 
 def agent_powers(game):

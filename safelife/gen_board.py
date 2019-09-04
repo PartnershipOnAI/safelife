@@ -563,19 +563,3 @@ def stability_mask(board, period=6, remove_agent=True):
         if (board[region] == orig_board[region]).all():
             mask |= region
     return mask
-
-
-def _main(play=True):
-    """Just for testing."""
-    from .asci_renderer import render_board
-    from .game_loop import GameLoop
-    if play:
-        game_loop = GameLoop()
-        game_loop.centered_view = True
-        game_loop.play(gen_game())
-    else:
-        print(render_board(gen_game()))
-
-
-if __name__ == "__main__":
-    _main()

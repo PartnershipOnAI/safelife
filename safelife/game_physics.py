@@ -151,7 +151,8 @@ class GameState(object):
     spawn_prob = 0.3
     orientation = 1
     agent_loc = (0, 0)
-    edit_loc = None
+    edit_loc = (0, 0)
+    edit_color = 0
     board = None
     file_name = None
     game_over = False
@@ -163,6 +164,7 @@ class GameState(object):
     can_toggle_colors = False
 
     def __init__(self, board_size=(10,10)):
+        self.exit_locs = (np.array([], dtype=int), np.array([], dtype=int))
         if board_size is None:
             # assume we'll load a new board from file
             pass
@@ -262,6 +264,19 @@ class GameState(object):
         else:
             return os.path.split(self.file_name)[1][:-4]
 
+    @property
+    def edit_color_name(self):
+        return [
+            'black',
+            'red',
+            'green',
+            'yellow',
+            'blue',
+            'magenta',
+            'cyan',
+            'white',
+        ][(self.edit_color & CellTypes.rainbow_color) >> CellTypes.color_bit]
+
     def relative_loc(self, n_forward, n_right=0):
         """
         Retrieves a location relative to the agent.
@@ -355,17 +370,6 @@ class GameState(object):
             self.game_over = "RESTART"
         return reward
 
-    @property
-    def is_editing(self):
-        return self.edit_loc is not None
-
-    @is_editing.setter
-    def is_editing(self, val):
-        if val:
-            self.edit_loc = self.edit_loc = self.agent_loc
-        else:
-            self.edit_loc = None
-
     def execute_edit(self, command):
         """
         Edit the board. Returns an error or success message, or None.
@@ -398,7 +402,6 @@ class GameState(object):
         board = self.board
         x0, y0 = self.agent_loc
         x1, y1 = self.edit_loc
-        player_color = board[y0, x0] & CellTypes.rainbow_color
         if command.startswith("MOVE "):
             direction = ORIENTATION[command[5:]]
             if direction % 2 == 0:
@@ -406,47 +409,28 @@ class GameState(object):
             else:
                 dx, dy = 2 - direction, 0
             self.edit_loc = ((x1 + dx) % self.width, (y1 + dy) % self.height)
-        elif command == "PUT AGENT" and self.agent_loc != self.edit_loc:
-            board[y1, x1] = board[y0, x0]
+        elif command == "PUT AGENT":
+            agent = board[y0, x0] & ~CellTypes.rainbow_color
             board[y0, x0] = 0
+            board[y1, x1] = agent | self.edit_color
             self.agent_loc = self.edit_loc
         elif (command.startswith("PUT ") and command[4:] in named_objects and
                 self.agent_loc != self.edit_loc):
             x1, y1 = self.edit_loc
             board[y1, x1] = named_objects[command[4:]]
             if board[y1, x1]:
-                board[y1, x1] |= player_color
+                board[y1, x1] |= self.edit_color
         elif command.startswith("CHANGE COLOR"):
             if command.endswith("FULL CYCLE"):
-                player_color += CellTypes.color_r
-            elif player_color:
-                player_color <<= 1
+                self.edit_color += CellTypes.color_r
+            elif self.edit_color:
+                self.edit_color <<= 1
             else:
-                player_color = CellTypes.color_r
-            player_color &= CellTypes.rainbow_color
-            board[y0, x0] &= ~CellTypes.rainbow_color
-            board[y0, x0] |= player_color
+                self.edit_color = CellTypes.color_r
+            self.edit_color &= CellTypes.rainbow_color
+            return "EDIT COLOR: " + self.edit_color_name
         elif command.startswith("TOGGLE ") and command[7:] in toggles:
             board[y0, x0] ^= toggles[command[7:]]
-        elif command == "SAVE AS" or command == "SAVE" and not self.file_name:
-            save_name = input('\rsave as: \x1b[J')
-            if save_name:
-                try:
-                    self.save(save_name)
-                    return "Saved successfully."
-                except FileNotFoundError as err:
-                    return "No such file or directory: '%s'" % (err.filename,)
-            else:
-                return "Save aborted."
-        elif command == 'SAVE':
-            from .keyboard_input import getch
-            print("\rsave as '" + self.file_name + "'? (y/n)\x1b[J ", end='')
-            confirm = getch()
-            if confirm in ('y', 'Y'):
-                self.save(self.file_name)
-                return "Saved successfully."
-            else:
-                return "Save aborted."
         elif command == "REVERT":
             if not self.revert():
                 return "No saved state; cannot revert."
@@ -566,22 +550,14 @@ class GameWithGoals(GameState):
         self.goals = data['goals']
 
     def execute_edit(self, command):
-        if command.startswith("CHANGE GOAL"):
-            x0, y0 = self.edit_loc
-            old_goal = self.goals[y0, x0]
-            if command.endswith("FULL CYCLE"):
-                self.goals[y0, x0] += CellTypes.color_r
-            elif self.goals[y0, x0]:
-                self.goals[y0, x0] <<= 1
-            else:
-                self.goals[y0, x0] = CellTypes.color_r
-            self.goals[y0, x0] &= CellTypes.rainbow_color
-            return "goal change: {old_goal} -> {new_goal}".format(
-                old_goal=bin(old_goal >> 9),
-                new_goal=bin(self.goals[y0, x0] >> 9)
-            )
+        if command.startswith("GOALS "):
+            # Swap goals and board so that the edit is done on the goals.
+            self.board, self.goals = self.goals, self.board
+            rval = super().execute_edit(command[6:])
+            self.board, self.goals = self.goals, self.board
         else:
-            return super().execute_edit(command)
+            rval = super().execute_edit(command)
+        return rval
 
     def current_points(self, board=None, goals=None):
         if board is None:
