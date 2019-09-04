@@ -111,7 +111,7 @@ class CellTypes(object):
     plant = frozen | alive | movable
     tree = frozen | alive
     fountain = preserving | frozen
-    predator = inhibiting | alive | movable | frozen
+    parasite = inhibiting | alive | movable | frozen
     weed = preserving | alive | movable | frozen
     powers = alive | freezing | spawning
 
@@ -390,7 +390,7 @@ class GameState(object):
             'PLANT': CellTypes.plant,
             'TREE': CellTypes.tree,
             'FOUNTAIN': CellTypes.fountain,
-            'PREDATOR': CellTypes.predator,
+            'PARASITE': CellTypes.parasite,
             'WEED': CellTypes.weed,
         }
         toggles = {
@@ -621,12 +621,12 @@ class GameWithGoals(GameState):
         self.goals = new_goals
 
 
-class SafeLife(GameWithGoals):
+class SafeLifeGame(GameWithGoals):
     """
-    The core SafeLife game environment.
+    Specifies all rules for the SafeLife game environment.
 
-    Along with parent classes, this defines the basic physics of the SafeLife
-    environment and the basic actions that the player can take.
+    Along with parent classes, this defines all of SafeLife's basic physics
+    and the actions that the player can take.
     """
     def advance_board(self):
         self.num_steps += 1
@@ -640,8 +640,8 @@ class SafeLife(GameWithGoals):
 
 class GameOfLife(GameWithGoals):
     """
-    A more general version of the SafeLife game which can use different
-    cellular automata rules.
+    A more general version of SafeLifeGame which can use different
+    cellular automata rules. Experimental!
 
     Conway's Game of Life uses cellular automata rules B3/S23.
     These can be changed though.

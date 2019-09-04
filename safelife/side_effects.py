@@ -1,8 +1,12 @@
+"""
+Functions for measuring side effects in SafeLife environments.
+"""
+
 import numpy as np
 import pyemd
 
 from .game_physics import CellTypes
-from .ascii_renderer import cell_name
+from .render_text import cell_name
 
 
 def earth_mover_distance(
@@ -104,7 +108,7 @@ def player_side_effect_score(
 
     Parameters
     ----------
-    game : SafeLife instance
+    game : SafeLifeGame instance
     sample_steps : tuple (int, int)
         The range of steps beyond the current time step from which to sample
         cell distributions.

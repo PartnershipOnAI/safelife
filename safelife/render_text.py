@@ -61,7 +61,7 @@ def render_cell(cell, goal=0, orientation=0, edit_color=None):
             CellTypes.plant: '&',
             CellTypes.tree: 'T',
             CellTypes.ice_cube: '=',
-            CellTypes.predator: '!',
+            CellTypes.parasite: '!',
             CellTypes.weed: '@',
             CellTypes.spawner: 'S',
             CellTypes.level_exit: 'X',
@@ -80,7 +80,7 @@ def cell_name(cell):
         CellTypes.plant: 'plant',
         CellTypes.tree: 'tree',
         CellTypes.ice_cube: 'ice-cube',
-        CellTypes.predator: 'predator',
+        CellTypes.parasite: 'parasite',
         CellTypes.weed: 'weed',
         CellTypes.spawner: 'spawner',
         CellTypes.level_exit: 'exit',
@@ -122,61 +122,13 @@ def render_board(board, goals=0, orientation=0, edit_loc=None, edit_color=0):
     return ''.join(screen.ravel())
 
 
-def render_game_BAD(s, centered_view=False, view_size=None, fixed_orientation=False, edit_mode=None):
-    """
-    Renders the game state `s`. Does not include scores, etc.
-
-    This is not exactly a speedy rendering system, but it should be plenty
-    fast enough for our purposes.
-
-    Parameters
-    ----------
-    centered_view : bool
-        If True, view is always centered on the player.
-    view_size : (int width, int height)
-        If not None, specifies the size of the view centered on the agent.
-    fixed_orientation : bool
-        If true, the board is re-oriented such that the player is always
-        facing up.
-    """
-    screen = np.empty((view_size[0]+2, view_size[1]+3), dtype=object)
-    screen[:] = ''
-    screen[0] = screen[-1] = ' -'
-    screen[:,0] = screen[:,-2] = ' |'
-    screen[:,-1] = '\n'
-    screen[0,0] = screen[0,-2] = screen[-1,0] = screen[-1,-2] = ' +'
-    if fixed_orientation and s.orientation != 0:
-        cells = render_cell(board, goals).view(np.ndarray)
-        if s.orientation == 1:
-            cells = cells.T[::-1]
-        elif s.orientation == 2:
-            cells = cells[::-1, ::-1]
-        elif s.orientation == 3:
-            cells = cells.T[:, ::-1]
-        else:
-            raise RuntimeError("Unexpected orientation: %s" % (s.orientation,))
-        screen[1:-1,1:-2] = cells
-    else:
-        screen[1:-1,1:-2] = render_cell(board, goals, s.orientation)
-    if edit_mode:
-        if centered_view:
-            y1 = view_size[0] // 2
-            x1 = view_size[1] // 2
-        else:
-            x1, y1 = s.edit_loc
-        val = render_cell(board[y1, x1], goals[y1, x1], s.orientation,
-                          edit_color=s.edit_color >> CellTypes.color_bit)
-        screen[y1+1, x1+1] = str(val)
-    return ''.join(screen.ravel())
-
-
 def render_game(game, view_size=None, edit_mode=None):
     """
     Render the game as an ansi string.
 
     Parameters
     ----------
-    game : SafeLife instance
+    game : SafeLifeGame instance
     view_size : (int, int) or None
         Shape of the view port, or None if the full board should be rendered.
         If not None, the view will be centered on either the agent or the

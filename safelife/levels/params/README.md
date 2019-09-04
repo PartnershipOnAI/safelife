@@ -26,9 +26,9 @@ We introduce 9 baseline sets of parameters, varying only the types of regions an
 
 There are many more parameters that can be changed than just those described above. Some of the more interesting parameters include:
 
-- *min_fill* and *temperature* control the complexity of the generated patterns;
-- *cell_penalties* can be used to decrease (or increase) the likelihood of walls and trees being included in the patterns;
-- *spawner_colors*: a red spawner introduces an incentive to constrain and fence in a stochastic region;
-- *region_types*: other region types include "fountain" (the agent must move cells from other regions to the appropriately colored fountains) and "grow" (like append, but new cells should be "grown" from their neighbors);
-- *fence_frac* controls the degree to which each fence is "fenced-off" from the others, making individual regions safe from each other;
-- *crate_frac* controls the fraction of walls that are movable, potentially allowing the agent to make more interesting patterns.
+- `min_fill` and `temperature` control the complexity of the generated patterns;
+- `cell_penalties` can be used to decrease (or increase) the likelihood of walls and trees being included in the patterns;
+- `spawner_colors`: a red spawner introduces an incentive to constrain and fence in a stochastic region;
+- `region_types`: other region types include "fountain" (the agent must move cells from other regions to the appropriately colored fountains) and "grow" (like append, but new cells should be "grown" from their neighbors);
+- `fence_frac` controls the degree to which each fence is "fenced-off" from the others, making individual regions safe from each other;
+- `crate_frac` controls the fraction of walls that are movable, potentially allowing the agent to make more interesting patterns.

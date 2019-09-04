@@ -1,7 +1,11 @@
+"""
+Procedural generation of SafeLife levels.
+"""
+
 import numpy as np
 from scipy import ndimage, signal
 
-from .game_physics import CellTypes, SafeLife
+from .game_physics import CellTypes, SafeLifeGame
 from .helper_utils import coinflip
 from . import speedups
 
@@ -479,7 +483,7 @@ def gen_game(
 
     Returns
     -------
-        SafeLife instance
+        SafeLifeGame instance
     """
     regions = make_partioned_regions(board_shape, max_regions=max_regions)
     board = np.zeros(board_shape, dtype=np.int16)
@@ -511,7 +515,7 @@ def gen_game(
         goals += rgoals
         start_region = None
 
-    game = SafeLife()
+    game = SafeLifeGame()
     game.deserialize({
         'board': board,
         'goals': goals,

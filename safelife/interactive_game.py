@@ -6,10 +6,10 @@ import time
 from types import SimpleNamespace
 import numpy as np
 
-from .game_physics import SafeLife
-from . import ascii_renderer
-from . import rgb_renderer
-from .gen_board import gen_game
+from .game_physics import SafeLifeGame
+from . import render_text
+from . import render_graphics
+from .proc_gen import gen_game
 from .keyboard_input import KEYS, getch
 from .side_effects import player_side_effect_score
 from .file_finder import find_files, LEVEL_DIRECTORY
@@ -62,7 +62,7 @@ EDIT_KEYS = {
     't': "PUT PLANT",
     'T': "PUT TREE",
     'd': "PUT WEED",
-    'p': "PUT PREDATOR",
+    'p': "PUT PARASITE",
     'f': "PUT FOUNTAIN",
     'n': "PUT SPAWNER",
     '1': "TOGGLE ALIVE",
@@ -87,7 +87,7 @@ class GameLoop(object):
     """
     Play the game interactively. For humans.
     """
-    game_cls = SafeLife
+    game_cls = SafeLifeGame
     board_size = (25, 25)
     random_board = True
     difficulty = 1  # for random boards
@@ -354,7 +354,7 @@ class GameLoop(object):
     i:  add icecube              S:  save as (in terminal)
     t:  add plant                R:  revert level
     T:  add tree                 Q:  abort level
-    p:  add predator             \:  enter shell
+    p:  add parasite             \:  enter shell
     f:  add fountain
     n:  add spawner
     """
@@ -394,7 +394,7 @@ class GameLoop(object):
             output += "\nScore: {bold}{}{clear}".format(state.total_points, **styles)
             output += "\nSteps: {bold}{}{clear}".format(state.total_steps, **styles)
             output += "\nCompleted: {} / {}".format(*game.completion_ratio(), **styles)
-            output += "\nPowers: {italics}{}{clear}".format(ascii_renderer.agent_powers(game), **styles)
+            output += "\nPowers: {italics}{}{clear}".format(render_text.agent_powers(game), **styles)
             if state.edit_mode:
                 output += "\n{bold}*** EDIT {} ***{clear}".format(state.edit_mode, **styles)
             if state.recording:
@@ -423,10 +423,10 @@ class GameLoop(object):
         fmt = "    {name:12s} {val:6.2f}\n"
         for ctype, score in self.state.side_effects.items():
             if full_names:
-                name = ascii_renderer.cell_name(ctype)
+                name = render_text.cell_name(ctype)
                 output += fmt.format(name=name+':', val=score)
             else:
-                name = ascii_renderer.render_cell(ctype)
+                name = render_text.render_cell(ctype)
                 # Formatted padding doesn't really work since we use
                 # extra escape characters. Use replace instead.
                 line = fmt.format(name='zz:', val=score)
@@ -436,7 +436,7 @@ class GameLoop(object):
         output += "\n\n(hit any key to continue)"
         return output
 
-    def render_ascii(self):
+    def render_text(self):
         if not self.print_only:
             output = "\x1b[H\x1b[J"
         else:
@@ -450,7 +450,7 @@ class GameLoop(object):
             game = state.game
             game.update_exit_colors()
             output += self.above_game_message(styled=True) + '\n'
-            output += ascii_renderer.render_game(
+            output += render_text.render_game(
                 state.game, self.effective_view_size, state.edit_mode)
             output += "\n"
             if not self.print_only:
@@ -471,17 +471,17 @@ class GameLoop(object):
                 self.state.screen = None
                 print("No game boards to print")
 
-    def run_ascii(self):
+    def run_text(self):
         self.setup_run()
         os.system('clear')
-        self.render_ascii()
+        self.render_text()
         while self.state.screen != "GAMEOVER":
             self.handle_input(getch())
             if self.state.last_command == "SHELL":
                 self.handle_shell()
             elif self.state.last_command == "SAVE AS":
                 self.handle_save_as()
-            self.render_ascii()
+            self.render_text()
 
     def render_gl(self):
         # Note that this routine is pretty inefficient. It should be fine
@@ -557,7 +557,7 @@ class GameLoop(object):
             bottom_label.draw()
 
             state.game.update_exit_colors()
-            img = rgb_renderer.render_game(
+            img = render_graphics.render_game(
                 state.game, self.effective_view_size, state.edit_mode)
             margin_top = 10 + top_label.content_height
             margin_bottom = 10 + bottom_label.content_height
@@ -629,10 +629,10 @@ class GameLoop(object):
         try:
             import pyglet
         except ImportError:
-            print("Cannot import pyglet. Running ascii mode instead.")
+            print("Cannot import pyglet. Running text mode instead.")
             print("(hit any key to continue)")
             getch()
-            self.run_ascii()
+            self.run_text()
         else:
             self.setup_run()
             self.last_key_down = None
@@ -731,6 +731,6 @@ def _run_cmd_args(args):
         main_loop.centered_view = args.centered
         main_loop.view_size = args.view_size and (args.view_size, args.view_size)
     if args.text_mode:
-        main_loop.run_ascii()
+        main_loop.run_text()
     else:
         main_loop.run_gl()

@@ -20,7 +20,7 @@ class SafeLifePPO_experience_replay(SafeLifePPO):
 
         Suitable for build / append tasks.
         """
-        from safelife.gen_board import stability_mask
+        from safelife.proc_gen import stability_mask
         from safelife.speedups import advance_board
         from safelife.game_physics import CellTypes
         stability_period = 6

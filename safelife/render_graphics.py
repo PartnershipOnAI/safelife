@@ -1,3 +1,7 @@
+"""
+Utilities to graphically render SafeLifeGame boards.
+"""
+
 import os
 import imageio
 import numpy as np
@@ -31,7 +35,7 @@ sprites = {
     CellTypes.plant: load_sprite(1, 3),
     CellTypes.tree: load_sprite(1, 4),
     CellTypes.ice_cube: load_sprite(2, 0),
-    CellTypes.predator: load_sprite(2, 4),
+    CellTypes.parasite: load_sprite(2, 4),
     CellTypes.weed: load_sprite(1, 2),
     CellTypes.spawner: load_sprite(3, 0),
     CellTypes.level_exit: load_sprite(3, 1),
@@ -72,7 +76,7 @@ cell_array = np.array([
     [CellTypes.plant, (5*1 + 3) + 1],
     [CellTypes.tree, (5*1 + 4) + 1],
     [CellTypes.ice_cube, (5*2 + 0) + 1],
-    [CellTypes.predator, (5*2 + 4) + 1],
+    [CellTypes.parasite, (5*2 + 4) + 1],
     [CellTypes.weed, (5*1 + 2) + 1],
     [CellTypes.spawner, (5*3 + 0) + 1],
     [CellTypes.level_exit, (5*3 + 1) + 1],
@@ -115,7 +119,7 @@ def render_game(game, view_size=None, edit_mode=None):
 
     Parameters
     ----------
-    game : SafeLife instance
+    game : SafeLifeGame instance
     view_size : (int, int) or None
         Shape of the view port, or None if the full board should be rendered.
         If not None, the view will be centered on either the agent or the
@@ -151,7 +155,19 @@ def render_game(game, view_size=None, edit_mode=None):
     return render_board(board, goals, game.orientation, edit_loc, edit_color)
 
 
-def render_file(fname, duration=0.03):
+def render_file(fname, fps=30):
+    """
+    Load a saved SafeLifeGame file and render it as a png or gif.
+
+    The game will be rendered as an animated gif if it contains a sequence of
+    states; otherwise it will be rendered as a png.
+
+    Parameters
+    ----------
+    fname : str
+    fps : float
+        Frames per second for gif animation.
+    """
     data = np.load(fname)
     rgb_array = render_board(
         data['board'], data['goals'], data['orientation'][..., None, None])
@@ -160,12 +176,24 @@ def render_file(fname, duration=0.03):
         imageio.imwrite(bare_fname+'.png', rgb_array)
     elif rgb_array.ndim == 4:
         imageio.mimwrite(bare_fname+'.gif', rgb_array,
-                         duration=duration, subrectangles=True)
+                         duration=1/fps, subrectangles=True)
     else:
         raise Exception("Unexpected dimension of rgb_array.")
 
 
-def render_mov(fname, steps, duration=0.03):
+def render_mov(fname, steps, fps=30):
+    """
+    Load a saved SafeLifeGame state and render it as an animated gif.
+
+    Parameters
+    ----------
+    fname : str
+    steps : int
+        The number of steps to evolve the game state. This is the same
+        as the number of frames that will be rendered.
+    fps : float
+        Frames per second for gif animation.
+    """
     game = GameState.load(fname)
     bare_fname = '.'.join(fname.split('.')[:-1])
     frames = []
@@ -173,7 +201,7 @@ def render_mov(fname, steps, duration=0.03):
         frames.append(render_game(game))
         game.advance_board()
     imageio.mimwrite(bare_fname+'.gif', frames,
-                     duration=duration, subrectangles=True)
+                     duration=1/fps, subrectangles=True)
 
 
 def _make_cmd_args(subparsers):
@@ -206,9 +234,9 @@ def _run_cmd_args(args):
     for fname in args.fnames:
         try:
             if args.steps == 0:
-                render_file(fname, 1/args.fps)
+                render_file(fname, args.fps)
             else:
-                render_mov(fname, args.steps, 1/args.fps)
+                render_mov(fname, args.steps, args.fps)
             print("Success:", fname)
         except Exception:
             print("Failed:", fname)

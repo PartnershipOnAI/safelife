@@ -25,7 +25,7 @@ Some cells in the environment are objectively bad (their presence lowers score) 
 
 - **containment**: This level introduces two special types of objects: a *spawner* and a *crate*. The spawner will create new life objects that need to be contained. Push the crates close to the spawner to limit its effects.
 
-- **predator**: ...eats through even hardened life. (haven't found a great way to use this yet)
+- **parasite**: ...eats through even hardened life. (haven't found a great way to use this yet)
 
 
 ### Navigation
@@ -46,7 +46,7 @@ Some cells in the environment are objectively bad (their presence lowers score) 
 
 - **controlled expansion**: Player needs to guide cells from a spawner to reach a *fountain*. Fountains, like weeds, prevent all of their surrounding cells from dieing. However, if the player's not careful, the cells could instead reach a dangerous tangle weed.
 
-- **controlled predation**: Similar to the above, but uses predators instead of crates, and has one useful plant.
+- **controlled predation**: Similar to the above, but uses parasites instead of crates, and has one useful plant.
 
 - **rainbow spawn**: When there are different spawners sitting next to each other, their colors can mix. This is the only way to get mixing colors.
 

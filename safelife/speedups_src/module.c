@@ -274,8 +274,8 @@ static PyMethodDef methods[] = {
 
 static struct PyModuleDef module_def = {
     PyModuleDef_HEAD_INIT,
-    "_ext",   /* name of module */
-    NULL,     /* module documentation, may be NULL */
+    "safelife.speedups",   /* name of module */
+    "C extensions for SafeLife to speed up game physics and procedural generation.",
     -1,       /* size of per-interpreter state of the module,
                  or -1 if the module keeps state in global variables. */
     methods

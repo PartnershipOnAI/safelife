@@ -7,15 +7,15 @@ from gym.utils import seeding
 import numpy as np
 
 from safelife import speedups
-from .game_physics import SafeLife, CellTypes
+from .game_physics import SafeLifeGame, CellTypes
 from .helper_utils import recenter_view
-from .gen_board import gen_game
+from .proc_gen import gen_game
 from .file_finder import find_files
 
 
 class SafeLifeEnv(gym.Env):
     """
-    A gym-like environment wrapper for SafeLife.
+    A gym-like environment that wraps SafeLifeGame.
 
     This adds a few minor adjustments on top of the core rules:
 
@@ -53,7 +53,7 @@ class SafeLifeEnv(gym.Env):
     view_shape : (int, int)
         Shape of the agent observation.
     board_gen_params : dict
-        Parameters to be passed to :func:`gen_board.gen_game()`.
+        Parameters to be passed to :func:`proc_gen.gen_game()`.
     fixed_levels : list of level names
         If set, levels are loaded from disk rather than procedurally generated.
     randomize_fixed_levels : bool
@@ -130,7 +130,7 @@ class SafeLifeEnv(gym.Env):
     @fixed_levels.setter
     def fixed_levels(self, level_names):
         files = find_files(*level_names)
-        self._fixed_levels = [SafeLife.load(fname) for fname in files]
+        self._fixed_levels = [SafeLifeGame.load(fname) for fname in files]
         self._level_idx = len(self._fixed_levels)
 
     def seed(self, seed=None):
@@ -232,10 +232,10 @@ class SafeLifeEnv(gym.Env):
 
     def render(self, mode='ansi'):
         if mode == 'ansi':
-            from .ascii_renderer import render_game
+            from .render_text import render_game
             return render_game(self.state, view_size=self.view_shape)
         else:
-            from .rgb_renderer import render_game
+            from .render_graphics import render_game
             return render_game(self.state)
 
     def close(self):

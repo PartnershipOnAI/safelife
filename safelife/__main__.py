@@ -1,6 +1,10 @@
+"""
+SafeLife command-line tool. To run, use `python3 -m safelife <command>`.
+"""
+
 import argparse
 
-from . import rgb_renderer
+from . import render_graphics
 from . import interactive_game
 
 parser = argparse.ArgumentParser(description="""
@@ -14,7 +18,7 @@ particular command.
 """, formatter_class=argparse.RawDescriptionHelpFormatter)
 subparsers = parser.add_subparsers(dest="cmd", help="Top-level command.")
 interactive_game._make_cmd_args(subparsers)
-rgb_renderer._make_cmd_args(subparsers)
+render_graphics._make_cmd_args(subparsers)
 args = parser.parse_args()
 if args.cmd is None:
     parser.print_help()
