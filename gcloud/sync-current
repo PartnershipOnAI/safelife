@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# Convenience script to sync current run data to the local machine.
+# Places synced data in the 'data' folder in the current working directory.
+
+exec rsync --rsh $(dirname $0)/ssh -r $1:~/current_job/data/ ./data

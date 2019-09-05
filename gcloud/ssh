@@ -1,0 +1,10 @@
+#! /bin/sh
+
+# A convenience utility to ssh into a gcloud instance.
+# Arguments will be parsed just like regular ssh without the need for
+# dashes (as in gcloud command line tool).
+# Also used as part of the rsync utility.
+
+host="$1"
+shift
+exec gcloud compute ssh "$host" -- "$@"
