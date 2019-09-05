@@ -6,7 +6,7 @@ import time
 from types import SimpleNamespace
 import numpy as np
 
-from .game_physics import SafeLifeGame
+from .game_physics import SafeLifeGame, ORIENTATION
 from . import render_text
 from . import render_graphics
 from .proc_gen import gen_game
@@ -16,33 +16,14 @@ from .file_finder import find_files, LEVEL_DIRECTORY
 
 
 COMMAND_KEYS = {
-    KEYS.LEFT_ARROW: "TURN LEFT",
-    KEYS.RIGHT_ARROW: "TURN RIGHT",
-    KEYS.UP_ARROW: "MOVE FORWARD",
-    KEYS.DOWN_ARROW: "MOVE BACKWARD",
-    'a': "TURN LEFT",
-    'd': "TURN RIGHT",
-    'w': "MOVE FORWARD",
-    's': "MOVE BACKWARD",
-    'i': "MOVE UP",
-    'k': "MOVE DOWN",
-    'j': "MOVE LEFT",
-    'l': "MOVE RIGHT",
-    'I': "TOGGLE UP",
-    'K': "TOGGLE DOWN",
-    'J': "TOGGLE LEFT",
-    'L': "TOGGLE RIGHT",
+    KEYS.LEFT_ARROW: "MOVE LEFT",
+    KEYS.RIGHT_ARROW: "MOVE RIGHT",
+    KEYS.UP_ARROW: "MOVE UP",
+    KEYS.DOWN_ARROW: "MOVE DOWN",
     '\r': "NULL",
-    'z': "NULL",
+    ' ': "NULL",
+    'z': "UNDO",  # not implemented
     'c': "TOGGLE",
-    # 'f': "IFEMPTY",
-    # 'r': "REPEAT",
-    # 'p': "DEFINE",
-    # 'o': "CALL",
-    # '/': "LOOP",
-    # "'": "CONTINUE",
-    # ';': "BREAK",
-    # '[': "BLOCK",
     'R': "RESTART",
 }
 
@@ -261,18 +242,21 @@ class GameLoop(object):
             elif not state.edit_mode and key in COMMAND_KEYS:
                 command = COMMAND_KEYS[key]
                 state.last_command = command
-                if command.startswith("TURN "):
-                    # Just execute the action. Don't do anything else.
-                    game.execute_action(command)
-                else:
-                    # All other commands take one action
-                    state.total_steps += 1
-                    start_pts = game.current_points()
-                    action_pts = game.execute_action(command)
-                    game.advance_board()
-                    end_pts = game.current_points()
-                    state.total_points += (end_pts - start_pts) + action_pts
-                    self.record_frame()
+                if command.startswith("MOVE "):
+                    new_orientation = ORIENTATION[command[5:]]
+                    if game.orientation != new_orientation:
+                        # First move in a direction just re-orients the agent
+                        # The game board doesn't actually advance.
+                        game.orientation = new_orientation
+                        return
+                # All other commands take one action
+                state.total_steps += 1
+                start_pts = game.current_points()
+                action_pts = game.execute_action(command)
+                game.advance_board()
+                end_pts = game.current_points()
+                state.total_points += (end_pts - start_pts) + action_pts
+                self.record_frame()
             if game.game_over == "RESTART":
                 state.total_points -= game.current_points()
                 game.revert()
