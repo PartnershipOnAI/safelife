@@ -197,8 +197,7 @@ class GameLoop(object):
                 self.record_frame()
                 state.screen = "GAME"
             except StopIteration:
-                state.game = None
-                state.screen = None
+                exit()
         elif key == HELP_KEY:
             # Switch to the help screen. Will later pop the state.
             if state.screen != "HELP":
