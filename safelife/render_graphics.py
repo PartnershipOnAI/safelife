@@ -42,31 +42,28 @@ sprites = {
     CellTypes.fountain: load_sprite(2, 1),
 }
 
-foreground_colors = {
-    # These should be ordered dicts for python < 3.6
-    CellTypes.empty: np.array([0.4, 0.4, 0.4]),
-    CellTypes.color_r: np.array([0.8, 0.2, 0.2]),
-    CellTypes.color_g: np.array([0.2, 0.8, 0.2]),
-    CellTypes.color_g | CellTypes.color_r: np.array([0.8, 0.8, 0.2]),
-    CellTypes.color_b: np.array([0.2, 0.2, 0.8]),
-    CellTypes.color_b | CellTypes.color_r: np.array([0.8, 0.2, 0.8]),
-    CellTypes.color_b | CellTypes.color_g: np.array([0.2, 0.8, 0.8]),
-    CellTypes.rainbow_color: np.array([1.0, 1.0, 1.0])
-}
+foreground_colors = np.array([
+    [0.4, 0.4, 0.4],  # black
+    [0.8, 0.2, 0.2],  # red
+    [0.2, 0.8, 0.2],  # green
+    [0.8, 0.8, 0.2],  # yellow
+    [0.2, 0.2, 0.8],  # blue
+    [0.8, 0.2, 0.8],  # magenta
+    [0.2, 0.8, 0.8],  # cyan
+    [1.0, 1.0, 1.0],  # white
+])
 
-background_colors = {
-    CellTypes.empty: np.array([0.6, 0.6, 0.6]),
-    CellTypes.color_r: np.array([0.9, 0.6, 0.6]),
-    CellTypes.color_g: np.array([0.6, 0.9, 0.6]),
-    CellTypes.color_g | CellTypes.color_r: np.array([0.9, 0.9, 0.6]),
-    CellTypes.color_b: np.array([0.5, 0.5, 0.9]),
-    CellTypes.color_b | CellTypes.color_r: np.array([0.9, 0.6, 0.9]),
-    CellTypes.color_b | CellTypes.color_g: np.array([0.6, 0.9, 0.9]),
-    CellTypes.rainbow_color: np.array([0.9, 0.9, 0.9])
-}
+background_colors = np.array([
+    [0.6, 0.6, 0.6],  # black
+    [0.9, 0.6, 0.6],  # red
+    [0.6, 0.9, 0.6],  # green
+    [0.9, 0.9, 0.6],  # yellow
+    [0.5, 0.5, 0.9],  # blue
+    [0.9, 0.6, 0.9],  # magenta
+    [0.6, 0.9, 0.9],  # cyan
+    [0.9, 0.9, 0.9],  # white
+])
 
-fg_array = np.array(list(foreground_colors.values()))
-bg_array = np.array(list(background_colors.values()))
 cell_array = np.array([
     # [CellTypes.empty, (5*0 + 0) + 1],
     [CellTypes.life, (5*1 + 0) + 1],
@@ -95,8 +92,8 @@ def render_board(board, goals, orientation, edit_loc=None, edit_color=0):
         * cell_array[:,1], axis=-1)
     sprite_idx *= board > 0
     sprite_idx += agent_idx
-    fg_color = fg_array[(board & CellTypes.rainbow_color) >> 9]
-    bg_color = bg_array[(goals & CellTypes.rainbow_color) >> 9]
+    fg_color = foreground_colors[(board & CellTypes.rainbow_color) >> 9]
+    bg_color = background_colors[(goals & CellTypes.rainbow_color) >> 9]
     sprites = sprites_array[sprite_idx]
     mask, sprite = sprites[...,3:], sprites[...,:3]
     tile = (1-mask) * bg_color[...,None,None,:]
@@ -148,7 +145,8 @@ def render_game(game, view_size=None, edit_mode=None):
         board = game.board
         goals = game.goals
         edit_loc = game.edit_loc if edit_mode else None
-    edit_color = foreground_colors.get(game.edit_color, 0) * 255
+    edit_color = foreground_colors[
+        (game.edit_color & CellTypes.rainbow_color) >> 9] * 255
     if edit_mode == "GOALS":
         # Render goals instead. Swap board and goals.
         board, goals = goals, board
