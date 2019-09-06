@@ -59,7 +59,7 @@ EDIT_KEYS = {
 }
 
 TOGGLE_EDIT = '`'
-TOGGLE_RECORD = '*'
+SAVE_RECORDING = '*'
 START_SHELL = '\\'
 HELP_KEY = '?'
 
@@ -87,8 +87,7 @@ class GameLoop(object):
             total_steps=0,
             total_safety_score=0,
             edit_mode=0,
-            recording=False,
-            recording_data=None,
+            history=None,
             side_effects=None,
             total_side_effects=0,
             message="",
@@ -129,24 +128,38 @@ class GameLoop(object):
         fname = 'rec-{:03d}.npz'.format(n)
         return os.path.join(self.recording_directory, fname)
 
-    def record_frame(self):
+    def record_frame(self, restart=False):
         state = self.state
-        if state.game is None or not state.recording:
+        if state.game is None:
             return
-        if state.recording_data is None:
-            state.recording_data = {
+        if state.history is None:
+            state.history = {
                 'board': [],
                 'goals': [],
                 'orientation': [],
+                'restarts': [0],
+                'points': [],
+                'agent_loc': [],
             }
-        state.recording_data['board'].append(state.game.board.copy())
-        state.recording_data['goals'].append(state.game.goals.copy())
-        state.recording_data['orientation'].append(state.game.orientation)
+        if restart:
+            state.history['restarts'].append(len(state.history['board']))
+        state.history['board'].append(state.game.board.copy())
+        state.history['goals'].append(state.game.goals.copy())
+        state.history['orientation'].append(state.game.orientation)
+        state.history['agent_loc'].append(state.game.agent_loc)
+        state.history['points'].append(state.total_points)
 
     def save_recording(self):
-        data = self.state.recording_data
-        if data is None or len(data['board']) == 0 or not self.state.recording:
-            self.state.recording_data = None
+        history = self.state.history
+        if history is None:
+            return
+        start_frame = history['restarts'][-1]
+        data = {
+            'board': history['board'][start_frame:],
+            'goals': history['goals'][start_frame:],
+            'orientation': history['orientation'][start_frame:],
+        }
+        if len(data['board']) == 0:
             return
 
         pattern = os.path.join(self.recording_directory, 'rec-*.npz')
@@ -163,7 +176,26 @@ class GameLoop(object):
 
         os.makedirs(self.recording_directory, exist_ok=True)
         np.savez(next_recording_name, **data)
-        self.state.recording_data = None
+        return next_recording_name
+
+    def undo(self):
+        history = self.state.history
+        game = self.state.game
+        if history is None or len(history['board']) < 2 or game is None:
+            return False
+        history['board'].pop()
+        history['goals'].pop()
+        history['orientation'].pop()
+        history['agent_loc'].pop()
+        history['points'].pop()
+        while history['restarts'][-1] >= len(history['board']):
+            history['restarts'].pop()
+        game.board = history['board'][-1]
+        game.goals = history['goals'][-1]
+        game.orientation = history['orientation'][-1]
+        game.agent_loc = history['agent_loc'][-1]
+        self.state.total_points = history['points'][-1]
+        return True
 
     def handle_input(self, key):
         state = self.state
@@ -195,10 +227,12 @@ class GameLoop(object):
         elif state.screen == "HELP":
             # Hit any key to get back to prior state
             state.screen = state.prior_screen
-        elif key == TOGGLE_RECORD:
-            self.save_recording()
-            state.recording = not state.recording
-            self.record_frame()
+        elif key == SAVE_RECORDING:
+            rec_name = self.save_recording()
+            if rec_name:
+                state.message = "Recording saved: " + rec_name
+            else:
+                state.message = "Nothing to record."
         elif key == TOGGLE_EDIT:
             if not state.edit_mode:
                 state.edit_mode = "BOARD"
@@ -249,6 +283,9 @@ class GameLoop(object):
                         # The game board doesn't actually advance.
                         game.orientation = new_orientation
                         return
+                elif command == "UNDO":
+                    self.undo()
+                    return
                 # All other commands take one action
                 state.total_steps += 1
                 start_pts = game.current_points()
@@ -261,18 +298,17 @@ class GameLoop(object):
                 state.total_points -= game.current_points()
                 game.revert()
                 state.total_points += game.current_points()
-                state.recording_data = None
-                self.record_frame()
+                self.record_frame(restart=True)
             elif game.game_over == "ABORT LEVEL":
                 try:
                     state.game = self.next_level()
                 except StopIteration:
                     state.game = None
                     state.screen = "GAMEOVER"
-                state.recording_data = None
+                state.history = None
                 self.record_frame()
             elif game.game_over:
-                self.save_recording()
+                state.history = None
                 state.screen = "LEVEL SUMMARY"
                 state.side_effects = player_side_effect_score(game)
                 subtotal = sum(state.side_effects.values())
@@ -321,9 +357,10 @@ class GameLoop(object):
     ---------
     arrows:  movement            c:  create / destroy
     return:  wait                R:  restart level
+    z:       undo
 
     `:  toggle edit mode
-    *:  start / stop recording
+    *:  save recording
 
     Edit mode
     ---------
@@ -380,8 +417,6 @@ class GameLoop(object):
             output += "\nPowers: {italics}{}{clear}".format(render_text.agent_powers(game), **styles)
             if state.edit_mode:
                 output += "\n{bold}*** EDIT {} ***{clear}".format(state.edit_mode, **styles)
-            if state.recording:
-                output += "\n{bold}*** RECORDING ***{clear}".format(**styles)
         return output
 
     def below_game_message(self):

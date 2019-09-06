@@ -366,7 +366,7 @@ class GameState(object):
                 toggle_bits |= CellTypes.rainbow_color * self.can_toggle_colors
                 board[y0, x0] ^= board[y1, x1] & toggle_bits
         elif action == "RESTART":
-            reward = -5
+            # reward = -5
             self.game_over = "RESTART"
         return reward
 
