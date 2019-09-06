@@ -4,6 +4,7 @@ import glob
 import textwrap
 import time
 from types import SimpleNamespace
+from collections import defaultdict
 import numpy as np
 
 from .game_physics import SafeLifeGame, ORIENTATION
@@ -89,7 +90,7 @@ class GameLoop(object):
             edit_mode=0,
             history=None,
             side_effects=None,
-            total_side_effects=0,
+            total_side_effects=defaultdict(lambda: 0),
             message="",
             last_command="",
             level_num=0,
@@ -311,8 +312,8 @@ class GameLoop(object):
                 state.history = None
                 state.screen = "LEVEL SUMMARY"
                 state.side_effects = player_side_effect_score(game)
-                subtotal = sum(state.side_effects.values())
-                state.total_side_effects += subtotal
+                for key, val in state.side_effects.items():
+                    state.total_side_effects[key] += val
 
     def handle_save_as(self):
         state = self.state
@@ -427,20 +428,11 @@ class GameLoop(object):
         else:
             return '\n'
 
-    def gameover_message(self):
-        state = self.state
-        output = "Game over!\n----------"
-        output += "\n\nFinal score: %s" % state.total_points
-        output += "\nFinal safety score: %0.2f" % state.total_side_effects
-        output += "\nTotal steps: %s\n\n" % state.total_steps
-        return output
-
-    def level_summary_message(self, full_names=False):
-        output = "Side effect scores (lower is better):\n\n"
-        subtotal = sum(self.state.side_effects.values())
+    def print_side_effects(self, side_effects, ansi=True):
+        output = ""
         fmt = "    {name:12s} {val:6.2f}\n"
-        for ctype, score in self.state.side_effects.items():
-            if full_names:
+        for ctype, score in side_effects.items():
+            if not ansi:
                 name = render_text.cell_name(ctype)
                 output += fmt.format(name=name+':', val=score)
             else:
@@ -449,8 +441,20 @@ class GameLoop(object):
                 # extra escape characters. Use replace instead.
                 line = fmt.format(name='zz:', val=score)
                 output += line.replace('zz', str(name))
-        output += "    " + "-"*19 + '\n'
-        output += fmt.format(name="Total:", val=subtotal)
+        return output
+
+    def gameover_message(self, ansi=True):
+        state = self.state
+        output = "Game over!\n----------"
+        output += "\n\nFinal score: %s" % state.total_points
+        output += "\nTotal steps: %s" % state.total_steps
+        output += "\nTotal side effects:\n"
+        output += self.print_side_effects(state.total_side_effects, ansi)
+        return output
+
+    def level_summary_message(self, ansi=True):
+        output = "Side effect scores (lower is better):\n\n"
+        output += self.print_side_effects(self.state.side_effects, ansi)
         output += "\n\n(hit any key to continue)"
         return output
 
@@ -559,9 +563,9 @@ class GameLoop(object):
         elif state.screen == "HELP":
             fullscreen_msg(textwrap.dedent(self.help_text[1:-1]))
         elif state.screen == "LEVEL SUMMARY" and state.side_effects is not None:
-            fullscreen_msg(self.level_summary_message(full_names=True))
+            fullscreen_msg(self.level_summary_message(ansi=False))
         elif state.screen == "GAMEOVER":
-            fullscreen_msg(self.gameover_message())
+            fullscreen_msg(self.gameover_message(ansi=False))
         elif state.screen in ("GAME", "CONFIRM_SAVE") and state.game is not None:
             top_label = pyglet.text.Label(self.above_game_message(styled=False),
                 font_name='Courier', font_size=11,
