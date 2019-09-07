@@ -4,5 +4,5 @@ This directory contains a bunch of different SafeLife levels. If you want to pla
 
 If instead you just want to view the levels, use the `render` or `print` commands:
 
-    python3 -m safelife render levels/puzzles/*.npz
+    python3 -m safelife render safelife/levels/puzzles/*.npz
     python3 -m safelife print puzzles

@@ -1,8 +1,5 @@
 """
 Algorithm for Proximal Policy Optimization.
-
-Note that this comes from my (Carroll's) self-training exercises.
-It should probably be replaced with OpenAI baselines.
 """
 
 import os

@@ -1,105 +1,156 @@
-# RL Safety Benchmarks: SafeLife
+# SafeLife
 
-SafeLife (working title) presents an environment designed to test the safety of reinforcement learning agents. The initial environment focuses on one aspect of safety: avoidance of unnecessary side effects.
+*Note: this is a work in progress! SafeLife is currently in beta. Any comments/questions/concerns should either be opened as GitHub issues or be directed to carroll@partnershiponai.org*
 
-*Note: this is a work in progress! Any comments/questions/concerns should be directed to carroll@partnershiponai.org*
+SafeLife is a novel environment to test the safety of reinforcement learning agents. It focuses at first on the problem of side effects: how can one specify that an agent do whatever it needs to do to accomplish its goals, but nothing more? In SafeLife, an agent is tasked with creating or removing certain specified patterns, but its reward function is indifferent to its effects on other pre-existing patterns. A *safe* agent will learn to minimize its effects on those other patterns without explicitly being told to do so.
 
-## Overview of the environment
+The SafeLife code base includes
 
-In designing the environment, we considered the following desiderata.
+- the environment definition (observations, available actions, and transitions between states);
+- [example levels](./safelife/levels/), including benchmark levels;
+- methods to procedurally generate new levels of varying difficulty;
+- an implementation of proximal policy optimization to train reinforcement learning agents;
+- a set of scripts to simplify [training on Google Cloud](./gcloud).
 
-- **Presence of non-trivial side effects.** In order to measure robustness against side effects, the environment needs to contain the possibility of large and cascading effects from a small set of actions. If the only side effects were immediate (e.g., knocking over and breaking a vase), then one might worry that an agent would only memorize those actions which led to immediate side effects rather than learning how to minimize or mitigate side effects which would inevitably occur in any real-world scenarios. This is also important for other safety criteria, like safe exploration.
-
-- **Emergent dynamics.** We want an environment that contains a rich set of possibilities without having a complicated rule set. An intelligent agent should be able to determine how items will interact even if they've only ever been encountered in isolation.
-
-- **Non-deterministic dynamics.** A non-deterministic system makes the measurement of side effects much more difficult, both theoretically and practically. They make counterfactual claims much harder to evaluate, and they make it much harder to attribute effects to causes. Since our world is highly non-deterministic, real-world agents will have to grapple with these issues. Non-determinism also makes it harder for agents to memorize optimal trajectories, and should make them more robust to distributional shift.
-
-- **Procedural generation and tunable difficulty.** The agent should be able to train on a large number environments of increasing difficulty.
-
-- **Environmental diversity.** There should be more than one way to tune an environment. This way one can test if a "safe" agent trained in one type of environment maintains their safety when brought into a new or subtly different environment.
-
-- **Abstract.** In order to put humans and machines on more equal footing, human priors shouldn't confer a large advantage. We believe that a more abstract environment will better highlight differences between human and machine *learning* rather than just human and machine *knowledge*.
-
-- **Fun to play!**
-
-With these desiderata in mind, we settled on a grid-world environment that runs a modified version of Conway's Game of Life. The agent is free to walk around the world and flip individual cells from live to dead and vice versa. However, after each agent interaction the entire world evolves one step. The agent's goal is to create life in particular reward cells, remove life from particular penalty cells, and reach each level's exit. In addition to the agent and the live or dead cells, there are a number of other properties that cells can have. They can be
-
-- *frozen*, indicating that they never evolve (e.g., walls);
-- *movable*, indicating that they can be pushed by the agent;
-- *preserving*, indicating that neighboring cells don't die;
-- *inhibiting*, indicating that neighboring cells cannot be born;
-- *indestructible*, indicating that they cannot be destroyed by the agent;
-- and *spawning*, indicating that neighboring cells randomly become alive even if they wouldn't via the Game of Life rules.
-
-These properties can be mixed and matched, allowing for a large set of interesting interactions. In addition, each cell can have a *color*. Some colors (red) are generally bad, and living red cells cost the player points. Goals are also colored, and moving a living cell to its matching goal will result in extra reward.
+Minimizing side effects is very much an unsolved problem, and our baseline trained agents do not do a good job of it! The goal of SafeLife is to allow others to easily test their algorithms and improve upon the current state.
 
 
-## Installation
+## Quick start
 
-The source code is made of both python files and C extensions, the latter of which need to be compiled. To build the extensions locally, run
+### Installation
 
-    python3 setup.py build
+SafeLife requires Python 3.5 or better. If you wish to install in a clean environment, it's recommended to use [python virtual environments](https://docs.python.org/3/library/venv.html).
 
-from main directory. This should compile a `speedups.so` file and place it in the `safelife` folder alongside the source code. You will also need to install the external dependencies (it's often a good idea to use a [virtual environment](https://docs.python.org/3/tutorial/venv.html) when installing dependencies) using
+SafeLife currently needs to be installed from source. First, download this repository and install the requirements:
 
     pip3 install -r requirements.txt
 
-Note that it is also possible install the package globally using `python3 setup.py install`, but it is not recommended when running scripts out of the base directory as the local and global file names will conflict. Upon release the package will be distributed via *pypi*, and the preferred installation method will use *pip*.
+If you wish to run SafeLife in interactive mode, it's a good idea to install the optional requirements as well:
+
+    pip3 install -r requirements.txt
+
+SafeLife includes C extensions which must be compiled. Running
+
+    python3 setup.py build
+
+should compile these extensions and install them in the `safelife` module. (You can also install SafeLife globally using `python3 setup.py install`, although it's often more convenient to work within this directory.)
 
 
-## Interactive environment
+### Interactive play
 
-SafeLife can be played in an interactive mode within a terminal. For example,
+To jump into a game, run
 
     python3 -m safelife play puzzles
 
-will load a sequence of puzzle levels. Other levels can be played using e.g. `play mazes`. The player can move around the board using the arrow keys, and the `c` key will create or destroy a life cell directly in front of the player. Pressing `shift-R` will restart a level at the cost of some small number of points. At the end of each level, the player will receive a safety score that measures how big of an effect the player had on each of the different cell types. The player's general goal is to fill in all of the blue squares and then navigate to the level exit. Try not to break anything along the way!
+All of the puzzle levels are solvable. See if you can do it without disturbing the green patterns!
 
-### Procedurally generated levels
+(You can run `python3 -m safelife play --help` to get help on the command-line options. More detail of how the game works is provided below, but it can be fun to try to figure out the basic mechanics yourself.)
 
-By default, the `play` command will create a new procedurally generated level. A `difficulty` parameter controls the complexity of the level's parameters, e.g.,
+### Training an agent
 
-    python3 -m safelife play --difficulty 10
+The `start-training` script is an easy way to get agents up and running using the default proximal policy optimization implementation. Just run `start-training my-training-run` to start training locally with all saved files going into a new "my-training-run" directory. See below or `start-training --help` for more details.
 
-will create levels that are quite difficult to solve, whereas difficulty 1 tends to be pretty easy. Other parameters control the board size and the whether or not the view is centered on the agent. See
 
-    python3 -m safelife play --help
+## Contributing
 
-for more info.
+We are very happy to have contributors and collaborators! To contribute code, fork this repo and make a pull request. All submitted code should be lint-free. Download flake8 (`pip3 install flake8`) and ensure that running `flake8` in this directory results in no errors.
 
-### Editing levels
+If you would like to establish a longer collaboration or research agenda using SafeLife, contact carroll@partnershiponai.org directly.
 
-At any point the user can enter edit mode by hitting the \` (backtick / tilde) key. In edit mode, the game state is frozen and the user cursor can move over occupied cells. Edit commands include:
 
-- `x`: clear a cell
-- `z`: add a life cell
-- `Z`: add an indestructible life cell
-- `a`: move the player avatar
-- `w`: add a wall
-- `r`: add a crate
-- `T`: add a tree
-- `t`: add a plant
-- `n`: add a spawner
-- `e`: add the level exit
-- `g`: toggle the goal color
-- `5`: toggle the player and cursor color
-- `s`: save the level
-- `Q`: abort the level (go to the next one)
+## Environment Overview
 
-For a complete list of commands, see the `safelife/gameloop.py` file. To exit edit mode, hit the backtick key a second time.
+### Rules
 
-### Rendering levels
+SafeLife is based on [Conway's Game of Life](TK), a set of rules for cellular automata on an infinite two-dimensional grid. In Conway's Game of Life, every cell on the grid is either *alive* or *dead*. At each time step the entire grid is updated. Any living cell with fewer than two or more than three living neighbors dies, and any dead cell with exactly three living neighbors comes alive. All other cells retain their previous state. With just these simple rules, extraordinarily complex patterns can emerge. Some patterns will be static—they won't change between time steps. Other patterns will oscillate between two, or three, [or more](TK) states. Gliders and spaceships travel across the grid, while guns and [puffers](TK) can produce never-ending streams of new patterns. Conway's Game of Life is Turing complete; anything that can be calculated can be calculated in Game of Life using a large enough grid. Some enterprising souls have taken this to its logical conclusion and [implemented Tetris](TK) in Game of Life.
 
-SafeLife supports printing levels to gif and png files. To do so, use the `python3 -m safelife render <saved-level.npz>` command. See `python3 -m safelife render --help` for command options. Currently, non-asci rendering is not supported in interactive mode.
+Despite its name, Conway's Game of Life is not actually a game—there are no players, and there are no choices to be made. SafeLife minimally extends the rules by adding a player, player goals, and a level exit.
+The player has 9 actions that it can choose at each time step: move in any of the four directions, create or destroy a life cell immediately adjacent to itself in any of the four directions, and do nothing. The player also temporarily “freezes” the eight cells in its Moore neighborhood; frozen cells do not change from one time step to the next, regardless of what the Game of Life rules would otherwise proscribe. By judiciously creating and destroying life cells, the player can build up quite complicated patterns. Matching these patterns to goal cells earns the player points and eventually opens the exit to the next level.
 
-## Training an agent
+A small number of extra features enable more interesting play modes and emergent dynamics. In addition to just being alive or dead (or a player or an exit), individual cells can have the following characteristics.
 
-The `start-job` script will start training an agent. Note that it assumes that the `speedups.so` has been installed locally (i.e., using `python3 setup.py build --build-lib .`). The reinforcement learning algorithm and agent architecture are defined in the `training` package. Model parameters, training statistics, and video recordings will be stored in a `data` folder.
+- Some cells are *frozen* regardless of whether or not the player stands next to them. Frozen cells can be dead (walls) or alive (trees). Note that the player can only move onto empty cells, so one can easily use walls to build a maze.
+- Cells can be *movable*. Movable cells allow the player to build defenses against out of control patterns.
+- *Spawning* cells randomly create life cells in their own neighborhoods. This results in never-ending stochastic patterns emanating from the spawners.
+- *Inhibiting* and *preserving* cells respectively prevent cell life and death from happening in their neighborhoods. By default, the player is both inhibiting and preserving (“freezing”), but need not be so on all levels.
+- *Indestructible* life cells cannot be directly destroyed by the player. An indestructible pattern can cause a lot of trouble!
 
-The `start-job` script is designed to be run remotely via gcloud. There are a bunch of helper scripts in the `remote` folder to facilitate this.
+Additionally, all cells have a 3-bit color. New life cells inherit the coloring of their progenitors. The player is (by default) gray, and creates gray cells. Goals have colors too, and matching a goals with their own color yields bonus points. Red cells are harmful (unless in red goals), and yield points when removed from the board.
 
-All of the hyperparameters — including board generation, learning rates, and network architecture — can be set in the SafeLifePPO class, or copies thereof.
+Finally, to simplify computation (and to prevent players from getting lost), SafeLife operates on finite rather than infinite grids and with wrapped boundary conditions.
 
-### Testing agents
+### Classes and code
 
-*still to come!*
+All of these rule are encapsulated by the `safelife.game_physics.SafeLifeGame` class. That class is responsible for maintaining the game state associated with each SafeLife level, changing the state in response to player actions, and updating the state at each time step. It also has functions for serializing and de-serializing the state (saving and loading).
+
+Actions in `SafeLifeGame` do not typically result in any direct rewards (there is a small bonus for successfully reaching a level exit). Instead, each board state is worth a certain number of points, and agent actions can increase or reduce that point value.
+
+The `safelife.gym_env.SafeLifeEnv` class wraps `SafeLifeGame` in an interface suitable for reinforcement learning agents (à la [OpenAI Gym](https://gym.openai.com/)). It implements `step()` and `reset()` functions. The former accepts an action (integers 0–8) and outputs an observation, reward, whether or not the episode completed, and a dictionary of extra information (see the code for more details); the latter starts a new episode and returns a new observation. Observations in `SafeLifeEnv` are not the same as board states in `SafeLifeGame`. Crucially, the observation is always centered on the agent (this respects the symmetry of the game and means that agents don't have to implement attention mechanisms), can be partial (the agent can only see a certain distance), and only displays the color of the goal cells rather than their full content.
+
+The reward function in `SafeLifeEnv` is just the (rescaled) difference in point values between the board before and after an action and time-step update. In addition, `SafeLifeEnv` introduces a no-movement penalty to encourage agent action, and an unobserved time limit to prevent agents from getting stuck. When the environment is reset, either a new board is chosen from a set of fixed levels, or a new level is randomly generated.
+
+
+## Level editing
+
+To start, create an empty level using
+
+    python3 -m safelife play --board_size <SIZE> --clear
+
+or edit an existing level using
+
+    python3 -m safelife play PATH/TO/LEVEL.npz
+
+SafeLife levels consist of foreground cells, including the player, and background goal cells. The goal cells evolve just like the foreground cells, so goal cells can oscillate by making them out of oscillating life patterns. In interactive mode, one can switch between playing and editing the game by hitting the backtick key (‘\`’). To get a full list of edit commands, hit the ‘?’ key.
+
+More complex edits can be performed in an interactive IPython shell by hitting backslash (‘\\’). Make edits to the `game` variable and then `quit` to affect the current level.
+
+
+## Train and benchmark levels
+
+We focus on two distinct tasks for agents to accomplish:
+
+- in *build* tasks, the agent tries to match blue goal cells with its own gray life cells;
+- in *destroy* tasks, the agent tries to remove red cells from the board.
+
+In both tasks there can also be green life cells on the board. The agent's principal reward function is silent on the utility of these green cells, but a safe agent should be able to avoid disrupting them.
+
+Training tasks will typically be randomly generated via `safelife.proc_gen.gen_game()`. The type of task generated depends on the generation parameters. A set of suggested training parameters is supplied in `safelife/levels/params/`. To view typical training boards, run e.g.
+
+    python3 -m safelife print --gen_params=append-still.json
+
+To interactively play them, use `play` instead of `print`.
+
+A set of benchmark levels is supplied in `safelife/levels/benchmarks/`. These levels are fixed to make it easy to gauge progress in both agent performance and agent safety. The benchmark levels use a few different scenarios for each task to more robustly measure side effect safety.
+
+- Side effects in *static environments* should be relatively easy to calculate: any change in the environment is a side effect, and all changes are due to the agent.
+- Side effects in *dynamic environments* are more tricky because only some changes are due to the agent.
+- *Stochastic environments* essentially never repeat, which may make things like reachability analysis much more difficult.
+- Environments that contain both *stochastic and oscillating* patterns can test an agent's ability to discern between fragile and robust patterns. Interfering with either permanently changes their subsequent evolution, but interfering with a fragile oscillating patterns tends to destroy it, while interfering with a robust stochastic pattern just changes it to a slightly different stochastic pattern.
+
+Side effects are measured with the `safelife.side_effects.policy_side_effect_score()` function. This calculates the average displacement of each cell type from a boards without agent interaction to boards where the agent acted. See the code or (forthcoming) paper for more details.
+
+Safe agents will likely need to be trained with their own impacts measure which penalize side effects, but importantly, *the agent's impact measure should not just duplicate the specific test-time impact measure for this environment.* Reducing side effects is a difficult problem precisely because we do not know what the correct real-world impact measure should be; any impact measure needs to be general enough to make progress on the SafeLife benchmarks without overfitting to this particular environment.
+
+
+## Training with proximal policy optimization
+
+We include an implementation of proximal policy optimization in the `training` module. *Note that this implementation contains some custom modifications, and shouldn't be thought of as “reference” implementation. It will be cleaned up in a future release.* The `training.ppo.PPO` class implements the core RL algorithm, `training.safelife_ppo.SafeLifeBasePPO` adds functionality that is particular to the SafeLife environment, and `training.safelife_ppo.SafeLifePPO_example` provides a full implementation with reasonable hyperparameters and network architecture.
+
+There are a few import parameters that deserve special attention.
+
+- `board_params_file` specifies which set of parameters are used to procedurally generate new levels, and therefore which task the agent is trained on.
+- `environment_params` sets any parameters that should be applied to `SafeLifeEnv` instance(s).
+- `test_environments` specifies the benchmark levels to test on. It makes sense to have these (roughly) match the training environment.
+
+For all other parameters, see the code and the documentation therein.
+
+To train an agent using these classes, just instantiate the class and run the `train()` method. Note that only one instance should be created per process.
+
+### Preliminary results
+
+...TK
+
+(Do a clean run for create and destroy tasks and report results here. Also run a mixed task and note the poor performance.)
+
+
+

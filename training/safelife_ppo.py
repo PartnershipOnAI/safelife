@@ -122,7 +122,7 @@ class SafeLifeBasePPO(ppo.PPO):
         test_log.close()
 
 
-class SafeLifePPO(SafeLifeBasePPO):
+class SafeLifePPO_example(SafeLifeBasePPO):
     """
     Defines the network architecture and parameters for agent training.
 
@@ -146,7 +146,12 @@ class SafeLifePPO(SafeLifeBasePPO):
     save_every = 50000
 
     test_every = 500000
-    test_environments = ['benchmarks/test-append.npz']
+    test_environments = [
+        'benchmarks/append-still-1.npz',
+        'benchmarks/append-still-2.npz',
+        'benchmarks/append-still-3.npz',
+        'benchmarks/append-still-4.npz',
+    ]
 
     # Training network params
     gamma = np.array([0.9, 0.99], dtype=np.float32)

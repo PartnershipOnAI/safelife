@@ -51,8 +51,8 @@ EDIT_KEYS = {
     '2': "TOGGLE PRESERVING",
     '3': "TOGGLE INHIBITING",
     '4': "TOGGLE SPAWNING",
-    '5': "CHANGE COLOR",
-    '%': "CHANGE COLOR FULL CYCLE",
+    'g': "CHANGE COLOR",
+    'G': "CHANGE COLOR FULL CYCLE",
     's': "SAVE",
     'S': "SAVE AS",
     'R': "REVERT",
@@ -369,8 +369,8 @@ class GameLoop(object):
     a:  move agent               2:  toggle preserving
     c:  add life                 3:  toggle inhibiting
     C:  add hard life            4:  toggle spawning
-    w:  add wall                 5:  change edit color
-    r:  add crate                %:  change edit color (full range)
+    w:  add wall                 g:  change edit color
+    r:  add crate                G:  change edit color (full range)
     e:  add exit                 s:  save
     i:  add icecube              S:  save as (in terminal)
     t:  add plant                R:  revert level

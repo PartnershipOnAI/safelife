@@ -10,7 +10,7 @@ The first thing to do is download the [gcloud command-line tool](https://cloud.g
 
 In order to actually run any training, you will need to provision virtual machines on which to run. Instances can easily be reused. They come with persistent disks, so you can stop and start them and retain all of your training data. To provision a new virtual machine, or *instance*, run e.g.
 
-    gcloud compute instances create $INSTANCE --image-family tf-latest-gpu --image-project deeplearning-platform-release --boot-disk-size=200GB  --accelerator type=nvidia-tesla-k80 --maintenance-policy TERMINATE --restart-on-failure --metadata startup-script="~/current_job/src/start-job --shutdown"
+    gcloud compute instances create $INSTANCE --image-family tf-latest-gpu --image-project deeplearning-platform-release --boot-disk-size=200GB  --accelerator type=nvidia-tesla-k80 --maintenance-policy TERMINATE --restart-on-failure --metadata startup-script="~/current_job/src/start-training --shutdown"
 
 The startup script ensures that the instances will restart the last active job if it needs to be restarted.
 
@@ -23,7 +23,7 @@ Jobs run on gcloud instances, so first make sure that your instance is running. 
 
     gcloud/start-remote-job $INSTANCE $JOB_NAME --port=6006
 
-That will copy over the benchmarks directory into the appropriately named folder and set up port forwarding for tensorboard onto the specified local port. It will then run `./start-job $JOB_NAME` on the remote instance inside of a `tmux` session. To (gracefully) close the connection, hit `ctrl-b, d`.
+That will copy over the benchmarks directory into the appropriately named folder and set up port forwarding for tensorboard onto the specified local port. It will then run `./start-training $JOB_NAME` on the remote instance inside of a `tmux` session. To (gracefully) close the connection, hit `ctrl-b, d`.
 
 Once a job is running, the following directories will be created on the remote instance:
 

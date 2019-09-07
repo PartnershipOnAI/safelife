@@ -9,7 +9,7 @@ These levels show off some interesting types of game play and emergent behavior.
 
 The player can always create new life cells in empty spaces, and usually can kill life cells when present (some life is armored).
 
-- **simple still life**: Player needs to make a few basic types of still lives. Note that all of these can be made without the use of magic (multiple steps), but the pool is pretty challenging.
+- **simple still life**: Player needs to make a few basic types of still lives.
 
 - **move still life**: Player needs to shift a still life over a few places. The goal is green, so the player can't activate it directly. Instead, the still life needs to be adjusted without messing up its color. This is generally a hard task.
 
@@ -40,7 +40,7 @@ Some cells in the environment are objectively bad (their presence lowers score) 
 
 ### Miscellany
 
-- **one way**: When the agent is itself alive, all sorts of shenanigans and interesting gating mechanics can ensue. I've not successfully gotten all of the blue blocks without magic.
+- **one way**: When the agent is itself alive, all sorts of shenanigans and interesting gating mechanics can ensue. It might not be possible to fill all of the blue blocks.
 
 - **super weed**: Bringing two weeds together can create a permanent tangle.
 

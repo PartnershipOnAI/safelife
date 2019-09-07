@@ -17,9 +17,9 @@ parser = argparse.ArgumentParser(description=textwrap.dedent("""
         a. create an alias to the soon-to-be-created data folder;
         b. start a tmux session that shares the training job's name;
         c. listens on the appropriate local port for tensorboard updates;
-        d. starts training via the `start-job` script.
+        d. starts training via the `start-training` script.
 
-    Note that the `start-job` script will shut down the remote instance with a
+    Note that the `start-training` script will shut down the remote instance with a
     10 minute lag before the script exits, whether via error or normal
     completion. The shutdown is there to prevent machine from idling and
     running up large bills, while the lag is designed so that it's possible
@@ -48,7 +48,7 @@ with open('tmp_files_list', 'w') as f:
         '\n'.join(glob.glob('*.txt')) + '\n'
         'setup.py\n'
         'setup.cfg\n'
-        'start-job\n'
+        'start-training\n'
         'training/\n'
         'safelife/\n'
     )
@@ -73,5 +73,5 @@ result = subprocess.run([
     ssh_cmd, args.instance_name, '-L', args.port + ':localhost:6006',
     f"ln -nsf {src_dir} ~/current_job; "
     f"tmux new-session -s {args.job_name} "
-    f"{src_dir}/start-job {data_dir} --install --shutdown"
+    f"{src_dir}/start-training {data_dir} --install --shutdown"
 ])

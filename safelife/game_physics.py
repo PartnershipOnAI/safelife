@@ -517,13 +517,13 @@ class GameWithGoals(GameState):
     ----------
     goals : ndarray
         Point value associated with each cell. Can be negative.
-    reward_table: ndarray
+    point_table: ndarray
         Lookup table that maps goals (rows) and cell colors (columns) to
-        reward values for individual cells. Colors are KRGYBMCW.
+        point values for individual cells. Colors are KRGYBMCW.
     """
     goals = None
 
-    reward_table = np.array([
+    point_table = np.array([
         # k   r   g   y   b   m   c   w
         [+0, -1, +0, +0, +0, +0, +0, +0],  # black / no goal
         [-3, +3, -3, +0, -3, +0, -3, -3],  # red goal
@@ -534,7 +534,7 @@ class GameWithGoals(GameState):
         [+3, -3, +3, +0, +3, +0, +5, +3],  # cyan goal
         [+0, -1, +0, +0, +0, +0, +0, +0],  # white / rainbow goal
     ])
-    reward_table.setflags(write=False)
+    point_table.setflags(write=False)
 
     def make_default_board(self, board_size):
         super().make_default_board(board_size)
@@ -567,7 +567,7 @@ class GameWithGoals(GameState):
         goals = (goals & CellTypes.rainbow_color) >> CellTypes.color_bit
         cell_colors = (self.board & CellTypes.rainbow_color) >> CellTypes.color_bit
         alive = self.board & CellTypes.alive > 0
-        cell_points = self.reward_table[goals, cell_colors] * alive
+        cell_points = self.point_table[goals, cell_colors] * alive
         return np.sum(cell_points)
 
     def completion_ratio(self, board=None, goals=None):
