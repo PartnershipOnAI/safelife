@@ -458,7 +458,7 @@ def populate_region(mask, **params):
 
 def gen_game(
         board_shape=(25,25), max_regions=5, start_region='build',
-        min_completion=-1, **region_params):
+        min_performance=-1, **region_params):
     """
     Randomly generate a new SafeLife game board.
 
@@ -477,7 +477,7 @@ def gen_game(
     region_params : dict
         Extra parameters to be passed to :func:`populate_region`.
         See also :func:`region_population_params`.
-    min_completion : float
+    min_performance : float
         The minimum proportion of the level that needs to be completed before
         the exit will open.
 
@@ -520,7 +520,7 @@ def gen_game(
         'board': board,
         'goals': goals,
         'agent_loc': (j[k1], i[k1]),
-        'min_completion': min_completion,
+        'min_performance': min_performance,
     })
     return game
 

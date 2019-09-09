@@ -144,7 +144,7 @@ class GameState(object):
         cancels out the "alive" and "spawning" powers.
     can_toggle_colors : bool
         If true, players can also absorb the colors of indestructible blocks.
-    min_completion : float
+    min_performance : float
         Don't allow the agent to exit the level until the level is at least
         this fraction completed. If negative, the agent can always exit.
     """
@@ -158,7 +158,7 @@ class GameState(object):
     game_over = False
     points_on_level_exit = +1
     num_steps = 0
-    min_completion = -1
+    min_performance = -1
 
     can_toggle_powers = False
     can_toggle_colors = False
@@ -185,7 +185,7 @@ class GameState(object):
             "agent_loc": self.agent_loc,
             "board": self.board.copy(),
             "class": "%s.%s" % (cls.__module__, cls.__name__),
-            "min_completion": self.min_completion,
+            "min_performance": self.min_performance,
         }
 
     def deserialize(self, data):
@@ -198,8 +198,8 @@ class GameState(object):
             self.orientation = int(data['orientation'])
         if 'agent_loc' in data:
             self.agent_loc = tuple(data['agent_loc'])
-        if 'min_completion' in data:
-            self.min_completion = float(data['min_completion'])
+        if 'min_performance' in data:
+            self.min_performance = float(data['min_performance'])
         self.exit_locs = np.nonzero(self.board & CellTypes.exit)
         self.game_over = False
         self.num_steps = 0
@@ -491,14 +491,14 @@ class GameState(object):
     def current_points(self):
         return 0
 
-    def completion_ratio(self):
+    def performance_ratio(self):
         return 0, 0
 
     def can_exit(self):
-        if self.min_completion < 0:
+        if self.min_performance < 0:
             return True
-        completed, total = self.completion_ratio()
-        return completed >= self.min_completion * total
+        completed, total = self.performance_ratio()
+        return completed >= self.min_performance * total
 
     def update_exit_colors(self):
         if self.can_exit():
@@ -570,7 +570,7 @@ class GameWithGoals(GameState):
         cell_points = self.point_table[goals, cell_colors] * alive
         return np.sum(cell_points)
 
-    def completion_ratio(self, board=None, goals=None):
+    def performance_ratio(self, board=None, goals=None):
         """
         Calculate how much of the level the agent has completed.
 

@@ -1,6 +1,6 @@
 {
     "start_region": "spawner",
-    "min_completion": 0.5,
+    "min_performance": 0.5,
     "max_regions": 4,
     "region_types": {
         "build": 1,

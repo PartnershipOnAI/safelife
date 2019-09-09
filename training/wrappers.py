@@ -108,10 +108,11 @@ class SafeLifeWrapper(Wrapper):
         if self.video_recorder is not None:
             self.video_recorder.capture_frame()
         if done:
-            completed, possible = self.state.completion_ratio()
+            completed, possible = self.state.performance_ratio()
             info['episode_info'] = {
-                'completion': completed / max(possible, 1),
-                'board_potential': possible,
+                'performance_fraction': completed / max(possible, 1),
+                'performance_possible': possible,
+                'performance_cutoff': max(0, self.state.min_performance),
             }
         return observation, reward, done, info
 

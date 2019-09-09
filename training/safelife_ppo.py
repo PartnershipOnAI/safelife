@@ -142,7 +142,7 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     envs_per_minibatch = 4
     epochs_per_batch = 3
     total_steps = 5e6
-    report_every = 5000
+    report_every = 25000
     save_every = 50000
 
     test_every = 500000
@@ -169,7 +169,7 @@ class SafeLifePPO_example(SafeLifeBasePPO):
 
     # Environment params
     environment_params = {
-        'max_steps': 1200,
+        'max_steps': 1000,
         'movement_bonus': 0.04,
         'movement_bonus_power': 0.01,
         'remove_white_goals': True,
@@ -187,7 +187,7 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     @property
     def board_gen_params(self):
         params = self._base_board_params.copy()
-        params['min_completion'] = 0.8 * np.tanh((self.num_steps-2e5) * 2e-7)
+        params['min_performance'] = 0.4 * np.tanh((self.num_steps-3e5) * 5e-7)
         return params
 
     # --------------
@@ -252,16 +252,5 @@ class SafeLifePPO_example(SafeLifeBasePPO):
         values = tf.layers.dense(
             y, units=len(self.gamma),
             kernel_initializer=ortho_init(1.0))
-
-        def dead_fraction(x):
-            x = tf.equal(x, 0.0)
-            x = tf.cast(x, tf.float32)
-            return tf.reduce_mean(x)
-
-        with tf.name_scope('is_dead'):
-            tf.summary.scalar('layer1', dead_fraction(self.op.layer1))
-            tf.summary.scalar('layer2', dead_fraction(self.op.layer2))
-            tf.summary.scalar('layer3', dead_fraction(self.op.layer3))
-            tf.summary.scalar('layer4', dead_fraction(self.op.layer4))
 
         return logits, values
