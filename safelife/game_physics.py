@@ -217,7 +217,7 @@ class GameState(object):
         self.file_name = file_name
         self._init_data = self.serialize()
         self.num_steps = 0
-        np.savez(file_name, **self._init_data)
+        np.savez_compressed(file_name, **self._init_data)
 
     def revert(self):
         """Revert to the last saved state."""

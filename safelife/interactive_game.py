@@ -176,7 +176,7 @@ class GameLoop(object):
         next_recording_name = os.path.join(self.recording_directory, fname)
 
         os.makedirs(self.recording_directory, exist_ok=True)
-        np.savez(next_recording_name, **data)
+        np.savez_compressed(next_recording_name, **data)
         return next_recording_name
 
     def undo(self):

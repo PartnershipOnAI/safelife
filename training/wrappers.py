@@ -65,7 +65,7 @@ class SafeLifeRecorder(video_recorder.VideoRecorder):
         if self.enabled:
             name = os.path.split(self.path)[1]
             logger.info("Ending video: %s", name)
-            np.savez(self.base_path + '.npz', **self.trajectory)
+            np.savez_compressed(self.base_path + '.npz', **self.trajectory)
         super().close()
 
 
