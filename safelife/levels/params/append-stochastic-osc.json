@@ -4,7 +4,7 @@
     "max_regions": 4,
     "region_types": {
         "build": 1,
-        "append": 3,
+        "append": 2,
         "prune": 0
     },
     "period_weights": {

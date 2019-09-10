@@ -3,8 +3,8 @@
     "min_performance": 0.5,
     "max_regions": 4,
     "region_types": {
-        "build": 0,
-        "append": 1,
+        "build": 1,
+        "append": 2,
         "prune": 0
     },
     "period_weights": {
