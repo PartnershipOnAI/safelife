@@ -17,10 +17,10 @@ from .file_finder import find_files, LEVEL_DIRECTORY
 
 
 COMMAND_KEYS = {
-    KEYS.LEFT_ARROW: "MOVE LEFT",
-    KEYS.RIGHT_ARROW: "MOVE RIGHT",
-    KEYS.UP_ARROW: "MOVE UP",
-    KEYS.DOWN_ARROW: "MOVE DOWN",
+    KEYS.LEFT_ARROW: "LEFT",
+    KEYS.RIGHT_ARROW: "RIGHT",
+    KEYS.UP_ARROW: "UP",
+    KEYS.DOWN_ARROW: "DOWN",
     '\r': "NULL",
     ' ': "NULL",
     'z': "UNDO",  # not implemented
@@ -78,6 +78,7 @@ class GameLoop(object):
     centered_view = False
     gen_params = None
     print_only = False
+    relative_controls = True
     recording_directory = "./plays/"
 
     def __init__(self):
@@ -276,25 +277,37 @@ class GameLoop(object):
                     state.message = game.execute_edit(command) or ""
             elif not state.edit_mode and key in COMMAND_KEYS:
                 command = COMMAND_KEYS[key]
-                state.last_command = command
-                if command.startswith("MOVE "):
-                    new_orientation = ORIENTATION[command[5:]]
-                    if game.orientation != new_orientation:
-                        # First move in a direction just re-orients the agent
-                        # The game board doesn't actually advance.
-                        game.orientation = new_orientation
-                        return
+                needs_board_advance = True
+                if command in ("LEFT", "RIGHT", "UP", "DOWN"):
+                    command_orientation = ORIENTATION[command]
+                    if self.relative_controls and command in ("LEFT", "RIGHT"):
+                        needs_board_advance = False
+                        command = "TURN " + command
+                    elif self.relative_controls:
+                        command = {
+                            "UP": "MOVE FORWARD",
+                            "DOWN": "MOVE BACKWARD",
+                        }[command]
+                    elif command_orientation != game.orientation:
+                        needs_board_advance = False
+                        command = "FACE " + command
+                    else:
+                        command = "MOVE " + command
                 elif command == "UNDO":
                     self.undo()
-                    return
-                # All other commands take one action
-                state.total_steps += 1
-                start_pts = game.current_points()
-                action_pts = game.execute_action(command)
-                game.advance_board()
-                end_pts = game.current_points()
-                state.total_points += (end_pts - start_pts) + action_pts
-                self.record_frame()
+                    needs_board_advance = False
+                    command = "NULL"
+                state.last_command = command
+                if needs_board_advance:
+                    state.total_steps += 1
+                    start_pts = game.current_points()
+                    action_pts = game.execute_action(command)
+                    game.advance_board()
+                    end_pts = game.current_points()
+                    state.total_points += (end_pts - start_pts) + action_pts
+                    self.record_frame()
+                else:
+                    state.total_points += game.execute_action(command)
             if game.game_over == "RESTART":
                 state.total_points -= game.current_points()
                 game.revert()
@@ -703,6 +716,12 @@ def _make_cmd_args(subparsers):
             help="Run the game in the terminal instead of using a graphical"
             " display.")
     for parser in (play_parser,):
+        play_parser.add_argument('-a', '--absolute_controls', action='store_true',
+            help="If set, use absolute instead of relative controls."
+            " In relative controls, the left/right keys turn the agent and"
+            " up/down move the agent forwards/backwards. In absolute controls,"
+            " arrow keys either make the agent face or move in the direction"
+            " indicated.")
         play_parser.add_argument('--centered', action='store_true',
             help="If set, the board is always centered on the agent.")
         play_parser.add_argument('--view_size', type=int, default=None,
@@ -751,6 +770,7 @@ def _run_cmd_args(args):
     else:
         main_loop.random_board = not args.clear
         main_loop.centered_view = args.centered
+        main_loop.relative_controls = not args.absolute_controls
         main_loop.view_size = args.view_size and (args.view_size, args.view_size)
     if args.text_mode:
         main_loop.run_text()

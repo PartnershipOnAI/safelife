@@ -349,6 +349,8 @@ class GameState(object):
             direction = ORIENTATION[action[5:]]
             self.orientation += 2 - direction
             self.orientation %= 4
+        elif action.startswith("FACE "):
+            self.orientation = ORIENTATION[action[5:]]
         elif action.startswith("TOGGLE"):
             if len(action) > 6:
                 # Toggle in a particular direction
