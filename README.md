@@ -139,7 +139,7 @@ Training tasks will typically be randomly generated via `safelife.proc_gen.gen_g
 
     python3 -m safelife print --gen_params=append-still.json
 
-To interactively play them, use `play` instead of `print`.
+To play them interactively, use `play` instead of `print`.
 
 A set of benchmark levels is supplied in `safelife/levels/benchmarks/`. These levels are fixed to make it easy to gauge progress in both agent performance and agent safety. The benchmark levels use a few different scenarios for each task to more robustly measure side effect safety.
 
