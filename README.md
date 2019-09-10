@@ -2,7 +2,19 @@
 
 *Note: this is a work in progress! SafeLife is currently in beta. Any comments/questions/concerns should either be opened as GitHub issues or be directed to carroll@partnershiponai.org*
 
-SafeLife is a novel environment to test the safety of reinforcement learning agents. It focuses at first on the problem of side effects: how can one specify that an agent do whatever it needs to do to accomplish its goals, but nothing more? In SafeLife, an agent is tasked with creating or removing certain specified patterns, but its reward function is indifferent to its effects on other pre-existing patterns. A *safe* agent will learn to minimize its effects on those other patterns without explicitly being told to do so.
+SafeLife is a novel environment to test the safety of reinforcement learning agents. The long term goal of this project is to develop training environments and benchmarks for numerous technical reinforcement learning safety problems, with the following attributes:
+
+* Controllable difficulty for the environment
+* Controllable difficulty for safety constraints
+* Procedurally generated levels with richy adjustable distributions of mechanics and phenomena to reduce overfitting
+
+The initial SafeLife 0.1 Beta (and the roadmap for the next few releases)
+focuses at first on the problem of side effects: how can one specify that an
+agent do whatever it needs to do to accomplish its goals, but nothing more? In
+SafeLife, an agent is tasked with creating or removing certain specified
+patterns, but its reward function is indifferent to its effects on other
+pre-existing patterns. A *safe* agent will learn to minimize its effects on
+those other patterns without explicitly being told to do so.
 
 The SafeLife code base includes
 
@@ -62,10 +74,19 @@ If you would like to establish a longer collaboration or research agenda using S
 
 ### Rules
 
-SafeLife is based on [Conway's Game of Life](TK), a set of rules for cellular automata on an infinite two-dimensional grid. In Conway's Game of Life, every cell on the grid is either *alive* or *dead*. At each time step the entire grid is updated. Any living cell with fewer than two or more than three living neighbors dies, and any dead cell with exactly three living neighbors comes alive. All other cells retain their previous state. With just these simple rules, extraordinarily complex patterns can emerge. Some patterns will be static—they won't change between time steps. Other patterns will oscillate between two, or three, [or more](TK) states. Gliders and spaceships travel across the grid, while guns and [puffers](TK) can produce never-ending streams of new patterns. Conway's Game of Life is Turing complete; anything that can be calculated can be calculated in Game of Life using a large enough grid. Some enterprising souls have taken this to its logical conclusion and [implemented Tetris](TK) in Game of Life.
+SafeLife is based on [Conway's Game of Life](https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life), a set of rules for cellular automata on an infinite two-dimensional grid. In Conway's Game of Life, every cell on the grid is either *alive* or *dead*. At each time step the entire grid is updated. Any living cell with fewer than two or more than three living neighbors dies, and any dead cell with exactly three living neighbors comes alive. All other cells retain their previous state. With just these simple rules, extraordinarily complex patterns can emerge. Some patterns will be static—they won't change between time steps. Other patterns will oscillate between two, or three, [or more](TK) states. Gliders and spaceships travel across the grid, while guns and [puffers](TK) can produce never-ending streams of new patterns. Conway's Game of Life is Turing complete; anything that can be calculated can be calculated in Game of Life using a large enough grid. Some enterprising souls have taken this to its logical conclusion and [implemented Tetris](TK) in Game of Life.
 
-Despite its name, Conway's Game of Life is not actually a game—there are no players, and there are no choices to be made. SafeLife minimally extends the rules by adding a player, player goals, and a level exit.
-The player has 9 actions that it can choose at each time step: move in any of the four directions, create or destroy a life cell immediately adjacent to itself in any of the four directions, and do nothing. The player also temporarily “freezes” the eight cells in its Moore neighborhood; frozen cells do not change from one time step to the next, regardless of what the Game of Life rules would otherwise proscribe. By judiciously creating and destroying life cells, the player can build up quite complicated patterns. Matching these patterns to goal cells earns the player points and eventually opens the exit to the next level.
+Despite its name, Conway's Game of Life is not actually a game—there are no
+players, and there are no choices to be made. In SafeLife 0.1 we've minimally extended
+the rules by adding a player, player goals, and a level exit.  The player has 9
+actions that it can choose at each time step: move in any of the four
+directions, create or destroy a life cell immediately adjacent to itself in any
+of the four directions, and do nothing. The player also temporarily “freezes”
+the eight cells in its Moore neighborhood; frozen cells do not change from one
+time step to the next, regardless of what the Game of Life rules would
+otherwise proscribe. By judiciously creating and destroying life cells, the
+player can build up quite complicated patterns. Matching these patterns to goal
+cells earns the player points and eventually opens the exit to the next level.
 
 A small number of extra features enable more interesting play modes and emergent dynamics. In addition to just being alive or dead (or a player or an exit), individual cells can have the following characteristics.
 
