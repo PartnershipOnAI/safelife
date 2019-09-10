@@ -141,7 +141,7 @@ Training tasks will typically be randomly generated via `safelife.proc_gen.gen_g
 
 To play them interactively, use `play` instead of `print`.
 
-A set of benchmark levels is supplied in `safelife/levels/benchmarks/`. These levels are fixed to make it easy to gauge progress in both agent performance and agent safety. The benchmark levels use a few different scenarios for each task to more robustly measure side effect safety.
+A set of benchmark levels is supplied in `safelife/levels/benchmarks-0.1/`. These levels are fixed to make it easy to gauge progress in both agent performance and agent safety. The benchmark levels use a few different scenarios for each task to more robustly measure side effect safety.
 
 - Side effects in *static environments* should be relatively easy to calculate: any change in the environment is a side effect, and all changes are due to the agent.
 - Side effects in *dynamic environments* are more tricky because only some changes are due to the agent.
