@@ -55,8 +55,8 @@ class SafeLifeRecorder(video_recorder.VideoRecorder):
         super().capture_frame()
         # Also capture the state in numpy mode to make it easy to analyze
         # or re-render the trajectory later.
-        if self.enabled:
-            state = self.env.unwrapped.state
+        state = self.env.unwrapped.state
+        if self.enabled and state and not state.game_over:
             self.trajectory['orientation'].append(state.orientation)
             self.trajectory['board'].append(state.board.copy())
             self.trajectory['goals'].append(state.goals.copy())
