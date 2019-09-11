@@ -1,12 +1,17 @@
-from __future__ import print_function
-try:
-    import sys
-    if sys.version_info[0] < 3:
-        print("SafeLife only runs in Python 3+")
-        sys.exit(1)
-    elif sys.version_info[0] == 3 and sys.version_info[1] < 6:
-        print("WARNING, SafeLife is unsupported on Python < 3.6")
+import sys
 
+if sys.version_info < (3,5):
+    version_msg = (
+        "\n\nSafeLife requires Python 3.5+\n"
+        "(You are using python version %i.%i.%i)\n" % sys.version_info[:3]
+    )
+    if sys.version_info < (3,):
+        raise ImportError(version_msg)
+    else:
+        import warnings
+        warnings.warn(version_msg)
+
+try:
     from . import speedups  # noqa: F401
 except ImportError:
     raise ImportError(

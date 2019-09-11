@@ -15,10 +15,10 @@ ssh_cmd = os.path.abspath(os.path.join(__file__, '../ssh'))
 if args.job_name:
     subprocess.run([
         ssh_cmd, args.instance_name, '-L', args.port + ':localhost:6006',
-        f"tmux attach -t {args.job_name} "
+        "tmux attach -t %s" % (args.job_name,)
     ])
 else:
     subprocess.run([
         ssh_cmd, args.instance_name, '-L', args.port + ':localhost:6006',
-        f"tmux attach"
+        "tmux attach"
     ])
