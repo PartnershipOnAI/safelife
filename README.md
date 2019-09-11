@@ -39,7 +39,7 @@ SafeLife currently needs to be installed from source. First, download this repos
 
 If you wish to run SafeLife in interactive mode, it's a good idea to install the optional requirements as well:
 
-    pip3 install -r requirements.txt
+    pip3 install -r requirements-optional.txt
 
 SafeLife includes C extensions which must be compiled. Running
 
