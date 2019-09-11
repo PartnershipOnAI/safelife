@@ -59,10 +59,10 @@ EDIT_KEYS = {
     'Q': "ABORT LEVEL",
 }
 
-TOGGLE_EDIT = '`'
+TOGGLE_EDIT = ('~', '`')
 SAVE_RECORDING = '*'
 START_SHELL = '\\'
-HELP_KEY = '?'
+HELP_KEYS = ('?', '/')
 
 
 class GameLoop(object):
@@ -213,7 +213,7 @@ class GameLoop(object):
                 state.screen = "GAME"
             except StopIteration:
                 exit()
-        elif key == HELP_KEY:
+        elif key in HELP_KEYS:
             # Switch to the help screen. Will later pop the state.
             if state.screen != "HELP":
                 state.prior_screen = state.screen
@@ -235,7 +235,7 @@ class GameLoop(object):
                 state.message = "Recording saved: " + rec_name
             else:
                 state.message = "Nothing to record."
-        elif key == TOGGLE_EDIT:
+        elif key in TOGGLE_EDIT:
             if not state.edit_mode:
                 state.edit_mode = "BOARD"
             elif state.edit_mode == "BOARD":
@@ -360,10 +360,12 @@ class GameLoop(object):
     ##########################################################
 
     Use the arrow keys to move, 'c' to create or destroy life,
-    and 'enter' to stand still. Try not to make too big of a
-    mess!
+    and 'enter' to stand still. Try to add cells to blue goals
+    and remove unwanted red cells, and try not to make too big
+    of a mess!
 
-    (Hit '?' to access help, or any other key to continue.)
+    (Hit '?' to access help, 'esc' to quit, or any other key
+    to continue.)
     """
 
     help_text = """
@@ -373,7 +375,7 @@ class GameLoop(object):
     return:  wait                R:  restart level
     z:       undo
 
-    `:  toggle edit mode
+    ~:  toggle edit mode
     *:  save recording
 
     Edit mode
@@ -391,6 +393,8 @@ class GameLoop(object):
     p:  add parasite             \:  enter shell
     f:  add fountain
     n:  add spawner
+
+                (hit any key to continue)
     """
 
     @property
@@ -746,6 +750,12 @@ def _make_cmd_args(subparsers):
 def _run_cmd_args(args):
     main_loop = GameLoop()
     main_loop.board_size = (args.board_size, args.board_size)
+    if args.board_size < 3:
+        print("Error: 'board_size' must be at least 3.")
+        return
+    if args.board_size > 50:
+        print("Error: maximum 'board_size' is 50.")
+        return
     if args.gen_params:
         import json
         fname = args.gen_params

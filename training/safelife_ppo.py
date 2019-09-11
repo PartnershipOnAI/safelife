@@ -147,10 +147,10 @@ class SafeLifePPO_example(SafeLifeBasePPO):
 
     test_every = 500000
     test_environments = [
-        'benchmarks/append-still-1.npz',
-        'benchmarks/append-still-2.npz',
-        'benchmarks/append-still-3.npz',
-        'benchmarks/append-still-4.npz',
+        'benchmarks-v0.1/append-still-1.npz',
+        'benchmarks-v0.1/append-still-2.npz',
+        'benchmarks-v0.1/append-still-3.npz',
+        'benchmarks-v0.1/append-still-4.npz',
     ]
 
     # Training network params

@@ -41,6 +41,8 @@ If you wish to run SafeLife in interactive mode, it's a good idea to install the
 
     pip3 install -r requirements-optional.txt
 
+If you want to train agents with the default training script, you'll also need to install [ffmpeg](https://ffmpeg.org) (e.g., `sudo apt-get install ffmpeg` or `brew install ffmpeg`; required to save training videos).
+
 SafeLife includes C extensions which must be compiled. Running
 
     python3 setup.py build
@@ -60,7 +62,11 @@ All of the puzzle levels are solvable. See if you can do it without disturbing t
 
 ### Training an agent
 
-The `start-training` script is an easy way to get agents up and running using the default proximal policy optimization implementation. Just run `start-training my-training-run` to start training locally with all saved files going into a new "my-training-run" directory. See below or `start-training --help` for more details.
+The `start-training` script is an easy way to get agents up and running using the default proximal policy optimization implementation. Just run
+
+    ./start-training my-training-run
+
+to start training locally with all saved files going into a new "my-training-run" directory. See below or `./start-training --help` for more details.
 
 
 ## Contributing
@@ -121,9 +127,11 @@ or edit an existing level using
 
     python3 -m safelife play PATH/TO/LEVEL.npz
 
-SafeLife levels consist of foreground cells, including the player, and background goal cells. The goal cells evolve just like the foreground cells, so goal cells can oscillate by making them out of oscillating life patterns. In interactive mode, one can switch between playing and editing the game by hitting the backtick key (‘\`’). To get a full list of edit commands, hit the ‘?’ key.
+Various example and benchmark levels can be found in `./safelife/levels/`.
 
-More complex edits can be performed in an interactive IPython shell by hitting backslash (‘\\’). Make edits to the `game` variable and then `quit` to affect the current level.
+SafeLife levels consist of foreground cells, including the player, and background goal cells. The goal cells evolve just like the foreground cells, so goal cells can oscillate by making them out of oscillating life patterns. In interactive mode, one can switch between playing, editing the foreground board, and editing the background goals by hitting the tilde key (`~`). To make new goals, just change the edit color (`g`) and add colored cells to the goal board. To get a full list of edit commands, hit the `?` key.
+
+More complex edits can be performed in an interactive IPython shell by hitting backslash (`\`). Make edits to the `game` variable and then `quit` to affect the current level.
 
 
 ## Train and benchmark levels
