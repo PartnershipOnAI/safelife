@@ -27,7 +27,7 @@ That will copy over the benchmarks directory into the appropriately named folder
 
 Once a job is running, the following directories will be created on the remote instance:
 
-    ~/JOB_NAME/       [copy of the safety-benchmark folder]
+    ~/JOB_NAME/       [copy of the root project folder]
     ~/JOB_NAME/data/  [all the training data gets stored here]
     ~/current_job     [link to whichever job has most recently been run]
 
