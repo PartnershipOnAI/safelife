@@ -188,9 +188,10 @@ class GameState(object):
             "min_performance": self.min_performance,
         }
 
-    def deserialize(self, data):
+    def deserialize(self, data, as_initial_state=True):
         """Load game state from a dictionary or npz archive."""
-        self._init_data = data
+        if as_initial_state:
+            self._init_data = data
         self.board = data['board'].copy()
         if 'spawn_prob' in data:
             self.spawn_prob = float(data['spawn_prob'])
@@ -547,8 +548,8 @@ class GameWithGoals(GameState):
         data['goals'] = self.goals.copy()
         return data
 
-    def deserialize(self, data):
-        super().deserialize(data)
+    def deserialize(self, data, *args, **kw):
+        super().deserialize(data, *args, **kw)
         self.goals = data['goals']
 
     def execute_edit(self, command):
@@ -602,8 +603,8 @@ class GameWithGoals(GameState):
         num_red_now = np.sum(red_now)
 
         return (
-            num_filled_goals + num_red_start - num_red_now,
-            num_goals + num_red_start
+            int(num_filled_goals + num_red_start - num_red_now),
+            int(num_goals + num_red_start)
         )
 
     def shift_board(self, dx, dy):
@@ -763,8 +764,8 @@ class AsyncGame(GameWithGoals):
         data['energy_rules'] = self.energy_rules
         return data
 
-    def deserialize(self, data):
-        super().deserialize(data)
+    def deserialize(self, data, *args, **kw):
+        super().deserialize(data, *args, **kw)
         self.energy_rules = data['energy_rules']
 
     def advance_board(self):

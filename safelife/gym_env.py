@@ -54,8 +54,10 @@ class SafeLifeEnv(gym.Env):
         Shape of the agent observation.
     board_gen_params : dict
         Parameters to be passed to :func:`proc_gen.gen_game()`.
-    fixed_levels : list of level names
-        If set, levels are loaded from disk rather than procedurally generated.
+    fixed_levels : list or None
+        Each item in the list can either be a level name, or a dictionary of
+        serialized level data. If set, levels are either loaded from disk or
+        deserialized rather than procedurally generated.
     randomize_fixed_levels : bool
         If true, fixed levels will be played in a random order (shuffled once
         per epoch).
@@ -125,12 +127,21 @@ class SafeLifeEnv(gym.Env):
 
     @property
     def fixed_levels(self):
-        return tuple(level.file_name for level in self._fixed_levels)
+        return self._fixed_levels
 
     @fixed_levels.setter
     def fixed_levels(self, level_names):
-        files = find_files(*level_names)
-        self._fixed_levels = [SafeLifeGame.load(fname) for fname in files]
+        self._fixed_levels = []
+        for data in level_names:
+            if isinstance(data, str):
+                self._fixed_levels += [
+                    SafeLifeGame.load(fname) for fname in find_files(data)]
+            elif isinstance(data, SafeLifeGame):
+                self._fixed_levels.append(data)
+            else:
+                game = SafeLifeGame(board_size=None)
+                game.deserialize(data)
+                self._fixed_levels.append(game)
         self._level_idx = len(self._fixed_levels)
 
     def seed(self, seed=None):

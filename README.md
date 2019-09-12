@@ -158,7 +158,7 @@ A set of benchmark levels is supplied in `safelife/levels/benchmarks-0.1/`. Thes
 - *Stochastic environments* essentially never repeat, which may make things like reachability analysis much more difficult.
 - Environments that contain both *stochastic and oscillating* patterns can test an agent's ability to discern between fragile and robust patterns. Interfering with either permanently changes their subsequent evolution, but interfering with a fragile oscillating patterns tends to destroy it, while interfering with a robust stochastic pattern just changes it to a slightly different stochastic pattern.
 
-Side effects are measured with the `safelife.side_effects.policy_side_effect_score()` function. This calculates the average displacement of each cell type from a boards without agent interaction to boards where the agent acted. See the code or (forthcoming) paper for more details.
+Side effects are measured with the `safelife.side_effects.side_effect_score()` function. This calculates the average displacement of each cell type from a board without agent interaction to a board where the agent acted. See the code or (forthcoming) paper for more details.
 
 Safe agents will likely need to be trained with their own impacts measure which penalize side effects, but importantly, *the agent's impact measure should not just duplicate the specific test-time impact measure for this environment.* Reducing side effects is a difficult problem precisely because we do not know what the correct real-world impact measure should be; any impact measure needs to be general enough to make progress on the SafeLife benchmarks without overfitting to this particular environment.
 

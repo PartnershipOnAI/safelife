@@ -3,12 +3,16 @@ import json
 import logging
 import numpy as np
 import tensorflow as tf
+from collections import defaultdict
+from datetime import datetime
 
-from safelife.gym_env import SafeLifeEnv
-from safelife.side_effects import policy_side_effect_score
-from safelife.file_finder import LEVEL_DIRECTORY
+from safelife.gym_env import SafeLifeEnv, SafeLifeGame
+from safelife.side_effects import side_effect_score
+from safelife.file_finder import find_files, LEVEL_DIRECTORY
+from safelife.render_text import cell_name
+
 from . import ppo
-from .wrappers import SafeLifeWrapper
+from .wrappers import SafeLifeWrapper, RewardsTracker
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +47,10 @@ class SafeLifeBasePPO(ppo.PPO):
     video_freq = 100
     video_counter = None
     video_name = "episode-{episode}-{steps}"
-    test_video_name = "test-{env_name}-{steps}"
-    test_environments = []
+    benchmark_video_name = "benchmark-{env_name}-{steps}"
+    benchmark_environments = []
+    benchmark_initial_steps = 1000
+    benchmark_runs_per_env = 16
 
     environment_params = {}
     board_gen_params = {}
@@ -52,8 +58,8 @@ class SafeLifeBasePPO(ppo.PPO):
 
     def __init__(self, logdir=ppo.DEFAULT_LOGDIR, **kwargs):
         self.logdir = logdir
-        self.test_log = os.path.join(logdir, 'test-log.yaml')
-        with open(self.test_log, 'w') as f:
+        self.benchmark_log_file = os.path.join(logdir, 'benchmark-scores.yaml')
+        with open(self.benchmark_log_file, 'w') as f:
             f.write("# SafeLife test log.\n---\n")
         envs = [
             SafeLifeWrapper(
@@ -80,46 +86,79 @@ class SafeLifeBasePPO(ppo.PPO):
         env_wrapper.unwrapped.board_gen_params = self.board_gen_params
 
     def run_safety_test(self):
+        """
+        Note that this won't work for LSTMs without some minor modification.
+        """
         op = self.op
+        log_file = open(self.benchmark_log_file, mode='a')
+        benchmark_env_names = list(find_files(*self.benchmark_environments))
 
-        def policy(obs, memory):
-            fd = {op.states: [[obs]]}
-            if memory is not None:
-                fd[op.rnn_states_in] = memory
-            if op.rnn_states_out is not None:
-                policy, memory = self.session.run(
-                    [op.policy, op.rnn_states_out], feed_dict=fd)
-            else:
-                policy = self.session.run(op.policy, feed_dict=fd)
-            policy = policy[0, 0]
-            return np.random.choice(len(policy), p=policy), memory
-
-        test_log = open(self.test_log, mode='a')
-        for idx, env_name in enumerate(self.test_environments):
-            env = SafeLifeEnv(
-                fixed_levels=[env_name], **self.environment_params)
-            env.reset()
-            video_name = os.path.join(self.logdir, self.test_video_name.format(
-                idx=idx+1, env_name=env.unwrapped.state.title,
-                steps=self.num_steps))
-            env = SafeLifeWrapper(
-                env, video_name=video_name, on_name_conflict="abort")
-            safety_scores, rewards, lengths = policy_side_effect_score(
-                policy, env, named_keys=True, **self.side_effect_args)
-
-            test_output = [
-                "- env: %s" % env.unwrapped.state.title,
-                "  step-num: %s" % self.num_steps,
-                "  rewards:  %s" % (rewards,),
-                "  lengths:  %s" % (lengths,),
-                "  side-effects:"
+        for idx, env_name in enumerate(benchmark_env_names):
+            # Environment title drops the extension
+            game = SafeLifeGame.load(env_name)
+            game_data = game.serialize()
+            logger.info("Running safety test on %s...", game.title)
+            envs = [
+                RewardsTracker(SafeLifeWrapper(
+                    SafeLifeEnv(fixed_levels=[game_data], **self.environment_params)),
+                ) for _ in range(self.benchmark_runs_per_env)
             ]
-            for key, val in safety_scores.items():
-                test_output.append("    {:14s} {:0.3f}".format(key + ':', val))
-            test_output = '\n'.join(test_output)
-            logger.info("TESTING\n" + test_output)
-            test_log.write('\n' + test_output + '\n')
-        test_log.close()
+            envs[0].env.video_name = os.path.join(self.logdir,
+                self.benchmark_video_name.format(
+                    idx=idx+1, env_name=game.title, steps=self.num_steps))
+
+            # Run each environment
+            obs = [env.reset() for env in envs]
+            for step_num in range(self.benchmark_initial_steps):
+                policies = self.session.run(op.policy, feed_dict={op.states: [obs]})[0]
+                obs = []
+                for policy, env in zip(policies, envs):
+                    if env.state.game_over:
+                        action = 0
+                    else:
+                        action = np.random.choice(len(policy), p=policy)
+                    obs.append(env.step(action)[0])
+
+            # Calculate side effects for each environment
+            logger.info("Calculating side effects...")
+            total_side_effects = defaultdict(lambda: 0)
+            total_reward = 0
+            total_length = 0
+            for env in envs:
+                env_side_effects = {}
+                for key, val in side_effect_score(env.state).items():
+                    key = cell_name(key)
+                    env_side_effects[key] = val
+                    total_side_effects[key] += val
+                env.episode_info['side_effects'] = env_side_effects
+                total_reward += env.episode_info['reward']
+                total_length += env.episode_info['length']
+
+            # Print and log average side effect scores
+            msg = [("\n"
+                "- env: {title}\n"
+                "  time: {time}\n"
+                "  step-num: {step_num}\n"
+                "  avg-ep-reward: {avg_reward:0.3f}\n"
+                "  avg-ep-length: {avg_length:0.3f}\n"
+                "  avg-side-effects:").format(
+                    title=game.title,
+                    time=datetime.now().isoformat().split('.')[0],
+                    step_num=self.num_steps, avg_reward=total_reward/len(envs),
+                    avg_length=total_length/len(envs)
+            )]
+            for key, val in total_side_effects.items():
+                msg.append("    {:14s} {:0.3f}".format(key + ':', val/len(envs)))
+            msg = '\n'.join(msg)
+            logger.info("TESTING\n" + msg)
+            log_file.write(msg)
+
+            # Then also log side effects for individual episodes
+            # This is going to look pretty messy, but oh well.
+            log_file.write("\n  episode-info:\n")
+            for env in envs:
+                log_file.write("    - {}\n".format(json.dumps(env.episode_info)))
+        log_file.close()
 
 
 class SafeLifePPO_example(SafeLifeBasePPO):
@@ -146,12 +185,7 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     save_every = 50000
 
     test_every = 500000
-    test_environments = [
-        'benchmarks-v0.1/append-still-1.npz',
-        'benchmarks-v0.1/append-still-2.npz',
-        'benchmarks-v0.1/append-still-3.npz',
-        'benchmarks-v0.1/append-still-4.npz',
-    ]
+    benchmark_environments = ['benchmarks-v0.1/append-still-*.npz']
 
     # Training network params
     gamma = np.array([0.9, 0.99], dtype=np.float32)

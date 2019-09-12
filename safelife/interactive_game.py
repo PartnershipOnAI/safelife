@@ -4,7 +4,7 @@ import glob
 import textwrap
 import time
 from types import SimpleNamespace
-from collections import defaultdict, namedtuple, deque
+from collections import defaultdict, deque
 import numpy as np
 
 from .game_physics import SafeLifeGame, ORIENTATION
@@ -12,7 +12,7 @@ from . import render_text
 from . import render_graphics
 from .proc_gen import gen_game
 from .keyboard_input import KEYS, getch
-from .side_effects import player_side_effect_score
+from .side_effects import side_effect_score
 from .file_finder import find_files, LEVEL_DIRECTORY
 
 
@@ -64,16 +64,8 @@ START_SHELL = '\\'
 HELP_KEYS = ('?', '/')
 UNDO_KEY = 'z'
 
-GameSnapshot = namedtuple('GameSnapshot', [
-    'board',
-    'goals',
-    'orientation',
-    'agent_loc',
-    'is_restart',
-    'points',
-    'steps',
-])
 MAX_HISTORY_LENGTH = 10000
+
 
 class GameLoop(object):
     """
@@ -151,15 +143,12 @@ class GameLoop(object):
         game = state.game
         if game is None:
             return
-        state.history.append(GameSnapshot(
-            board=game.board.copy(),
-            goals=game.goals.copy(),
-            orientation=game.orientation,
-            agent_loc=tuple(game.agent_loc),
-            points=state.total_points,
-            steps=state.total_steps,
-            is_restart=restart,
-        ))
+        snapshot = game.serialize()
+        snapshot['num_steps'] = game.num_steps
+        snapshot['total_steps'] = state.total_steps
+        snapshot['total_points'] = state.total_points
+        snapshot['is_restart'] = restart
+        state.history.append(snapshot)
 
     def save_recording(self):
         boards = []
@@ -167,11 +156,11 @@ class GameLoop(object):
         orientations = []
         agent_locs = []
         for snapshot in self.state.history:
-            boards.append(snapshot.board)
-            goals.append(snapshot.goals)
-            orientations.append(snapshot.orientation)
-            agent_locs.append(snapshot.agent_loc)
-            if snapshot.is_restart:
+            boards.append(snapshot['board'])
+            goals.append(snapshot['goals'])
+            orientations.append(snapshot['orientation'])
+            agent_locs.append(snapshot['agent_loc'])
+            if snapshot['is_restart']:
                 break
         if not boards:
             return
@@ -205,12 +194,10 @@ class GameLoop(object):
             return False
         history.pop()
         snapshot = history[-1]
-        game.board = snapshot.board.copy()
-        game.goals = snapshot.goals.copy()
-        game.orientation = snapshot.orientation
-        game.agent_loc = tuple(snapshot.agent_loc)
-        self.state.total_points = snapshot.points
-        self.state.total_steps = snapshot.steps
+        game.deserialize(snapshot, as_initial_state=False)
+        game.num_steps = snapshot['num_steps']
+        self.state.total_points = snapshot['total_points']
+        self.state.total_steps = snapshot['total_steps']
         return True
 
     def handle_input(self, key):
@@ -269,6 +256,7 @@ class GameLoop(object):
             state.screen = "GAME"
         elif key == UNDO_KEY and state.screen == "GAME":
             state.last_command = "UNDO"
+            is_repeatable_key = True
             self.undo()
         elif state.screen == "GAME":
             game = state.game
@@ -336,7 +324,7 @@ class GameLoop(object):
                     state.screen = "GAMEOVER"
             elif game.game_over:
                 state.screen = "LEVEL SUMMARY"
-                state.side_effects = player_side_effect_score(game)
+                state.side_effects = side_effect_score(game)
                 for key, val in state.side_effects.items():
                     state.total_side_effects[key] += val
 

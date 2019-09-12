@@ -14,9 +14,10 @@ class RewardsTracker(Wrapper):
     """
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
-        self.episode_info['length'] += 1
+        self.episode_info['length'] += not self.episode_is_done
         self.episode_info['reward'] += info.get('base_reward', reward)
         self.episode_info.update(**info.get('episode_info', {}))
+        self.episode_is_done = done
         return obs, reward, done, info
 
     def reset(self, **kwargs):
@@ -24,6 +25,7 @@ class RewardsTracker(Wrapper):
             'reward': 0.0,
             'length': 0
         }
+        self.episode_is_done = False
         return self.env.reset(**kwargs)
 
 
@@ -52,11 +54,11 @@ class SafeLifeRecorder(video_recorder.VideoRecorder):
         pass
 
     def capture_frame(self):
-        super().capture_frame()
         # Also capture the state in numpy mode to make it easy to analyze
         # or re-render the trajectory later.
         state = self.env.unwrapped.state
         if self.enabled and state and not state.game_over:
+            super().capture_frame()
             self.trajectory['orientation'].append(state.orientation)
             self.trajectory['board'].append(state.board.copy())
             self.trajectory['goals'].append(state.goals.copy())
