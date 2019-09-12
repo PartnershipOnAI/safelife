@@ -521,6 +521,7 @@ def gen_game(
         'goals': goals,
         'agent_loc': (j[k1], i[k1]),
         'min_performance': min_performance,
+        'orientation': 1,
     })
     return game
 

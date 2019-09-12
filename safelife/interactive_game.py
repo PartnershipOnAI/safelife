@@ -4,7 +4,7 @@ import glob
 import textwrap
 import time
 from types import SimpleNamespace
-from collections import defaultdict
+from collections import defaultdict, namedtuple, deque
 import numpy as np
 
 from .game_physics import SafeLifeGame, ORIENTATION
@@ -23,7 +23,6 @@ COMMAND_KEYS = {
     KEYS.DOWN_ARROW: "DOWN",
     '\r': "NULL",
     ' ': "NULL",
-    'z': "UNDO",  # not implemented
     'c': "TOGGLE",
     'R': "RESTART",
 }
@@ -63,7 +62,18 @@ TOGGLE_EDIT = ('~', '`')
 SAVE_RECORDING = '*'
 START_SHELL = '\\'
 HELP_KEYS = ('?', '/')
+UNDO_KEY = 'z'
 
+GameSnapshot = namedtuple('GameSnapshot', [
+    'board',
+    'goals',
+    'orientation',
+    'agent_loc',
+    'is_restart',
+    'points',
+    'steps',
+])
+MAX_HISTORY_LENGTH = 10000
 
 class GameLoop(object):
     """
@@ -88,8 +98,10 @@ class GameLoop(object):
             total_points=0,
             total_steps=0,
             total_safety_score=0,
+            level_start_steps=0,
+            level_start_points=0,
             edit_mode=0,
-            history=None,
+            history=deque(maxlen=MAX_HISTORY_LENGTH),
             side_effects=None,
             total_side_effects=defaultdict(lambda: 0),
             message="",
@@ -111,11 +123,15 @@ class GameLoop(object):
         else:
             yield self.game_cls(board_size=self.board_size)
 
-    def next_level(self):
+    def load_next_level(self):
         if not hasattr(self, '_level_generator'):
             self._level_generator = self.level_generator()
         self.state.level_num += 1
-        return next(self._level_generator)
+        self.state.game = next(self._level_generator)
+        self.state.level_start_points = self.state.total_points
+        self.state.level_start_steps = self.state.total_steps
+        self.state.history.clear()
+        self.record_frame()
 
     def next_recording_name(self):
         pattern = os.path.join(self.recording_directory, 'rec-*.npz')
@@ -132,37 +148,39 @@ class GameLoop(object):
 
     def record_frame(self, restart=False):
         state = self.state
-        if state.game is None:
+        game = state.game
+        if game is None:
             return
-        if state.history is None:
-            state.history = {
-                'board': [],
-                'goals': [],
-                'orientation': [],
-                'restarts': [0],
-                'points': [],
-                'agent_loc': [],
-            }
-        if restart:
-            state.history['restarts'].append(len(state.history['board']))
-        state.history['board'].append(state.game.board.copy())
-        state.history['goals'].append(state.game.goals.copy())
-        state.history['orientation'].append(state.game.orientation)
-        state.history['agent_loc'].append(state.game.agent_loc)
-        state.history['points'].append(state.total_points)
+        state.history.append(GameSnapshot(
+            board=game.board.copy(),
+            goals=game.goals.copy(),
+            orientation=game.orientation,
+            agent_loc=tuple(game.agent_loc),
+            points=state.total_points,
+            steps=state.total_steps,
+            is_restart=restart,
+        ))
 
     def save_recording(self):
-        history = self.state.history
-        if history is None:
+        boards = []
+        goals = []
+        orientations = []
+        agent_locs = []
+        for snapshot in self.state.history:
+            boards.append(snapshot.board)
+            goals.append(snapshot.goals)
+            orientations.append(snapshot.orientation)
+            agent_locs.append(snapshot.agent_loc)
+            if snapshot.is_restart:
+                break
+        if not boards:
             return
-        start_frame = history['restarts'][-1]
         data = {
-            'board': history['board'][start_frame:],
-            'goals': history['goals'][start_frame:],
-            'orientation': history['orientation'][start_frame:],
+            'board': boards[::-1],
+            'goals': goals[::-1],
+            'orientation': orientations[::-1],
+            'agent_loc': agent_locs[::-1],
         }
-        if len(data['board']) == 0:
-            return
 
         pattern = os.path.join(self.recording_directory, 'rec-*.npz')
         old_recordings = glob.glob(pattern)
@@ -183,20 +201,16 @@ class GameLoop(object):
     def undo(self):
         history = self.state.history
         game = self.state.game
-        if history is None or len(history['board']) < 2 or game is None:
+        if len(history) < 2 or game is None:
             return False
-        history['board'].pop()
-        history['goals'].pop()
-        history['orientation'].pop()
-        history['agent_loc'].pop()
-        history['points'].pop()
-        while history['restarts'][-1] >= len(history['board']):
-            history['restarts'].pop()
-        game.board = history['board'][-1]
-        game.goals = history['goals'][-1]
-        game.orientation = history['orientation'][-1]
-        game.agent_loc = history['agent_loc'][-1]
-        self.state.total_points = history['points'][-1]
+        history.pop()
+        snapshot = history[-1]
+        game.board = snapshot.board.copy()
+        game.goals = snapshot.goals.copy()
+        game.orientation = snapshot.orientation
+        game.agent_loc = tuple(snapshot.agent_loc)
+        self.state.total_points = snapshot.points
+        self.state.total_steps = snapshot.steps
         return True
 
     def handle_input(self, key):
@@ -208,8 +222,7 @@ class GameLoop(object):
         elif self.print_only:
             # Hit any key to get to the next level
             try:
-                state.game = self.next_level()
-                self.record_frame()
+                self.load_next_level()
                 state.screen = "GAME"
             except StopIteration:
                 exit()
@@ -221,7 +234,7 @@ class GameLoop(object):
         elif state.screen in ("INTRO", "LEVEL SUMMARY"):
             # Hit any key to get to the next level
             try:
-                state.game = self.next_level()
+                self.load_next_level()
                 state.screen = "GAME"
             except StopIteration:
                 state.game = None
@@ -255,6 +268,9 @@ class GameLoop(object):
             else:
                 state.message = "Save aborted."
             state.screen = "GAME"
+        elif key == UNDO_KEY and state.screen == "GAME":
+            state.last_command = "UNDO"
+            self.undo()
         elif state.screen == "GAME":
             game = state.game
             if state.edit_mode and key in EDIT_KEYS:
@@ -275,6 +291,8 @@ class GameLoop(object):
                         state.last_command = "SAVE AS"
                 else:
                     state.message = game.execute_edit(command) or ""
+                if not command.startswith("MOVE"):
+                    self.record_frame()
             elif not state.edit_mode and key in COMMAND_KEYS:
                 command = COMMAND_KEYS[key]
                 needs_board_advance = True
@@ -293,10 +311,6 @@ class GameLoop(object):
                         command = "FACE " + command
                     else:
                         command = "MOVE " + command
-                elif command == "UNDO":
-                    self.undo()
-                    needs_board_advance = False
-                    command = "NULL"
                 state.last_command = command
                 if needs_board_advance:
                     state.total_steps += 1
@@ -309,20 +323,17 @@ class GameLoop(object):
                 else:
                     state.total_points += game.execute_action(command)
             if game.game_over == "RESTART":
-                state.total_points -= game.current_points()
                 game.revert()
-                state.total_points += game.current_points()
+                state.total_points = state.level_start_points
+                state.total_steps = state.level_start_steps
                 self.record_frame(restart=True)
             elif game.game_over == "ABORT LEVEL":
                 try:
-                    state.game = self.next_level()
+                    self.load_next_level()
                 except StopIteration:
                     state.game = None
                     state.screen = "GAMEOVER"
-                state.history = None
-                self.record_frame()
             elif game.game_over:
-                state.history = None
                 state.screen = "LEVEL SUMMARY"
                 state.side_effects = player_side_effect_score(game)
                 for key, val in state.side_effects.items():
@@ -373,8 +384,8 @@ class GameLoop(object):
     ---------
     arrows:  movement            c:  create / destroy
     return:  wait                R:  restart level
-    z:       undo
 
+    z:  undo
     ~:  toggle edit mode
     *:  save recording
 
@@ -504,7 +515,7 @@ class GameLoop(object):
     def setup_run(self):
         if self.print_only:
             try:
-                self.state.game = self.next_level()
+                self.load_next_level()
                 self.state.screen = "GAME"
             except StopIteration:
                 self.state.screen = None
