@@ -217,6 +217,7 @@ class GameLoop(object):
         state = self.state
         state.message = ""
         state.last_command = ""
+        is_repeatable_key = False
         if key == KEYS.INTERRUPT:
             exit()
         elif self.print_only:
@@ -256,8 +257,6 @@ class GameLoop(object):
             else:
                 state.edit_mode = None
         elif key == START_SHELL and state.edit_mode:
-            # Avoid repeat keys
-            self.last_key_down = self.last_key_modifier = None
             # Handle the shell command later on in the event loop
             # after we've had a chance to display something on the screen.
             state.last_command = "SHELL"
@@ -287,11 +286,12 @@ class GameLoop(object):
                     else:
                         # User will have to go to the terminal, but oh well.
                         # Not worth the effort to manage text input.
-                        self.last_key_down = self.last_key_modifier = None
                         state.last_command = "SAVE AS"
                 else:
                     state.message = game.execute_edit(command) or ""
-                if not command.startswith("MOVE"):
+                if command.startswith("MOVE"):
+                    is_repeatable_key = True
+                else:
                     self.record_frame()
             elif not state.edit_mode and key in COMMAND_KEYS:
                 command = COMMAND_KEYS[key]
@@ -322,6 +322,7 @@ class GameLoop(object):
                     self.record_frame()
                 else:
                     state.total_points += game.execute_action(command)
+            is_repeatable_key = not game.game_over
             if game.game_over == "RESTART":
                 game.revert()
                 state.total_points = state.level_start_points
@@ -338,6 +339,9 @@ class GameLoop(object):
                 state.side_effects = player_side_effect_score(game)
                 for key, val in state.side_effects.items():
                     state.total_side_effects[key] += val
+
+        if not is_repeatable_key:
+            self.last_key_down = self.last_key_modifier = None
 
     def handle_save_as(self):
         state = self.state
