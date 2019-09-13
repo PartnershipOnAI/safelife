@@ -41,7 +41,7 @@ If you want to train agents with the default training script, you'll also need t
 
 SafeLife includes C extensions which must be compiled. Running
 
-    python3 setup.py build
+    python3 setup.py build_ext --inplace
 
 should compile these extensions and install them in the `safelife` module. (You can also install SafeLife globally using `python3 setup.py install`, although it's often more convenient to work within this directory.)
 
