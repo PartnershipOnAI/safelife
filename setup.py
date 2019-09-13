@@ -10,22 +10,17 @@ data_files = ['*.png']
 data_files += glob.glob(os.path.join(levels_path, '**/*.npz'), recursive=True)
 data_files += glob.glob(os.path.join(levels_path, '**/*.json'), recursive=True)
 
+requirements = open('requirements.txt').read()
+requirements = [line for line in requirements.split('\n') if line]
+
 setuptools.setup(
-    name='safety-net',
-    version='0.1.dev3',
+    name='SafeLife',
+    version='0.1b1',
     author="Carroll L. Wainwright",
     description="Safety benchmarks for reinforcement learning",
-    # package_dir={'safelife': src_dir},
     packages=['safelife'],
     package_data={'safelife': data_files},
-    install_requires=[
-        "pyemd==0.5.1",
-        "numpy>=1.11.0",
-        "scipy>=1.0.0",
-        "gym>=0.12",
-        "imageio>=2.5.0",
-        "tensorflow>=1.13,<2.0",
-    ],
+    install_requires=requirements,
     ext_modules=[
         setuptools.Extension(
             'safelife.speedups',
@@ -40,9 +35,6 @@ setuptools.setup(
             extra_compile_args=[
                 '-O3',
                 '-Wno-shorten-64-to-32',
-                # '-std=c++11',
-                # '-stdlib=libc++',
-                # '-mmacosx-version-min=10.9',
                 '-Wno-c++11-extensions',
             ]
         ),

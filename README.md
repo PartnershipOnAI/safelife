@@ -37,11 +37,7 @@ SafeLife currently needs to be installed from source. First, download this repos
 
     pip3 install -r requirements.txt
 
-If you wish to run SafeLife in interactive mode, it's a good idea to install the optional requirements as well:
-
-    pip3 install -r requirements-optional.txt
-
-If you want to train agents with the default training script, you'll also need to install [ffmpeg](https://ffmpeg.org) (e.g., `sudo apt-get install ffmpeg` or `brew install ffmpeg`; required to save training videos).
+If you want to train agents with the default training script, you'll also need to install [ffmpeg](https://ffmpeg.org) (e.g., `sudo apt-get install ffmpeg` or `brew install ffmpeg`; required to save training videos) and additional training requirements (`pip3 install -r requirements-training.txt`; primarily *tensorflow*).
 
 SafeLife includes C extensions which must be compiled. Running
 

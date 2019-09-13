@@ -126,9 +126,11 @@ logging.config.dictConfig({
 # Install dependencies if they aren't already there
 
 if args.install:
-    reqs_file = os.path.join(safety_dir, "requirements.txt")
+    reqs_file1 = os.path.join(safety_dir, "requirements.txt")
+    reqs_file2 = os.path.join(safety_dir, "requirements-training.txt")
     subprocess.run("sudo apt-get install ffmpeg --yes".split())
-    subprocess.run(["sudo", "pip3", "install", "-r", reqs_file])
+    subprocess.run(["sudo", "pip3", "install", "-r", reqs_file1])
+    subprocess.run(["sudo", "pip3", "install", "-r", reqs_file2])
 # By making the build lib the same as the base folder, the extension
 # should just get built into the source directory.
 subprocess.run([
