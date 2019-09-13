@@ -1,7 +1,13 @@
 import os
 import glob
 import setuptools
-import numpy
+
+
+class get_numpy_include(object):
+    def __str__(self):
+        import numpy
+        return numpy.get_include()
+
 
 ext_path = os.path.abspath(os.path.join(__file__, '../safelife/speedups_src'))
 levels_path = os.path.abspath(os.path.join(__file__, '../safelife/levels'))
@@ -28,9 +34,7 @@ setuptools.setup(
                 ('PY_ARRAY_UNIQUE_SYMBOL', 'safelife_speedups'),
                 ('NPY_NO_DEPRECATED_API', 'NPY_1_11_API_VERSION')
             ],
-            include_dirs=[
-                ext_path,
-                numpy.get_include()],
+            include_dirs=[ext_path, get_numpy_include()],
             sources=glob.glob(os.path.join(ext_path, '*.c')),
             extra_compile_args=[
                 '-O3',
