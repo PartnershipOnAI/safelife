@@ -201,7 +201,7 @@ class GameState(object):
             self.agent_loc = tuple(data['agent_loc'])
         if 'min_performance' in data:
             self.min_performance = float(data['min_performance'])
-        self.exit_locs = np.nonzero(self.board & CellTypes.exit)
+        self.update_exit_locs()
         self.game_over = False
         self.num_steps = 0
 
@@ -439,7 +439,7 @@ class GameState(object):
                 return "No saved state; cannot revert."
         elif command == "ABORT LEVEL":
             self.game_over = "ABORT LEVEL"
-        self.exit_locs = np.nonzero(self.board & CellTypes.exit)
+        self.update_exit_locs()
 
     def shift_board(self, dx, dy):
         """Utility function. Translate the entire board (edges wrap)."""
@@ -447,6 +447,7 @@ class GameState(object):
         self.board = np.roll(self.board, dx, axis=1)
         self.agent_loc = tuple(
             (np.array(self.agent_loc) + [dx, dy]) % [self.width, self.height])
+        self.update_exit_locs()
 
     def resize_board(self, dx, dy):
         """Utility function. Expand or shrink the board."""
@@ -460,6 +461,7 @@ class GameState(object):
         self.board = new_board
         self.agent_loc = tuple(
             np.array(self.agent_loc) % [self.width, self.height])
+        self.update_exit_locs()
 
     def clip_board(self, left=0, right=0, top=0, bottom=0):
         """Utility function. Clip edges off of the board."""
@@ -502,6 +504,9 @@ class GameState(object):
             return True
         completed, total = self.performance_ratio()
         return completed >= self.min_performance * total
+
+    def update_exit_locs(self):
+        self.exit_locs = np.nonzero(self.board & CellTypes.exit)
 
     def update_exit_colors(self):
         if self.can_exit():
