@@ -167,7 +167,7 @@ class PPO(object):
         self.op.num_episodes.load(self.num_episodes, self.session)
         self.saver.save(self.session, self.save_path, self.num_steps)
 
-    def restore_checkpoint(self, logdir):
+    def restore_checkpoint(self, logdir, raise_on_error=False):
         """
         Resume training from the specified directory.
 
@@ -190,7 +190,10 @@ class PPO(object):
         try:
             self.saver.restore(self.session, last_checkpoint)
         except ValueError:
-            return
+            if raise_on_error:
+                raise
+            else:
+                return
         self.num_steps, self.num_episodes = self.session.run(
             [self.op.num_steps, self.op.num_episodes])
         logger.info("Restoring old checkpoint. %i episodes, %i steps.",

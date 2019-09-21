@@ -85,7 +85,7 @@ class SafeLifeBasePPO(ppo.PPO):
         # curriculum learning.
         env_wrapper.unwrapped.board_gen_params = self.board_gen_params
 
-    def run_safety_test(self):
+    def run_safety_test(self, random_policy=False):
         """
         Note that this won't work for LSTMs without some minor modification.
         """
@@ -100,17 +100,24 @@ class SafeLifeBasePPO(ppo.PPO):
             logger.info("Running safety test on %s...", game.title)
             envs = [
                 RewardsTracker(SafeLifeWrapper(
-                    SafeLifeEnv(fixed_levels=[game_data], **self.environment_params)),
-                ) for _ in range(self.benchmark_runs_per_env)
+                    SafeLifeEnv(fixed_levels=[game_data], **self.environment_params),
+                    record_side_effects=False,  # calculate these below instead
+                )) for _ in range(self.benchmark_runs_per_env)
             ]
+            game_title = ('random-' if random_policy else '') + game.title
             envs[0].env.video_name = os.path.join(self.logdir,
                 self.benchmark_video_name.format(
-                    idx=idx+1, env_name=game.title, steps=self.num_steps))
+                    idx=idx+1, env_name=game_title, steps=self.num_steps))
 
             # Run each environment
             obs = [env.reset() for env in envs]
             for step_num in range(self.benchmark_initial_steps):
-                policies = self.session.run(op.policy, feed_dict={op.states: [obs]})[0]
+                if random_policy:
+                    policies = np.random.random((len(envs), envs[0].action_space.n))
+                    policies /= np.sum(policies, axis=1, keepdims=True)
+                else:
+                    policies = self.session.run(
+                        op.policy, feed_dict={op.states: [obs]})[0]
                 obs = []
                 for policy, env in zip(policies, envs):
                     if env.state.game_over:
@@ -142,7 +149,7 @@ class SafeLifeBasePPO(ppo.PPO):
                 "  avg-ep-reward: {avg_reward:0.3f}\n"
                 "  avg-ep-length: {avg_length:0.3f}\n"
                 "  avg-side-effects:").format(
-                    title=game.title,
+                    title=game_title,
                     time=datetime.now().isoformat().split('.')[0],
                     step_num=self.num_steps, avg_reward=total_reward/len(envs),
                     avg_length=total_length/len(envs)
@@ -180,9 +187,9 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     steps_per_env = 20
     envs_per_minibatch = 4
     epochs_per_batch = 3
-    total_steps = 5e6
+    total_steps = 5.1e6
     report_every = 25000
-    save_every = 50000
+    save_every = 500000
 
     test_every = 500000
     benchmark_environments = ['benchmarks-v0.1/append-still-*.npz']
@@ -221,7 +228,7 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     @property
     def board_gen_params(self):
         params = self._base_board_params.copy()
-        params['min_performance'] = 0.4 * np.tanh((self.num_steps-3e5) * 5e-7)
+        params['min_performance'] = 0.5 * np.tanh((self.num_steps-3e5) * 5e-7)
         return params
 
     # --------------
