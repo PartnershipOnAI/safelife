@@ -155,7 +155,7 @@ class GameLoop(object):
         goals = []
         orientations = []
         agent_locs = []
-        for snapshot in self.state.history:
+        for snapshot in reversed(self.state.history):
             boards.append(snapshot['board'])
             goals.append(snapshot['goals'])
             orientations.append(snapshot['orientation'])
