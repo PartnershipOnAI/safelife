@@ -136,13 +136,9 @@ def build_fence(mask, shuffle=True):
     return fence
 
 
-def region_population_params(difficulty=5, **fixed_params):
+def region_population_params(**kwargs):
     """
-    Dynamically set region population parameters based on difficulty.
-
-    Any parameter that's left blank will be automatically picked via the
-    difficulty. If a parameter is specified, then the difficulty is ignored
-    for that parameter.
+    Update region population parameters from a set of defaults.
 
     All parameters which accept a range of values take as input the minimum
     and maximum values of that range. The output parameter will be randomly
@@ -150,7 +146,6 @@ def region_population_params(difficulty=5, **fixed_params):
 
     Parameters
     ----------
-    difficulty : float
     region_types : dict (str : float)
         A dictionary mapping the different possible of region types to their
         relative weights. For each region one of the region types will be
@@ -196,34 +191,21 @@ def region_population_params(difficulty=5, **fixed_params):
     -------
     dict
     """
-    def dscale(x, y):
-        """
-        Do linear interpolation based on difficulty.
-        """
-        x = np.asanyarray(x)
-        y = np.asanyarray(y)
-        assert len(x) == len(y)
-        k = np.searchsorted(x, difficulty, side='right')
-        k1 = max(0, k-1)
-        k2 = min(k, len(x) - 1)
-        r = 1 if k1 == k2 else (difficulty - x[k1]) / (x[k2] - x[k1])
-        y = np.array(y)
-        return ((1-r) * y[k1] + r * y[k2]).tolist()
 
     params = {
         "region_types": {
-            "neutral": dscale([1,1,10], [0,1,3]),
+            "neutral": 0.5,
             "build": 1,
-            "append": dscale([2,2,10], [0,1,2]),
-            "destroy": dscale([3,3,10], [0,1,2]),
-            "prune": dscale([4,4,10], [0,1,2]),
-            "spawner": dscale([3,3,10], [0,2,4]),
-            "fountain": dscale([6,6,10], [0,1.5,3]),
-            "grow": dscale([7,7,10], [0,2,3]),
+            "append": 2,
+            "destroy": 1,
+            "prune": 2,
+            "spawner": 1,
+            "fountain": 1,
+            "grow": 0.5,
         },
         "cell_probabilities": {
-            "wall": dscale([0, 2, 2, 10], [0, 0, 0.25, 0.5]),
-            "tree": dscale([0, 3, 3, 10], [0, 0, 0.25, 0.5]),
+            "wall": 0.7,
+            "tree": 0.7,
         },
         "cell_penalties": {
             "wall": (1, 20),
@@ -231,32 +213,32 @@ def region_population_params(difficulty=5, **fixed_params):
         },
         "spawner_colors": {
             # "gray": 1,
-            "green": 1,
-            "red": dscale([5,6], [0,0.5]),
-            "blue": dscale([6,7], [0,1]),
+            "green": 0.5,
+            "red": 0.2,
+            "blue": 1,
         },
-        "spawner_trees": dscale([0,3,10], [0, 0, 0.1]),
+        "spawner_trees": 0.1,
         "period_weights": {
             # Note that period 3 oscillators can take a really long time
             # to generate.
             1: 1,
-            2: dscale([4,10], [0,2]),
-            # 3: dscale([7,10], [0,2]),
+            2: 0.3,
+            3: 0.0,
         }
     }
     random_params = {
         # The following should all look like (min_frac, max_frac)
-        "fence_frac": dscale([0, 10], [[1.1, 2], [-0.2, 0.8]]),
-        "extra_walls_frac": dscale([0, 10], [[0, 0], [0, 0.1]]),
-        "crate_frac": dscale([0, 5, 10], [[0,0], [0.2, 1], [-0.1, 0.5]]),
-        "plant_frac": dscale([0, 5, 10], [[0,0], [0.2, 1], [-0.1, 0.5]]),
-        "hardened_frac": dscale([5, 10], [[-1,0], [-0.5, 1]]),
-        "temperature": dscale([0, 5, 10], [[0.3, 0.3], [0.4, 0.8], [0.5, 0.8]]),
-        "min_fill": dscale([0, 5, 10], [[0.05, 0.1], [0.1, 0.2], [0.15, 0.3]]),
+        "temperature": [0.3, 0.5],
+        "min_fill": [0.1, 0.2],
+        "fence_frac": [0.6, 1.5],
+        "extra_walls_frac": [0, 0.05],
+        "hardened_frac": [0,0],
+        "crate_frac": [0.2, 0.8],
+        "plant_frac": [0.0, 0.4],
     }
 
     params.update(random_params)
-    params.update(fixed_params)
+    params.update(kwargs)
 
     for key in random_params:
         low, high = params[key]

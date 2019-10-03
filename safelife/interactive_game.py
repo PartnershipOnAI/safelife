@@ -701,11 +701,13 @@ def _make_cmd_args(subparsers):
     for parser in (play_parser, print_parser):
         # they use some of the same commands
         parser.add_argument('load_from',
-            nargs='+', help="Load levels from file(s)."
+            nargs='*', help="Load levels from file(s)."
             " Note that files can either be archived SafeLife board (.npz)"
             " or they can be parameters for procedural generation (.json)."
             " Files will be searched for in the 'levels'"
-            " folder if not found in the current working directory.")
+            " folder if not found in the current working directory."
+            " If no files are provided, a new board will be randomly generated"
+            " with the default parameters.")
         parser.add_argument('-r', '--repeat', action="store_true",
             help="If set, repeat levels in an endless loop.")
     for parser in (new_parser,):

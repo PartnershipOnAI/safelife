@@ -62,6 +62,8 @@ def safelife_loader(*paths, repeat=False, shuffle=False, callback=None):
         expressions, or it can point to a directory of npz files to load.
         Files will first be searched for in the current working directory.
         If not found, the 'levels' directory will be searched as well.
+        If no paths are supplied, this will generate a random level using
+        default level generation parameters.
     repeat : bool
         If true, files will be loaded (yielded) repeatedly and forever.
     shuffle : bool
@@ -79,7 +81,10 @@ def safelife_loader(*paths, repeat=False, shuffle=False, callback=None):
         Only iterate over as many instances as you need!
     """
     game_num = 0
-    all_data = [[f] for f in find_files(*paths, file_types=('json', 'npz'))]
+    if paths:
+        all_data = [[f] for f in find_files(*paths, file_types=('json', 'npz'))]
+    else:
+        all_data = [[None, 'procgen', {}]]
     while True:
         if shuffle:
             random.shuffle(all_data)
