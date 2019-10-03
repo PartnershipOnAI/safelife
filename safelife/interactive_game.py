@@ -10,10 +10,9 @@ import numpy as np
 from .game_physics import SafeLifeGame, ORIENTATION
 from . import render_text
 from . import render_graphics
-from .proc_gen import gen_game
 from .keyboard_input import KEYS, getch
 from .side_effects import side_effect_score
-from .file_finder import find_files, LEVEL_DIRECTORY
+from .file_finder import safelife_loader
 
 
 COMMAND_KEYS = {
@@ -71,10 +70,6 @@ class GameLoop(object):
     """
     Play the game interactively. For humans.
     """
-    game_cls = SafeLifeGame
-    board_size = (25, 25)
-    random_board = True
-    difficulty = 1  # for random boards
     load_from = None
     view_size = None
     centered_view = False
@@ -83,7 +78,8 @@ class GameLoop(object):
     relative_controls = True
     recording_directory = "./plays/"
 
-    def __init__(self):
+    def __init__(self, level_generator):
+        self.level_generator = level_generator
         self.state = SimpleNamespace(
             screen="INTRO",
             game=None,
@@ -101,25 +97,9 @@ class GameLoop(object):
             level_num=0,
         )
 
-    def level_generator(self):
-        if self.load_from:
-            # Load file names directly
-            for fname in self.load_from:
-                yield self.game_cls.load(fname)
-        elif self.random_board:
-            gen_params = self.gen_params or {}
-            gen_params.setdefault('difficulty', self.difficulty)
-            gen_params.setdefault('board_shape', self.board_size)
-            while True:
-                yield gen_game(**gen_params)
-        else:
-            yield self.game_cls(board_size=self.board_size)
-
     def load_next_level(self):
-        if not hasattr(self, '_level_generator'):
-            self._level_generator = self.level_generator()
         self.state.level_num += 1
-        self.state.game = next(self._level_generator)
+        self.state.game = next(self.level_generator)
         self.state.level_start_points = self.state.total_points
         self.state.level_start_steps = self.state.total_steps
         self.state.history.clear()
@@ -267,7 +247,8 @@ class GameLoop(object):
                 if command.startswith("PUT") and state.edit_mode == "GOALS":
                     command = "GOALS " + command
                 if command.startswith("SAVE"):
-                    if command == "SAVE" and game.file_name:
+                    if command == "SAVE" and (
+                            game.file_name and game.file_name.endswith('.npz')):
                         state.screen = "CONFIRM_SAVE"
                         short_name = os.path.split(game.file_name)[1]
                         state.message = "Save level as '%s'? (y/n)" % short_name
@@ -425,7 +406,9 @@ class GameLoop(object):
         }
         if game is None:
             return " "
-        if game.title:
+        if game.title and game.file_name.endswith('.json'):
+            output = "{bold}{} #{}{clear}".format(game.title, state.level_num, **styles)
+        elif game.title:
             output = "{bold}{}{clear}".format(game.title, **styles)
         else:
             output = "{bold}Board #{}{clear}".format(state.level_num, **styles)
@@ -712,76 +695,56 @@ def _make_cmd_args(subparsers):
     print_parser = subparsers.add_parser(
         "print", help=desc, description=desc + '\n\n' + long_desc,
         formatter_class=RawDescriptionHelpFormatter)
+    new_parser = subparsers.add_parser(
+        "new", help="Generate a new empty board of the specified size.")
+
     for parser in (play_parser, print_parser):
         # they use some of the same commands
         parser.add_argument('load_from',
-            nargs='*', help="Load levels from file(s)."
-            " Note that this effectively overrides all procedural generation"
-            " command options. Files will be searched for in the 'levels'"
+            nargs='+', help="Load levels from file(s)."
+            " Note that files can either be archived SafeLife board (.npz)"
+            " or they can be parameters for procedural generation (.json)."
+            " Files will be searched for in the 'levels'"
             " folder if not found in the current working directory.")
-        parser.add_argument('-t', '--text_mode', action='store_true',
-            help="Run the game in the terminal instead of using a graphical"
-            " display.")
-    for parser in (play_parser,):
-        play_parser.add_argument('-a', '--absolute_controls', action='store_true',
+        parser.add_argument('-r', '--repeat', action="store_true",
+            help="If set, repeat levels in an endless loop.")
+    for parser in (new_parser,):
+        parser.add_argument('-b', '--board_size', type=int, default=15,
+            help="Width and height of the empty board.",
+            metavar="SIZE")
+    for parser in (play_parser, new_parser):
+        parser.add_argument('-a', '--absolute_controls', action='store_true',
             help="If set, use absolute instead of relative controls."
             " In relative controls, the left/right keys turn the agent and"
             " up/down move the agent forwards/backwards. In absolute controls,"
             " arrow keys either make the agent face or move in the direction"
             " indicated.")
-        play_parser.add_argument('--centered', action='store_true',
+        parser.add_argument('--centered', action='store_true',
             help="If set, the board is always centered on the agent.")
-        play_parser.add_argument('--view_size', type=int, default=None,
+        parser.add_argument('--view_size', type=int, default=None,
             help="View size. Implies a centered view.", metavar="SIZE")
-        play_parser.add_argument('-c', '--clear', action="store_true",
-            help="Skip procedural generation: start with an empty board.")
-    for parser in (play_parser, print_parser):
-        parser.add_argument('--board_size', type=int, default=25,
-            help="Width and height of the procedurally generated board.",
-            metavar="SIZE")
-        parser.add_argument('--difficulty', type=float, default=1.0,
-            help="“Difficulty” of the procedurally generated board on a"
-            " scale of 0-10.",
-            metavar="X")
-        parser.add_argument('--gen_params', metavar="PARAMS",
-            help="Parameters for procedural board generation."
-            " Can either be a json file or a (quoted) json string."
-            " See the files in 'safelife/levels/params/' for examples.")
+    for parser in (play_parser, print_parser, new_parser):
+        parser.add_argument('-t', '--text_mode', action='store_true',
+            help="Run the game in the terminal instead of using a graphical"
+            " display.")
         parser.set_defaults(run_cmd=_run_cmd_args)
 
 
 def _run_cmd_args(args):
-    main_loop = GameLoop()
-    main_loop.board_size = (args.board_size, args.board_size)
-    if args.board_size < 3:
-        print("Error: 'board_size' must be at least 3.")
-        return
-    if args.board_size > 50:
-        print("Error: maximum 'board_size' is 50.")
-        return
-    if args.gen_params:
-        import json
-        fname = args.gen_params
-        if fname[-5:] != '.json':
-            fname += '.json'
-        if not os.path.exists(fname):
-            fname = os.path.join(LEVEL_DIRECTORY, 'params', fname)
-        if os.path.exists(fname):
-            with open(fname) as f:
-                main_loop.gen_params = json.load(f)
-        else:
-            try:
-                main_loop.gen_params = json.loads(args.gen_params)
-            except json.JSONDecodeError as err:
-                raise ValueError(
-                    '"%s" is neither a file nor valid json' % args.gen_params)
+    if args.cmd == "new":
+        if args.board_size < 3:
+            print("Error: 'board_size' must be at least 3.")
+            return
+        if args.board_size > 50:
+            print("Error: maximum 'board_size' is 50.")
+            return
+        game = SafeLifeGame(board_size=(args.board_size, args.board_size))
+        main_loop = GameLoop(iter([game]))
     else:
-        main_loop.load_from = list(find_files(*args.load_from))
-    main_loop.difficulty = args.difficulty
+        main_loop = GameLoop(safelife_loader(*args.load_from, repeat=args.repeat))
     if args.cmd == "print":
         main_loop.print_only = True
     else:
-        main_loop.random_board = not args.clear
         main_loop.centered_view = args.centered
         main_loop.relative_controls = not args.absolute_controls
         main_loop.view_size = args.view_size and (args.view_size, args.view_size)

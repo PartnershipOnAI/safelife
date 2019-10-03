@@ -228,11 +228,8 @@ class GameState(object):
         return False
 
     @classmethod
-    def load(cls, file_name, auto_cls=True):
-        """Load game state from disk."""
-        file_name = os.path.expanduser(file_name)
-        file_name = os.path.abspath(file_name)
-        data = np.load(file_name)
+    def loaddata(cls, data, auto_cls=True):
+        """Load game state from a dictionary or npz archive (class agnostic)"""
         if auto_cls and 'class' in data:
             cls_components = str(data['class']).split('.')
             mod_name = '.'.join(cls_components[:-1])
@@ -243,8 +240,16 @@ class GameState(object):
                 mod = import_module(__name__)
             cls = getattr(mod, cls_name)
         obj = cls(board_size=None)
-        obj.file_name = file_name
         obj.deserialize(data)
+        return obj
+
+    @classmethod
+    def load(cls, file_name, auto_cls=True):
+        """Load game state from disk."""
+        file_name = os.path.expanduser(file_name)
+        file_name = os.path.abspath(file_name)
+        obj = cls.loaddata(np.load(file_name), auto_cls)
+        obj.file_name = file_name
         return obj
 
     @property
@@ -263,7 +268,8 @@ class GameState(object):
         if self.file_name is None:
             return None
         else:
-            return os.path.split(self.file_name)[1][:-4]
+            fname = os.path.split(self.file_name)[-1]
+            return '.'.join(fname.split('.')[:-1])
 
     @property
     def edit_color_name(self):

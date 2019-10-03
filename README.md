@@ -117,7 +117,7 @@ The reward function in `SafeLifeEnv` is just the (rescaled) difference in point 
 
 To start, create an empty level using
 
-    python3 -m safelife play --board_size <SIZE> --clear
+    python3 -m safelife new --board_size <SIZE>
 
 or edit an existing level using
 
@@ -141,7 +141,7 @@ In both tasks there can also be green life cells on the board. The agent's princ
 
 Training tasks will typically be randomly generated via `safelife.proc_gen.gen_game()`. The type of task generated depends on the generation parameters. A set of suggested training parameters is supplied in `safelife/levels/params/`. To view typical training boards, run e.g.
 
-    python3 -m safelife print --gen_params=append-still.json
+    python3 -m safelife print params/append-still.json
 
 To play them interactively, use `play` instead of `print`.
 
