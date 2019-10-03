@@ -708,8 +708,14 @@ def _make_cmd_args(subparsers):
             " folder if not found in the current working directory."
             " If no files are provided, a new board will be randomly generated"
             " with the default parameters.")
-        parser.add_argument('-r', '--repeat', action="store_true",
-            help="If set, repeat levels in an endless loop.")
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument('-r', '--repeat', action="store_const",
+            default="auto", const=True,
+            help="If set, repeat levels in an endless loop."
+            " Levels will automatically repeat if they're procedurally"
+            " generated with a single set of parameters.")
+        group.add_argument('--no-repeat', action="store_false", dest="repeat",
+            help="Prevent levels from repeating.")
     for parser in (new_parser,):
         parser.add_argument('-b', '--board_size', type=int, default=15,
             help="Width and height of the empty board.",

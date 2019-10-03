@@ -48,7 +48,7 @@ def _find_files(path, file_types, use_glob, use_level_dir=False):
         yield path
 
 
-def safelife_loader(*paths, repeat=False, shuffle=False, callback=None):
+def safelife_loader(*paths, repeat="auto", shuffle=False, callback=None):
     """
     Generator function to Load SafeLifeGame instances from the specified paths.
 
@@ -59,13 +59,15 @@ def safelife_loader(*paths, repeat=False, shuffle=False, callback=None):
     ----------
     paths : list of strings
         The paths to the files to load. Note that this can use glob
-        expressions, or it can point to a directory of npz files to load.
+        expressions, or it can point to a directory of files to load.
         Files will first be searched for in the current working directory.
         If not found, the 'levels' directory will be searched as well.
         If no paths are supplied, this will generate a random level using
         default level generation parameters.
-    repeat : bool
+    repeat : "auto" or bool
         If true, files will be loaded (yielded) repeatedly and forever.
+        If "auto", it repeats if and only if 'paths' points to a single
+        file of procedural generation parameters.
     shuffle : bool
         If true, the order of the files will be shuffled (not needed?).
     callback : function
@@ -106,5 +108,6 @@ def safelife_loader(*paths, repeat=False, shuffle=False, callback=None):
                 game = SafeLifeGame.loaddata(data)
             game.file_name = file_name
             yield game
-        if not repeat:
+        if len(all_data) == 0 or not repeat or repeat == "auto" and not (
+                len(all_data) == 1 and all_data[0][1] == "procgen"):
             break
