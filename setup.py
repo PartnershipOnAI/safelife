@@ -21,7 +21,7 @@ requirements = [line for line in requirements.split('\n') if line]
 
 setuptools.setup(
     name='SafeLife',
-    version='0.1b1',
+    version='0.1',
     author="Carroll L. Wainwright",
     description="Safety benchmarks for reinforcement learning",
     packages=['safelife'],

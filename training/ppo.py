@@ -138,6 +138,7 @@ class PPO(object):
     report_every = 5000
     save_every = 10000
     test_every = 100000
+    record_histograms = False  # histograms take a lot of disk space; disable by default
 
     def __init__(self, envs, logdir=DEFAULT_LOGDIR, saver_args={}, **kwargs):
         for key, val in kwargs.items():
@@ -295,15 +296,17 @@ class PPO(object):
                 tf.summary.scalar("returns_"+k, tf.reduce_mean(op.returns[...,i]))
                 tf.summary.scalar("advantages_"+k, tf.reduce_mean(op.advantages[...,i]))
                 tf.summary.scalar("values_"+k, tf.reduce_mean(op.v[...,i]))
-                tf.summary.histogram("returns_"+k, op.returns[...,i])
-                tf.summary.histogram("advantages_"+k, op.advantages[...,i])
-                tf.summary.histogram("values_"+k, op.v[...,i])
+                if self.record_histograms:
+                    tf.summary.histogram("returns_"+k, op.returns[...,i])
+                    tf.summary.histogram("advantages_"+k, op.advantages[...,i])
+                    tf.summary.histogram("values_"+k, op.v[...,i])
         tf.summary.scalar("entropy", mean_entropy)
-        tf.summary.histogram("entropy", op.entropy)
-        with tf.name_scope("losses"):
-            tf.summary.histogram("gradients", tf.global_norm(grads))
-            tf.summary.histogram("policy_loss", policy_loss)
-            tf.summary.histogram("value_loss", value_loss)
+        if self.record_histograms:
+            tf.summary.histogram("entropy", op.entropy)
+            with tf.name_scope("losses"):
+                tf.summary.histogram("gradients", tf.global_norm(grads))
+                tf.summary.histogram("policy_loss", policy_loss)
+                tf.summary.histogram("value_loss", value_loss)
         op.summary = tf.summary.merge_all()
 
     def build_optimizer(self, learning_rate):

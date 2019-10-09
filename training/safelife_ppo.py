@@ -192,12 +192,14 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     save_every = 500000
 
     test_every = 500000
-    benchmark_environments = ['benchmarks-v0.1/append-still-*.npz']
+    benchmark_environments = ['benchmarks/v0.1/append-still-*.npz']
 
     # Training network params
-    gamma = np.array([0.9, 0.99], dtype=np.float32)
-    policy_discount_weights = np.array([0.5, 0.5], dtype=np.float32)
-    value_discount_weights = np.array([0.5, 0.5], dtype=np.float32)
+    #   Note that we can use multiple discount factors gamma to learn multiple
+    #   value functions associated with rewards over different time frames.
+    gamma = np.array([0.97], dtype=np.float32)
+    policy_discount_weights = np.array([1.0], dtype=np.float32)
+    value_discount_weights = np.array([1.0], dtype=np.float32)
     lmda = 0.9
     learning_rate = 3e-4
     entropy_reg = 5e-2

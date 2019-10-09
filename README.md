@@ -1,14 +1,14 @@
 # SafeLife
 
-*Note: this is a work in progress! SafeLife is currently in beta. Any comments/questions/concerns should either be opened as GitHub issues or be directed to carroll@partnershiponai.org*
+*Note: this is a work in progress! A version 1.0 release is expected in late November, along with an accompanying paper and announcement. Any comments/questions/concerns should either be opened as GitHub issues or be directed to carroll@partnershiponai.org*
 
 SafeLife is a novel environment to test the safety of reinforcement learning agents. The long term goal of this project is to develop training environments and benchmarks for numerous technical reinforcement learning safety problems, with the following attributes:
 
 * Controllable difficulty for the environment
 * Controllable difficulty for safety constraints
-* Procedurally generated levels with richy adjustable distributions of mechanics and phenomena to reduce overfitting
+* Procedurally generated levels with richly adjustable distributions of mechanics and phenomena to reduce overfitting
 
-The initial SafeLife 0.1 Beta (and the roadmap for the next few releases)
+The initial SafeLife version 0.1 (and the roadmap for the next few releases)
 focuses at first on the problem of side effects: how can one specify that an
 agent do whatever it needs to do to accomplish its goals, but nothing more? In
 SafeLife, an agent is tasked with creating or removing certain specified
@@ -43,7 +43,7 @@ SafeLife includes C extensions which must be compiled. Running
 
     python3 setup.py build_ext --inplace
 
-should compile these extensions and install them in the `safelife` module. (You can also install SafeLife globally using `python3 setup.py install`, although it's often more convenient to work within this directory.)
+should compile these extensions and install them in the `safelife` module. (You can also install SafeLife globally using `python3 setup.py install`, although it's often more convenient to work within this directory.) **Note: you must have have a C compiler installed on your system to compile the extensions!**
 
 
 ### Interactive play
@@ -208,3 +208,18 @@ Very rarely, it will happen to destroy just what it intended and nothing more, b
 #### Mixed training
 
 It's so far proven to be quite difficult to get agents to learn to perform both the *build* and *destroy* tasks. Agents will typically focus on only the build task, which yields more points, and never learn how to destroy unwanted patterns. However, we're hopeful that with a little more work this will be achievable.
+
+
+## Roadmap
+
+SafeLife is nearing its v1.0 release, but there are a couple of big items left to do. Most significantly, we plan on greatly expanding the number of benchmark levels to include on the order of 100 levels for each of the different benchmark types. This will allow for more straightforward benchmark statistics (one can report averages instead of noting the benchmark levels individually), and it will prevent agents from “accidentally” being safe by a fluke on a small number of levels. Along with the increased number of benchmark levels, we will report baseline safety for naive agents and agents trained with a very simple side effect impact penalty.
+
+We also plan on making improvements to the procedural generation parameters and procedures. This includes making it possible to specify the complexity parameters for different region types individually, multiple spawners per spawner region, and potentially goals within or adjacent to spawner regions.
+
+Other than that, we will continue to work on bug fixes, documentation, and editing code for readability. If you find any bugs, do let us know! We'll try to address them as quickly as possible.
+
+Beyond version 1.0, the immediate focus will be on making progress on the side effects problem itself. Other avenues we may explore include
+
+- multi-agent play, both cooperative and competitive;
+- enhanced dynamics, such as pullable blocks;
+- measures of other (not side effects) safety problems.
