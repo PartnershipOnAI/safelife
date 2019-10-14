@@ -1,0 +1,60 @@
+# Blah blah.
+---
+min_performance: 0.5
+board_shape: [25,25]
+
+partitioning:
+  min_regions: 2
+  max_regions: 2
+
+# You can specify which set of region parameters to start with, or leave
+# as null to use the same value as the later regions.
+starting_region: null
+later_regions: example_region
+
+
+named_regions:
+  example_region:
+    # Each region is made up one or more layers.
+    # Each layer has a single color and gets generated in the order listed.
+    - color: green
+      fences: 1.0
+      pattern_target: board  # or goals or both
+      pattern:
+        period: 2
+        temperature: 0.4
+        min_fill: 0.2
+        wall: [1, 20]
+        tree: [1, 20]
+      spawners: 0
+      fountains: 0
+      extra_trees: 0
+      extra_walls: 0
+      extra_life: 0
+      movable_walls: 0
+      movable_trees: 0.5
+      hardened_life: 0
+    - color: red
+      pattern_target: board  # or goals or both
+      pattern:
+        period: 2
+        #osc_bonus: 0
+        temperature: 0.4
+        min_fill: 0.2
+        wall: [1, 20]
+        # tree: [1, 20]
+      spawners: 0
+      fountains: 0
+      extra_trees: 0
+      extra_walls: 0
+      extra_life: 0
+      movable_walls: 0
+      movable_trees: 0.5
+      hardened_life: 0
+
+  spawner:
+    - color: blue
+      fences: 1
+      spawners: 0.04
+      extra_trees: 0.06
+      extra_life: 0.2
