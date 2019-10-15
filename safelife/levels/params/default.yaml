@@ -23,7 +23,7 @@ named_regions:
       pattern:
         period: 2
         temperature: 0.4
-        min_fill: 0.2
+        min_fill: 0.1
         wall: [1, 20]
         tree: [1, 20]
       spawners: 0
@@ -37,10 +37,10 @@ named_regions:
     - color: red
       pattern_target: board  # or goals or both
       pattern:
-        period: 2
-        #osc_bonus: 0
+        period: 1
+        osc_bonus: 0
         temperature: 0.4
-        min_fill: 0.2
+        min_fill: 0.3
         wall: [1, 20]
         # tree: [1, 20]
       spawners: 0

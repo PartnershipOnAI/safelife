@@ -338,6 +338,7 @@ def populate_region(mask, layers):
     board = np.zeros(mask.shape, dtype=np.int16)
     goals = np.zeros(mask.shape, dtype=np.int16)
     seeds = None
+    max_period = 1
 
     for layer in layers:
         fence_frac = layer.get('fences', 0.0)
@@ -352,15 +353,43 @@ def populate_region(mask, layers):
         color = COLORS.get(layer.get('color'), 0)
 
         if 'pattern' in layer:
-            pattern_args = layer['pattern']
+            pattern_args = layer['pattern'].copy()
             target = layer.get('pattern_target', 'board')
             period = pattern_args.get('period', 1)
-            new_board = _gen_pattern(board, gen_mask, seeds, **pattern_args)
+            if period == 1:
+                gen_mask2 = gen_mask & ~CAN_OSCILLATE_MASK
+                pattern_args.update(period=max_period, osc_bonus=0)
+            elif period < max_period:
+                raise ValueError(
+                    "Periods for sequential layers in a region must be either 1"
+                    " or at least as large as the largest period in prior layers.")
+            else:
+                gen_mask2 = gen_mask
+                max_period = period
+
+            new_board = _gen_pattern(board, gen_mask2, seeds, **pattern_args)
+
+            # We need to update the mask for subsequent layers so that they
+            # do not destroy the pattern in this layer.
+            # First get a list of board states throughout the oscillation cycle.
             boards = [new_board]
-            for _ in range(1, period):
+            for _ in range(1, max_period):
                 boards.append(speedups.advance_board(boards[-1]))
-            all_zero = np.product(np.array(boards) == 0, axis=0).astype(bool)
-            gen_mask ^= (gen_mask & speedups.NEW_CELL_MASK) * ~all_zero
+            non_empty = np.array(boards) != 0
+            still_cells = non_empty.all(axis=0)
+            osc_cells = still_cells ^ non_empty.any(axis=0)
+            # Both still life cells and oscillating cells should disallow
+            # any later changes. We also want to disallow changes to the cells
+            # that are neighboring the oscillating cells, because any changes
+            # there would propogate to the oscillating cells at later time
+            # steps.
+            # Note that it doesn't really matter whether the oscillating mask
+            # is set for the currently oscillating cells, because we're not
+            # checking for violations in them anyways, and we don't allow any
+            # changes that would affect them.
+            osc_neighbors = ndimage.maximum_filter(osc_cells, size=3, mode='wrap')
+            gen_mask[osc_cells] &= ~(NEW_CELL_MASK | INCLUDE_VIOLATIONS_MASK)
+            gen_mask[still_cells | osc_neighbors] &= ~(NEW_CELL_MASK | CAN_OSCILLATE_MASK)
 
             new_mask = new_board != board
             life_mask = ((new_board & CellTypes.alive) > 0) * new_mask
