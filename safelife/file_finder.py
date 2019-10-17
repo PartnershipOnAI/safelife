@@ -1,7 +1,7 @@
 import os
 import glob
 import random
-import json
+import yaml
 import numpy as np
 
 from .game_physics import SafeLifeGame
@@ -9,6 +9,8 @@ from .proc_gen import gen_game
 
 
 LEVEL_DIRECTORY = os.path.abspath(os.path.join(__file__, '../levels'))
+_default_params = yaml.load(
+    open(os.path.join(LEVEL_DIRECTORY, 'params/_defaults.yaml')))
 
 
 def find_files(*paths, file_types=None, use_glob=True):
@@ -84,7 +86,8 @@ def safelife_loader(*paths, repeat="auto", shuffle=False, callback=None):
     """
     game_num = 0
     if paths:
-        all_data = [[f] for f in find_files(*paths, file_types=('json', 'npz'))]
+        all_data = [[f] for f in find_files(
+            *paths, file_types=('json', 'npz', 'yaml'))]
     else:
         all_data = [[None, 'procgen', {}]]
     while True:
@@ -94,16 +97,21 @@ def safelife_loader(*paths, repeat="auto", shuffle=False, callback=None):
             game_num += 1
             if len(data) == 1:
                 file_name = data[0]
-                if file_name.endswith('.json'):
-                    data += ['procgen', json.load(open(file_name))]
+                if file_name.endswith('.json') or file_name.endswith('yaml'):
+                    data += ['procgen', yaml.load(open(file_name))]
                 else:
                     data += ['static', np.load(file_name)]
             file_name, datatype, data = data
             if datatype == "procgen":
-                data = data.copy()  # maybe should be a deep copy?
+                # Maybe do a deep copy here?
+                named_regions = _default_params['named_regions'].copy()
+                named_regions.update(data.get('named_regions', {}))
+                data2 = _default_params.copy()
+                data2.update(**data)
+                data2['named_regions'] = named_regions
                 if callback is not None:
-                    callback(game_num, data)
-                game = gen_game(**data)
+                    callback(game_num, data2)
+                game = gen_game(**data2)
             else:
                 game = SafeLifeGame.loaddata(data)
             game.file_name = file_name

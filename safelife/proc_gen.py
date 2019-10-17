@@ -442,14 +442,7 @@ def populate_region(mask, layer_params):
     return board, goals
 
 
-def gen_game(*args, **kwargs):
-    # TEMPORARY
-    import yaml
-    data = yaml.load(open('safelife/levels/params/default.yaml'))
-    return _gen_game(**data)
-
-
-def _gen_game(
+def gen_game(
         board_shape=(25,25), min_performance=-1, partitioning={},
         starting_region=None, later_regions=None, named_regions={},
         **etc):

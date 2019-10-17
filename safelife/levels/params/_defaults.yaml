@@ -57,6 +57,10 @@ named_regions:
       fences: 1  # 100% fence means that patterns inside can't escape.
       spawners: 0.04
       tree_lattice: true
+    - color: yellow
+      pattern:
+        period: 0
+        min_fill: 0.3
 
   spawner hard:
     # The hard version of the spawner contains "hardened" life cells and trees
