@@ -584,38 +584,36 @@ class GameWithGoals(GameState):
         cell_points = self.point_table[goals, cell_colors] * alive
         return np.sum(cell_points)
 
-    def performance_ratio(self, board=None, goals=None):
-        """
-        Calculate how much of the level the agent has completed.
+    def performance_ratio(self, unit_rewards=True):
+        pt_table = self.point_table
+        if unit_rewards:
+            pt_table = np.sign(pt_table).astype(int)
+        if not hasattr(self, '_init_data'):
+            # Can't tell how much the agent has progressed if there is
+            # no baseline to compare against
+            return 0, 1
+        g1 = self._init_data['goals']
+        b1 = self._init_data['board']
+        g2 = self.goals
+        b2 = self.board
+        # Shift board and goals to only show their color. Values are [0, 8].
+        g1 = (g1 & CellTypes.rainbow_color) >> CellTypes.color_bit
+        g2 = (g2 & CellTypes.rainbow_color) >> CellTypes.color_bit
+        c1 = (b1 & CellTypes.rainbow_color) >> CellTypes.color_bit
+        c2 = (b2 & CellTypes.rainbow_color) >> CellTypes.color_bit
+        # Additionally, mask out all board positions that aren't alive, or
+        # that are both frozen and immovable.
+        m1 = b1 & CellTypes.alive > 0
+        m1 &= b1 & (CellTypes.frozen | CellTypes.movable) != CellTypes.frozen
+        m2 = b2 & CellTypes.alive > 0
+        m2 &= b2 & (CellTypes.frozen | CellTypes.movable) != CellTypes.frozen
 
-        Note that this only counts blue goal cells and red live cells.
-        Each are given equal weight.
-        """
-        if board is None:
-            board = self.board
-        if goals is None:
-            goals = self.goals
-        if hasattr(self, '_init_data'):
-            start_board = self._init_data['board']
-        else:
-            start_board = board
-
-        blue = CellTypes.color_b
-        life = CellTypes.alive
-        red_life = CellTypes.alive | CellTypes.color_r
-
-        red_start = start_board & red_life == red_life
-        red_now = board & red_life == red_life
-        not_red_now = (board & life == life) & ~red_now
-        blue_goals = goals & CellTypes.rainbow_color == blue
-        num_goals = np.sum(blue_goals)
-        num_filled_goals = np.sum(blue_goals & not_red_now)
-        num_red_start = np.sum(red_start)
-        num_red_now = np.sum(red_now)
-
+        baseline_score = np.sum(pt_table[g1, c1] * m1)
+        current_score = np.sum(pt_table[g2, c2] * m2)
+        possible_score = np.sum(np.max(pt_table, axis=1)[g2])
         return (
-            int(num_filled_goals + num_red_start - num_red_now),
-            int(num_goals + num_red_start)
+            int(current_score - baseline_score),
+            int(possible_score - baseline_score)
         )
 
     def shift_board(self, dx, dy):
