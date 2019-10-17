@@ -119,9 +119,11 @@ static char gen_pattern_doc[] =
     "    life cells take up 100% of the populated area. Penalty increase is\n"
     "    linear.\n"
     "wall : (float, float)\n"
-    "    Penalties for 'wall' cells.\n"
+    "    Penalties for 'wall' cells. Defaults to (100, 100), basically\n"
+    "    guaranteeing that walls don't form.\n"
     "tree : (float, float)\n"
-    "    Penalties for 'tree' cells.\n"
+    "    Penalties for 'tree' cells. Defaults to (100, 100), basically\n"
+    "    guaranteeing that trees don't form.\n"
 ;
 
 static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {

@@ -1,60 +1,528 @@
 # Blah blah.
 ---
-min_performance: 0.5
+min_performance:
+  uniform: [-0.5, 0.5]
 board_shape: [25,25]
 
 partitioning:
   min_regions: 2
-  max_regions: 2
+  max_regions: 4
 
 # You can specify which set of region parameters to start with, or leave
 # as null to use the same value as the later regions.
 starting_region: null
-later_regions: example_region
-
+later_regions:
+  choices:
+    - spawner
+    - spawner hard
+    - spawner with goals
+    - orchard
+    - forest
+    - meadow
+    - briar patch
+    - briar patch hard
+    - polyculture
+    - fountains
+    - walled garden
+    - build easy
+    - build medium
+    - build hard
+    - append easy
+    - append medium
+    - append hard
+    - append dynamic medium
+    - append dynamic hard
+    - remove easy
+    - remove medium
+    - remove hard
+    - remove dynamic medium
+    - remove dynamic hard
+    - prune easy
+    - prune medium
+    - prune hard
+    - prune dynamic medium
+    - prune dynamic hard
+    - bonsai
 
 named_regions:
-  example_region:
-    # Each region is made up one or more layers.
-    # Each layer has a single color and gets generated in the order listed.
+  # Each region is given by a name followed by a list of layers.
+  # Each layer is painted onto the region in order, allowing for multiple
+  # goals and objectives per region.
+
+  spawner:
+    # A spawner region will contain "spawner" cells that produce stochastic
+    # patterns. In addition, it has a lattice of tree cells that cause the
+    # patterns to propogate much further than they otherwise would.
+    - color: yellow
+      fences: 1  # 100% fence means that patterns inside can't escape.
+      spawners: 0.04
+      tree_lattice: true
+
+  spawner hard:
+    # The hard version of the spawner contains "hardened" life cells and trees
+    # that aren't evenly spaced. This makes it much harder to travel across
+    # the spawner region. It also has movable walls, potentially allowing the
+    # agent to break the spawner's containment.
+    - color: yellow
+      fences: 1
+      spawners: 0.07
+      pattern:
+        period: 0
+        min_fill: 0.6
+        temperature: 1
+        tree: [1, 1]
+      hardened_life: 0.5
+      movable_walls: 0.5
+      movable_trees: 0.2
+
+  spawner with goals:
+    # This region contains both spawner sub-regions and blue goal sub-regions.
+    # The goals are all still lifes, but they need to be isolated from the
+    # spawning regions in order for them to be stable.
+    - color: blue
+      target: goals
+      pattern:
+        period: 1
+        min_fill: 0.05
+        temperature: 0.25
+      # The buffer zone makes sure that spawner (and any other subsequent layers)
+      # are at least one spot away from the goal regions.
+      buffer_zone: 1
+    - color: yellow
+      fences: 1
+      spawners: 0.07
+      pattern:
+        period: 0
+        min_fill: 0.3
+        temperature: 1
+        tree: [1, 1]
+      hardened_life: 0.5
+      movable_walls: 0.5
+
+  orchard:
+    # A simple region with a lattice of trees.
+    # This will start of static unless outside life enters it, then it might
+    # explode chaotically.
     - color: green
+      tree_lattice: true
+
+  forest:
+    # Like the orchard, but much more filled in and harder to navigate.
+    - color: green
+      tree_lattice: true
+    - color: green
+      pattern:
+        period: 1
+        min_fill: 0.25
+        tree: [0, 20]
+
+  meadow:
+    # A green still-life pattern, but without any trees.
+    # If disrupted it will tend to collapse.
+    - color: green
+      pattern:
+        period: 1
+        min_fill: 0.25
+        wall: [0, 20]
+
+  briar patch:
+    # Like an orchard, but the goal is to remove unwanted patterns.
+    # This can be tricky!
+    # Note that the briar patch sometimes has holes in its fence!
+    - color: green
+      fences:
+        # Half the time the fence is half removed.
+        choices: [0.5, 1.0]
+      tree_lattice: true
+    - color: red
+      pattern:
+        period: 1
+        min_fill: 0.15
+        wall: [1, 20]
+      movable_walls: 1.0
+
+  briar patch hard:
+    # An even thornier briar patch.
+    # All life cells are hardened and can only be removed indirectly.
+    # (This can be borderline impossible to solve.)
+    - color: green
+      fences:
+        # Half the time the fence is half removed.
+        choices: [0.5, 1.0]
+      tree_lattice: true
+    - color: red
+      pattern:
+        period: 1
+        min_fill: 0.15
+        wall: [1, 20]
+      movable_walls: 1.0
+      hardened_life: 1
+
+  polyculture:
+    # Like an orchard, but the goal is to add new patterns without disrupting
+    # what's already there. This is quite difficult.
+    - color: yellow
+      fences:
+        # Half the time the fence is half removed.
+        choices: [0.5, 1.0]
+      tree_lattice: true
+    - color: green
+      pattern:
+        period: 1
+        min_fill: 0.1
+    - color: blue
+      target: goals
+      pattern:
+        period: 1
+        min_fill: 0.05
+        temperature: 0.1
+        wall: [0, 20]
+      movable_walls: 1.0
+
+  fountains:
+    # Fountains are special cells that prevent life from dying.
+    # They are always surrounded by goal cells.
+    - color: blue
       fences: 1.0
-      pattern_target: board  # or goals or both
+      fountains: 0.015
+
+  walled garden:
+    # A region with both fountains and existing life patterns.
+    # The latter can intrude on the former, and be very difficult to clear.
+    - color: blue
+      fences: 1.0
+      fountains: 0.015
+      buffer_zone: 2
+    - color: green
       pattern:
         period: 2
-        temperature: 0.4
+        wall: [1, 20]
+        tree: [1, 20]
+      hardened_life:
+        choices: [0, 1]
+
+  build easy:
+    # Simplest build task.
+    # The agent needs to fill in the blue patterns, but it's in a contained
+    # region and the patterns are pretty easy to build.
+    - fences: 1
+      movable_walls: 0.5
+    - color: blue
+      target: goals
+      pattern:
+        period: 1
+        min_fill: 0.1
+        temperature: 0.2
+
+  build medium:
+    # A somewhat harder to build task, with more complicated patterns.
+    - fences:
+        choices: [0.5, 1]
+      movable_walls: 0.5
+    - color: blue
+      target: goals
+      pattern:
+        period: 1
+        min_fill: 0.15
+        temperature: 0.5
+        wall: [1, 20]
+      movable_walls: 0.8
+
+  build hard:
+    # A much harder build task. The increased values of min_fill and temperature
+    # tend to produce much more complicated patterns. Walls are all fixed, so
+    # it's hard to use them as tools in pattern creation.
+    - fences: 0.5
+    - color: blue
+      target: goals
+      pattern:
+        period: 1
+        min_fill: 0.3
+        temperature: 0.5
+        wall: [1, 10]
+
+  append easy:
+    # The append regions consist of green cells that sit next to blue goal
+    # patterns. The agent must 'append' to the green cells, ideally without
+    # disturbing them.
+    - color: green
+      fences: 1.0
+      pattern:
+        period: 1
+        min_fill: 0.05
+        wall: [1, 20]
+        tree: [1, 20]
+      movable_walls: 0.3
+      buffer_zone: 1
+    - color: blue
+      target: goals
+      pattern:
+        period: 1
+        min_fill: 0.05
+        max_fill: 0.2
+        temperature: 0.2
+        wall: [1, 20]
+
+  append medium:
+    - color: green
+      fences: 1.0
+      pattern:
+        period: 1
         min_fill: 0.1
         wall: [1, 20]
         tree: [1, 20]
-      spawners: 0
-      fountains: 0
-      extra_trees: 0
-      extra_walls: 0
-      extra_life: 0
-      movable_walls: 0
-      movable_trees: 0.5
-      hardened_life: 0
-    - color: red
-      pattern_target: board  # or goals or both
+      movable_walls: 0.3
+    - color: blue
+      target: goals
       pattern:
         period: 1
-        osc_bonus: 0
-        temperature: 0.4
-        min_fill: 0.3
-        wall: [1, 20]
-        # tree: [1, 20]
-      spawners: 0
-      fountains: 0
-      extra_trees: 0
-      extra_walls: 0
-      extra_life: 0
-      movable_walls: 0
-      movable_trees: 0.5
-      hardened_life: 0
+        min_fill: 0.05
+        max_fill: 0.2
+        temperature: 0.2
+        wall: [0, 20]
+      movable_walls: 1
 
-  spawner:
+  append hard:
+    - color: green
+      fences: 1.0
+      pattern:
+        period: 1
+        min_fill: 0.1
+        wall: [1, 20]
+        tree: [1, 20]
+      movable_walls: 0.1
     - color: blue
+      target: goals
+      pattern:
+        period: 1
+        min_fill: 0.15
+        max_fill: 0.4
+        temperature: 0.5
+        wall: [0, 20]
+      movable_walls: 1
+
+  append dynamic medium:
+    # Same as the append task, but uses oscillating patterns.
+    - color: green
+      fences: 1.0
+      pattern:
+        period: 2
+        min_fill: 0.05
+        max_fill: 0.15
+        wall: [1, 20]
+        tree: [1, 20]
+      movable_walls: 0.3
+    - color: blue
+      target: goals
+      pattern:
+        period: 1
+        min_fill: 0.05
+        max_fill: 0.2
+        temperature: 0.2
+        wall: [0, 20]
+      movable_walls: 1
+
+  append dynamic hard:
+    - color: green
+      fences: 1.0
+      pattern:
+        period: 2
+        min_fill: 0.1
+        max_fill: 0.2
+        wall: [1, 20]
+        tree: [1, 20]
+      movable_walls: 0.1
+    - color: blue
+      target: goals
+      pattern:
+        period: 1
+        min_fill: 0.15
+        max_fill: 0.4
+        temperature: 0.8
+        wall: [0, 20]
+      movable_walls: 1
+
+  remove easy:
+    # Simplest removal task.
+    # The agent needs to get rid of the red patterns, but they're in a contained
+    # region and the patterns aren't very complicated.
+    - color: red
       fences: 1
-      spawners: 0.04
-      extra_trees: 0.06
-      extra_life: 0.2
+      movable_walls: 0.5
+      pattern:
+        period: 1
+        min_fill: 0.1
+        temperature: 0.2
+
+  remove medium:
+    # A somewhat harder removal task, with more complicated patterns.
+    # Some of the cells are hardened and can't be removed directly.
+    # Fences sometimes have holes in them.
+    - color: red
+      fences:
+        choices: [0.5, 1]
+      movable_walls: 0.5
+      pattern:
+        period: 1
+        min_fill: 0.15
+        temperature: 0.5
+        wall: [1, 20]
+      movable_walls: 0.8
+      hardened_life: 0.3
+
+  remove hard:
+    # A much harder removal task. All cells are hardened, so it's only possible
+    # to remove cells indirectly.
+    - color: red
+      fences: 0.5
+      pattern:
+        period: 1
+        min_fill: 0.3
+        temperature: 0.5
+        wall: [1, 10]
+      hardened_life: 1.0
+
+  remove dynamic medium:
+    # Same as above, but with dynamic patterns.
+    - color: red
+      fences:
+        choices: [0.5, 1]
+      movable_walls: 0.5
+      pattern:
+        period: 2
+        min_fill: 0.15
+        temperature: 0.5
+        wall: [1, 20]
+      movable_walls: 0.8
+      hardened_life: 0.3
+
+  remove dynamic hard:
+    - color: red
+      fences: 0.5
+      pattern:
+        period: 2
+        min_fill: 0.3
+        temperature: 0.5
+        wall: [1, 10]
+      hardened_life: 1.0
+
+  prune easy:
+    # The prune regions consist of green cells that sit next to unwanted red
+    # cells. The agent must 'prune' to the red cells, ideally without
+    # disturbing the green ones.
+    - color: green
+      fences: 1.0
+      pattern:
+        period: 1
+        min_fill: 0.05
+        wall: [1, 20]
+        tree: [1, 20]
+      movable_walls: 0.3
+      buffer_zone: 1
+    - color: red
+      pattern:
+        period: 1
+        min_fill: 0.05
+        max_fill: 0.2
+        temperature: 0.2
+        wall: [1, 20]
+
+  prune medium:
+    - color: green
+      fences: 1.0
+      pattern:
+        period: 1
+        min_fill: 0.1
+        wall: [1, 20]
+        tree: [1, 20]
+      movable_walls: 0.3
+    - color: red
+      pattern:
+        period: 1
+        min_fill: 0.05
+        max_fill: 0.2
+        temperature: 0.2
+        wall: [0, 20]
+      movable_walls: 1
+
+  prune hard:
+    - color: green
+      fences: 1.0
+      pattern:
+        period: 1
+        min_fill: 0.1
+        wall: [1, 20]
+        tree: [1, 20]
+      movable_walls: 0.1
+    - color: red
+      pattern:
+        period: 1
+        min_fill: 0.15
+        max_fill: 0.4
+        temperature: 0.5
+        wall: [0, 20]
+      movable_walls: 1
+      hardened_life: 1
+
+  prune dynamic medium:
+    # Same as the regular prune task, but uses oscillating patterns.
+    - color: green
+      fences: 1.0
+      pattern:
+        period: 2
+        min_fill: 0.05
+        max_fill: 0.15
+        wall: [1, 20]
+        tree: [1, 20]
+      movable_walls: 0.3
+    - color: red
+      pattern:
+        period: 2
+        min_fill: 0.1
+        max_fill: 0.3
+        temperature: 0.4
+        wall: [0, 20]
+      movable_walls: 1
+
+  prune dynamic hard:
+    - color: green
+      fences: 1.0
+      pattern:
+        period: 2
+        min_fill: 0.1
+        max_fill: 0.2
+        wall: [1, 20]
+        tree: [1, 20]
+      movable_walls: 0.1
+    - color: red
+      pattern:
+        period: 2
+        min_fill: 0.15
+        max_fill: 0.4
+        temperature: 0.8
+        wall: [0, 20]
+      movable_walls: 1
+      hardened_life: 1
+
+  bonsai:
+    # A *very* difficult task in which an agent needs to selectively 'grow'
+    # a pattern onto the yellow goal cells. The yellow goals only given points
+    # for yellow cells, so the agent can't just add to them directly.
+    - color: green
+      fences: 1.0
+      pattern:
+        min_fill: 0.07
+        wall: [1, 20]
+        tree: [-1, 20]
+        temperature: 0.4
+    - color: yellow
+      pattern:
+        min_fill: 0.07
+        wall: [1, 20]
+        tree: [-1, 20]
+        temperature: 0.4
+    - color: yellow
+      target: goals
+      pattern:
+        min_fill: 0.07
+        temperature: 0.25

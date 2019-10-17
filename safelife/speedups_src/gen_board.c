@@ -368,15 +368,15 @@ int gen_pattern(
 
     // Calculate some constants for the loop
     int max_iter = rel_max_iter * total_area * shape.depth;
-    int interior_area = calc_interior_area(mask, shape.rows, shape.cols);
-    double effective_area = 0.75 * interior_area + 0.25 * total_area;
-    double min_fill = rel_min_fill * effective_area;
+    //int interior_area = calc_interior_area(mask, shape.rows, shape.cols);
+    //double effective_area = 0.75 * interior_area + 0.25 * total_area;
+    double min_fill = rel_min_fill * total_area;
     PRINT("Total area: %i; ", total_area);
-    PRINT("Interior area: %i\n", interior_area);
-    if (interior_area < 2) {
-        PRINT("AREA TOO SMALL!\n");
-        return AREA_TOO_SMALL_ERROR;
-    }
+    // PRINT("Interior area: %i\n", interior_area);
+    // if (interior_area < 2) {
+    //     PRINT("AREA TOO SMALL!\n");
+    //     return AREA_TOO_SMALL_ERROR;
+    // }
 
     PRINT("\nSTARTING THE LOOP\n\n");
 

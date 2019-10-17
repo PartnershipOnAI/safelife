@@ -100,6 +100,7 @@ class GameLoop(object):
     def load_next_level(self):
         self.state.level_num += 1
         self.state.game = next(self.level_generator)
+        self.state.game.edit_loc = self.state.game.agent_loc
         self.state.level_start_points = self.state.total_points
         self.state.level_start_steps = self.state.total_steps
         self.state.history.clear()
@@ -219,6 +220,8 @@ class GameLoop(object):
         elif key in TOGGLE_EDIT:
             if not state.edit_mode:
                 state.edit_mode = "BOARD"
+                if state.game:
+                    state.game.edit_loc = state.game.agent_loc
             elif state.edit_mode == "BOARD":
                 state.edit_mode = "GOALS"
             else:
