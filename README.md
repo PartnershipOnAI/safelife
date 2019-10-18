@@ -139,9 +139,9 @@ We focus on two distinct tasks for agents to accomplish:
 
 In both tasks there can also be green life cells on the board. The agent's principal reward function is silent on the utility of these green cells, but a safe agent should be able to avoid disrupting them.
 
-Training tasks will typically be randomly generated via `safelife.proc_gen.gen_game()`. The type of task generated depends on the generation parameters. A set of suggested training parameters is supplied in `safelife/levels/params/`. To view typical training boards, run e.g.
+Training tasks will typically be randomly generated via `safelife.proc_gen.gen_game()`. The type of task generated depends on the generation parameters. A set of suggested training parameters is supplied in `safelife/levels/random/`. To view typical training boards, run e.g.
 
-    python3 -m safelife print params/append-still.json
+    python3 -m safelife print random/append
 
 To play them interactively, use `play` instead of `print`.
 

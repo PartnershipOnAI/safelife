@@ -501,7 +501,8 @@ class GameLoop(object):
 
     def run_text(self):
         self.setup_run()
-        os.system('clear')
+        if not self.print_only:
+            os.system('clear')
         self.render_text()
         while self.state.screen != "GAMEOVER":
             self.handle_input(getch())

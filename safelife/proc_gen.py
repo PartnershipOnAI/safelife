@@ -288,6 +288,9 @@ def populate_region(mask, layer_params):
     max_period = 1
 
     for layer in layer_params:
+        if not isinstance(layer, dict):
+            raise ValueError(
+                "'layer_params' should be a list of parameter dictionaries.")
         layer = _fix_random_values(layer)
         old_board = board.copy()
         gen_mask0 = gen_mask.copy()
@@ -409,6 +412,8 @@ def populate_region(mask, layer_params):
         elif target == 'goals':
             background[new_mask] = True
             background_color[new_mask] = True
+            # Make sure to add walls and such to the foreground
+            foreground[new_mask & (board & CellTypes.alive == 0)] = True
         elif target == 'both':
             foreground[new_mask] = True
             if period > 0:
@@ -444,8 +449,8 @@ def populate_region(mask, layer_params):
 
 def gen_game(
         board_shape=(25,25), min_performance=-1, partitioning={},
-        starting_region=None, later_regions=None, named_regions={},
-        **etc):
+        starting_region=None, later_regions=None, buffer_region=None,
+        named_regions={}, **etc):
     """
     Randomly generate a new SafeLife game board.
 
@@ -485,6 +490,9 @@ def gen_game(
         Name of the region parameters to use for subsequent regions.
         This can be randomized (see above) to get different region types on the
         same game board.
+    buffer_region : str or None
+        Name of the region parameters to apply to the white buffer region.
+        Can be None to keep the buffer region clear.
     named_regions : dict
         A dictionary of region types to region parameters. Each set of region
         parameters should consist of a list of layer parameters. See
@@ -500,6 +508,7 @@ def gen_game(
 
     regions = make_partioned_regions(board_shape, **partitioning)
     board = np.zeros(board_shape, dtype=np.int16)
+    goals = np.zeros(board_shape, dtype=np.int16)
 
     # Create locations for the player and the exit
     i, j = np.nonzero(regions == 0)
@@ -507,16 +516,13 @@ def gen_game(
     board[i[k1], j[k1]] = CellTypes.player
     board[i[k2], j[k2]] = CellTypes.level_exit | CellTypes.color_r
 
-    # Ensure that the player isn't touching any other region
+    # Ensure that the player and exit aren't touching any other region
     n = np.array([[-1,-1,-1],[0,0,0],[1,1,1]])
-    regions[(i[k1]+n) % board.shape[0], (j[k1]+n.T) % board.shape[1]] = 0
-
-    # Give the boarder (0) regions a rainbow / white color
-    # This is mostly a visual hint for humans
-    goals = (regions == 0).astype(np.int16) * CellTypes.rainbow_color
+    regions[(i[k1]+n) % board.shape[0], (j[k1]+n.T) % board.shape[1]] = -1
+    regions[(i[k2]+n) % board.shape[0], (j[k2]+n.T) % board.shape[1]] = -1
 
     # and fill in the regions...
-    for k in np.unique(regions)[1:]:
+    for k in np.unique(regions)[2:]:
         mask = regions == k
         if starting_region is not None:
             region_name = _fix_random_values(starting_region)
@@ -525,10 +531,22 @@ def gen_game(
         if region_name not in named_regions:
             print("No region parameters for name '{}'".format(region_name))
             continue
+        print("Making region:", region_name)
         rboard, rgoals = populate_region(mask, named_regions[region_name])
         board += rboard
         goals += rgoals
         starting_region = None
+    buffer_region = _fix_random_values(buffer_region)
+    if buffer_region in named_regions:
+        mask = regions == 0
+        rboard, rgoals = populate_region(mask, named_regions[buffer_region])
+        board += rboard
+        goals += rgoals
+
+    # Give the buffer (0) region a rainbow / white color
+    # This is mostly a visual hint for humans
+    buffer_mask = (regions <= 0) & (goals & CellTypes.rainbow_color == 0)
+    goals[buffer_mask] += CellTypes.rainbow_color
 
     game = SafeLifeGame()
     game.deserialize({

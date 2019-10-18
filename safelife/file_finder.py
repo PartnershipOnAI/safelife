@@ -10,7 +10,7 @@ from .proc_gen import gen_game
 
 LEVEL_DIRECTORY = os.path.abspath(os.path.join(__file__, '../levels'))
 _default_params = yaml.load(
-    open(os.path.join(LEVEL_DIRECTORY, 'params/_defaults.yaml')))
+    open(os.path.join(LEVEL_DIRECTORY, 'random/_defaults.yaml')))
 
 
 def find_files(*paths, file_types=None, use_glob=True):
@@ -37,6 +37,10 @@ def _find_files(path, file_types, use_glob, use_level_dir=False):
     if os.path.isdir(path) and file_types:
         use_glob = True
         path = os.path.join(path, '*')
+    elif use_level_dir and file_types and '.' not in os.path.split(path)[1]:
+        # Don't need to include the file extension
+        use_glob = True
+        path += '.*'
     if use_glob:
         paths = sorted(glob.glob(path, recursive=True))
         if not paths:

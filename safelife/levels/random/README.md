@@ -2,8 +2,8 @@
 
 The "levels" in this folder aren't levels per se; instead they're parameters used to generate new random levels. These can be used to train agents in a several different scenarios. To run them from the command line, use
 
-    python3 -m safelife play --gen_params append-still  # or
-    python3 -m safelife print --gen_params append-still
+    python3 -m safelife play random/append-still  # or
+    python3 -m safelife print random/append-still
 
 There are a lot of different parameters that one can change, but here we focus on changing just a few to get qualitatively different and interesting behavior.
 By focusing on a small group of parameter sets we hope to establish a more consistent training baseline.

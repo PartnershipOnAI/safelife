@@ -1,10 +1,18 @@
-# Blah blah.
+# This file contains the default procedural level generation parameters.
+# The board will be broken up into different regions, and each region can
+# have a different set of parameters. The vast majority of this file is
+# specifying different interesting region types that can be reused by
+# other files.
 ---
+board_shape: [25,25]
 min_performance:
   uniform: [-0.5, 0.5]
-board_shape: [25,25]
 
 partitioning:
+  # The board is partitioned into distinct regions.
+  # Each region has a two-cell buffer surrounding it, so any pattern that's
+  # entirely contained in one region won't be able to interact with a pattern
+  # that's entirely contained in another region.
   min_regions: 2
   max_regions: 4
 
@@ -44,10 +52,22 @@ later_regions:
     - prune dynamic hard
     - bonsai
 
+# We can also create patterns in the buffer region (the between regions region).
+# Note that doing so can easily disrupt patterns in neighboring regions,
+# especially if neighboring regions contain stochastic patterns.
+buffer_region: null
+
 named_regions:
   # Each region is given by a name followed by a list of layers.
   # Each layer is painted onto the region in order, allowing for multiple
   # goals and objectives per region.
+
+  rubble:
+    # A pattern that just adds random walls.
+    - color: black
+      pattern:
+        wall: [-10, -10]
+        min_fill: 0.3
 
   spawner:
     # A spawner region will contain "spawner" cells that produce stochastic
@@ -101,7 +121,7 @@ named_regions:
         temperature: 1
         tree: [1, 1]
       hardened_life: 0.5
-      movable_walls: 0.5
+      movable_walls: 0.7
 
   orchard:
     # A simple region with a lattice of trees.
@@ -209,10 +229,10 @@ named_regions:
     # Simplest build task.
     # The agent needs to fill in the blue patterns, but it's in a contained
     # region and the patterns are pretty easy to build.
-    - fences: 1
-      movable_walls: 0.5
     - color: blue
       target: goals
+      fences: 1
+      movable_walls: 0.5
       pattern:
         period: 1
         min_fill: 0.1
@@ -220,11 +240,10 @@ named_regions:
 
   build medium:
     # A somewhat harder to build task, with more complicated patterns.
-    - fences:
-        choices: [0.5, 1]
-      movable_walls: 0.5
     - color: blue
       target: goals
+      fences:
+        choices: [0.5, 1]
       pattern:
         period: 1
         min_fill: 0.15
@@ -236,9 +255,9 @@ named_regions:
     # A much harder build task. The increased values of min_fill and temperature
     # tend to produce much more complicated patterns. Walls are all fixed, so
     # it's hard to use them as tools in pattern creation.
-    - fences: 0.5
     - color: blue
       target: goals
+      fences: 0.5
       pattern:
         period: 1
         min_fill: 0.3
