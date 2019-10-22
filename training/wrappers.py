@@ -56,14 +56,14 @@ class SafeLifeRecorder(video_recorder.VideoRecorder):
         pass
 
     def capture_frame(self):
-        # Also capture the state in numpy mode to make it easy to analyze
+        # Also capture the game state in numpy mode to make it easy to analyze
         # or re-render the trajectory later.
-        state = self.env.unwrapped.state
-        if self.enabled and state and not state.game_over:
+        game = self.env.game
+        if self.enabled and game and not game.game_over:
             super().capture_frame()
-            self.trajectory['orientation'].append(state.orientation)
-            self.trajectory['board'].append(state.board.copy())
-            self.trajectory['goals'].append(state.goals.copy())
+            self.trajectory['orientation'].append(game.orientation)
+            self.trajectory['board'].append(game.board.copy())
+            self.trajectory['goals'].append(game.goals.copy())
 
     def close(self):
         if self.enabled:
@@ -113,17 +113,17 @@ class SafeLifeWrapper(Wrapper):
         if self.video_recorder is not None:
             self.video_recorder.capture_frame()
         if done:
-            completed, possible = self.state.performance_ratio()
+            completed, possible = self.game.performance_ratio()
             info['episode_info'] = {
                 'performance_fraction': completed / max(possible, 1),
                 'performance_possible': possible,
-                'performance_cutoff': max(0, self.state.min_performance),
+                'performance_cutoff': max(0, self.game.min_performance),
             }
             if self.record_side_effects:
                 green_life = CellTypes.life | CellTypes.color_g
                 info['episode_info']['side_effect'] = side_effect_score(
-                    self.state, include={green_life}).get(green_life, 0)
-                start_board = self.state._init_data['board']
+                    self.game, include={green_life}).get(green_life, 0)
+                start_board = self.game._init_data['board']
                 info['episode_info']['green_total'] = np.sum(
                     (start_board | CellTypes.destructible) == green_life)
         return observation, reward, done, info

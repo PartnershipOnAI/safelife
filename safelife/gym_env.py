@@ -1,4 +1,5 @@
 import queue
+import warnings
 from multiprocessing import Pool
 
 import gym
@@ -78,7 +79,7 @@ class SafeLifeEnv(gym.Env):
         "TOGGLE DOWN",
         "TOGGLE LEFT",
     )
-    state = None
+    game = None
 
     # The following are default parameters that can be overridden during
     # initialization, or really at any other time.
@@ -126,6 +127,14 @@ class SafeLifeEnv(gym.Env):
         self._board_queue = queue.deque()
 
     @property
+    def state(self):
+        warnings.warn(
+            "'SafeLifeEnv.state' has been deprecated in favor of"
+            "'SafeLifeEnv.game'",
+            DeprecationWarning, stacklevel=2)
+        return self.game
+
+    @property
     def fixed_levels(self):
         return self._fixed_levels
 
@@ -151,11 +160,11 @@ class SafeLifeEnv(gym.Env):
 
     def get_obs(self, board=None, goals=None, agent_loc=None):
         if board is None:
-            board = self.state.board
+            board = self.game.board
         if goals is None:
-            goals = self.state.goals
+            goals = self.game.goals
         if agent_loc is None:
-            agent_loc = self.state.agent_loc
+            agent_loc = self.game.agent_loc
 
         board = board.copy()
         goals = goals & CellTypes.rainbow_color
@@ -171,7 +180,7 @@ class SafeLifeEnv(gym.Env):
 
         # And center the array on the agent.
         board = recenter_view(
-            board, self.view_shape, agent_loc[::-1], self.state.exit_locs)
+            board, self.view_shape, agent_loc[::-1], self.game.exit_locs)
 
         # If the environment specifies output channels, output a boolean array
         # with the channels as the third dimension. Otherwise output a bit
@@ -182,19 +191,19 @@ class SafeLifeEnv(gym.Env):
         return board
 
     def step(self, action):
-        assert self.state is not None, "State not initialized."
+        assert self.game is not None, "Game state is not initialized."
         action_name = self.action_names[action]
-        base_reward = self.state.execute_action(action_name)
-        self.state.advance_board()
-        new_state_value = self.state.current_points()
-        base_reward += new_state_value - self._old_state_value
-        self._old_state_value = new_state_value
+        base_reward = self.game.execute_action(action_name)
+        self.game.advance_board()
+        new_game_value = self.game.current_points()
+        base_reward += new_game_value - self._old_game_value
+        self._old_game_value = new_game_value
         self._num_steps += 1
         times_up = self._num_steps >= self.max_steps
-        done = self.state.game_over or times_up
+        done = self.game.game_over or times_up
         reward = base_reward * self.rescale_rewards
 
-        p0 = self.state.agent_loc
+        p0 = self.game.agent_loc
         n = self.movement_bonus_period
         if n <= len(self._prior_positions):
             p1 = self._prior_positions[-n]
@@ -209,15 +218,15 @@ class SafeLifeEnv(gym.Env):
             dist = n
         speed = dist / n
         reward += self.movement_bonus * speed**self.movement_bonus_power
-        self._prior_positions.append(self.state.agent_loc)
-        self.state.update_exit_colors()
+        self._prior_positions.append(self.game.agent_loc)
+        self.game.update_exit_colors()
 
         return self.get_obs(), reward, done, {
             'times_up': times_up,
             'base_reward': base_reward,
-            'board': self.state.board,
-            'goals': self.state.goals,
-            'agent_loc': self.state.agent_loc,
+            'board': self.game.board,
+            'goals': self.game.goals,
+            'agent_loc': self.game.agent_loc,
         }
 
     def reset(self):
@@ -226,28 +235,28 @@ class SafeLifeEnv(gym.Env):
                 self._level_idx = 0
                 if self.randomize_fixed_levels:
                     np.random.shuffle(self._fixed_levels)
-            self.state = self._fixed_levels[self._level_idx]
+            self.game = self._fixed_levels[self._level_idx]
             self._level_idx += 1
-            self.state.revert()
+            self.game.revert()
         else:
             while len(self._board_queue) <= self._min_queue_size:
                 self._board_queue.append(self._pool.apply_async(
                     gen_game, (), self.board_gen_params))
-            self.state = self._board_queue.popleft().get()
-        self._old_state_value = self.state.current_points()
+            self.game = self._board_queue.popleft().get()
+        self._old_game_value = self.game.current_points()
         self._num_steps = 0
         self._prior_positions = queue.deque(
-            [self.state.agent_loc], self.movement_bonus_period)
-        self.state.update_exit_colors()
+            [self.game.agent_loc], self.movement_bonus_period)
+        self.game.update_exit_colors()
         return self.get_obs()
 
     def render(self, mode='ansi'):
         if mode == 'ansi':
             from .render_text import render_game
-            return render_game(self.state, view_size=self.view_shape)
+            return render_game(self.game, view_size=self.view_shape)
         else:
             from .render_graphics import render_game
-            return render_game(self.state)
+            return render_game(self.game)
 
     def close(self):
         pass

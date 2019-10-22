@@ -1,5 +1,6 @@
 import os
 import json
+import yaml
 import logging
 import numpy as np
 import tensorflow as tf
@@ -120,7 +121,7 @@ class SafeLifeBasePPO(ppo.PPO):
                         op.policy, feed_dict={op.states: [obs]})[0]
                 obs = []
                 for policy, env in zip(policies, envs):
-                    if env.state.game_over:
+                    if env.game.game_over:
                         action = 0
                     else:
                         action = np.random.choice(len(policy), p=policy)
@@ -133,7 +134,7 @@ class SafeLifeBasePPO(ppo.PPO):
             total_length = 0
             for env in envs:
                 env_side_effects = {}
-                for key, val in side_effect_score(env.state).items():
+                for key, val in side_effect_score(env.game).items():
                     key = cell_name(key)
                     env_side_effects[key] = val
                     total_side_effects[key] += val
@@ -219,12 +220,11 @@ class SafeLifePPO_example(SafeLifeBasePPO):
         'view_shape': (15, 15),
         'output_channels': tuple(range(15)),
     }
-    board_params_file = "params/append-still.json"
+    board_params_file = "random/append-still.yaml"
 
     def __init__(self, *args, **kw):
         fname = os.path.join(LEVEL_DIRECTORY, self.board_params_file)
-        with open(fname) as f:
-            self._base_board_params = json.load(f)
+        self._base_board_params = yaml.load(open(fname))
         super().__init__(*args, **kw)
 
     @property
