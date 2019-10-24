@@ -6,6 +6,7 @@ from gym.utils import seeding
 import numpy as np
 
 from safelife import speedups
+from safelife.file_finder import safelife_loader
 from .game_physics import CellTypes
 from .helper_utils import recenter_view
 
@@ -172,27 +173,21 @@ class SafeLifeEnv(gym.Env):
         pass
 
 
-def test_run(logdir=None):
-    """
-    A quick test to show that the environment is working properly
-    """
-    import shutil
-    import os
-    from training import wrappers
-    from . import file_finder
+# Register a few canonical environments with OpenAI Gym
+gym.register(
+    id="safelife-append-still-v1",
+    entry_point=SafeLifeEnv,
+    kwargs={'level_iterator': safelife_loader('random/append-still')},
+)
 
-    if logdir is None:
-        logdir = os.path.abspath(os.path.join(__file__, '../../data/gym-test/'))
-    if os.path.exists(logdir):
-        shutil.rmtree(logdir)
+gym.register(
+    id="safelife-prune-still-v1",
+    entry_point=SafeLifeEnv,
+    kwargs={'level_iterator': safelife_loader('random/prune-still')},
+)
 
-    env = wrappers.VideoMonitor(SafeLifeEnv(file_finder.safelife_loader()), logdir)
-    env.reset()
-    done = False
-    while not done:
-        obs, reward, done, info = env.step(env.action_space.sample())
-    env.close()
-
-
-if __name__ == "__main__":
-    test_run()
+gym.register(
+    id="safelife-challenge-v1",
+    entry_point=SafeLifeEnv,
+    kwargs={'level_iterator': safelife_loader('random/challenge')},
+)

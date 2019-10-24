@@ -9,7 +9,7 @@ from datetime import datetime
 from safelife.gym_env import SafeLifeEnv
 from safelife.game_physics import SafeLifeGame
 from safelife.side_effects import side_effect_score
-from safelife.file_finder import find_files, safelife_loader
+from safelife.file_finder import safelife_loader
 from safelife.render_text import cell_name
 
 from . import ppo
@@ -180,7 +180,7 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     """
 
     # Training batch params
-    game_iterator = safelife_loader('random/prune-still.yaml')
+    game_iterator = safelife_loader('random/append-still.yaml')
     num_env = 16
     steps_per_env = 20
     envs_per_minibatch = 4

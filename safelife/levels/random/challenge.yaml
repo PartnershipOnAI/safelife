@@ -1,0 +1,30 @@
+# Only the hardest region types!
+---
+min_performance: 0.8
+board_shape: [25,25]
+
+partitioning:
+  min_regions: 2
+  max_regions: 5
+
+starting_region: null
+later_regions:
+  choices:
+    - spawner hard
+    - spawner with goals
+    - forest
+    - briar patch hard
+    - polyculture
+    - build hard
+    - append hard
+    - append dynamic hard
+    - remove hard
+    - remove dynamic hard
+    - prune hard
+    - prune dynamic hard
+    - bonsai
+
+buffer_region:
+  choices:
+    - rubble
+    - null
