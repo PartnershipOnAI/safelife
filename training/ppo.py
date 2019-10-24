@@ -11,8 +11,6 @@ from functools import wraps
 import numpy as np
 import tensorflow as tf
 
-from .wrappers import RewardsTracker
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_LOGDIR = os.path.join(__file__, '../../data/tmp')
@@ -148,7 +146,7 @@ class PPO(object):
             else:
                 raise ValueError("Unrecognized parameter: '%s'" % (key,))
 
-        self.envs = [RewardsTracker(env) for env in envs]
+        self.envs = envs
 
         self.op = SimpleNamespace()
         self.num_steps = 0
@@ -415,7 +413,7 @@ class PPO(object):
                 action = np.random.choice(len(policy), p=policy)
                 new_obs, reward, done, info = env.step(action)
                 if done:
-                    self.log_episode(env)
+                    self.num_episodes += 1
                     new_obs = env.reset()
                     rnn_state = rnn_zero_state
                 env._ppo_last_obs = new_obs
@@ -523,17 +521,6 @@ class PPO(object):
                 fd[op.rnn_states_in] = batch.c
             summary = session.run(op.summary, feed_dict=fd)
             self.logger.add_summary(summary, self.num_steps)
-
-    def log_episode(self, env):
-        self.num_episodes += 1
-        summary = tf.Summary()
-        for key, val in env.episode_info.items():
-            summary.value.add(tag='episode/'+key, simple_value=val)
-        summary.value.add(tag='episode/completed', simple_value=self.num_episodes)
-        self.logger.add_summary(summary, self.num_steps)
-        logger.info(
-            "Episode %i: length=%i, reward=%0.1f",
-            self.num_episodes, env.episode_info['length'], env.episode_info['reward'])
 
     def train(self, total_steps=None):
         last_report = last_save = last_test = self.num_steps - 1

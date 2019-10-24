@@ -1,6 +1,8 @@
 import os
 import glob
 import random
+import queue
+from multiprocessing import Pool
 import yaml
 import numpy as np
 
@@ -54,7 +56,53 @@ def _find_files(path, file_types, use_glob, use_level_dir=False):
         yield path
 
 
-def safelife_loader(*paths, repeat="auto", shuffle=False, callback=None):
+def _load_data(paths, repeat, shuffle):
+    """
+    Generate data to be fed into `_game_from_data`.
+    """
+    if paths:
+        all_data = [[f] for f in find_files(
+            *paths, file_types=('json', 'npz', 'yaml'))]
+    else:
+        all_data = [[None, 'procgen', {}]]
+
+    while True:
+        if shuffle:
+            random.shuffle(all_data)
+        for data in all_data:
+            if len(data) == 1:
+                file_name = data[0]
+                if file_name.endswith('.json') or file_name.endswith('yaml'):
+                    data += ['procgen', yaml.load(open(file_name))]
+                else:
+                    file_data = np.load(file_name)
+                    # npz files aren't pickleable, which will mess up
+                    # multiprocessing. Convert to a dict first.
+                    file_data = {k: file_data[k] for k in file_data.keys()}
+                    data += ['static', file_data]
+            yield data
+
+        if len(all_data) == 0 or not repeat or repeat == "auto" and not (
+                len(all_data) == 1 and all_data[0][1] == "procgen"):
+            break
+
+
+def _game_from_data(file_name, data_type, data):
+    if data_type == "procgen":
+        named_regions = _default_params['named_regions'].copy()
+        named_regions.update(data.get('named_regions', {}))
+        data2 = _default_params.copy()
+        data2.update(**data)
+        data2['named_regions'] = named_regions
+        game = gen_game(**data2)
+    else:
+        game = SafeLifeGame.loaddata(data)
+    game.file_name = file_name
+    return game
+
+
+def safelife_loader(
+        *paths, repeat="auto", shuffle=False, num_workers=1, max_queue=10):
     """
     Generator function to Load SafeLifeGame instances from the specified paths.
 
@@ -75,12 +123,15 @@ def safelife_loader(*paths, repeat="auto", shuffle=False, callback=None):
         If "auto", it repeats if and only if 'paths' points to a single
         file of procedural generation parameters.
     shuffle : bool
-        If true, the order of the files will be shuffled (not needed?).
-    callback : function
-        Optional callback that can be used to update board generation
-        parameters before a level is procedurally generated. Should accept
-        an integer logging how many games have been generated and a dictionary
-        of parameters which it can (optionally) update in place.
+        If true, the order of the files will be shuffled.
+    num_workers : int
+        Number of workers used to generate new instances. If this is nonzero,
+        then new instances will be generated asynchronously using the
+        multiprocessing module. This can significantly reduce the wait time
+        needed to retrieve new levels, as there will tend to be a ready queue.
+    max_queue : int
+        Maximum number of levels to queue up at once. This should be at least
+        as large as the number of workers.
 
     Returns
     -------
@@ -88,38 +139,20 @@ def safelife_loader(*paths, repeat="auto", shuffle=False, callback=None):
         Note that if repeat is true, infinite items will be returned.
         Only iterate over as many instances as you need!
     """
-    game_num = 0
-    if paths:
-        all_data = [[f] for f in find_files(
-            *paths, file_types=('json', 'npz', 'yaml'))]
+    if num_workers < 1 or max_queue < 1:
+        for data in _load_data(paths, repeat, shuffle):
+            yield _game_from_data(*data)
     else:
-        all_data = [[None, 'procgen', {}]]
-    while True:
-        if shuffle:
-            random.shuffle(all_data)
-        for data in all_data:
-            game_num += 1
-            if len(data) == 1:
-                file_name = data[0]
-                if file_name.endswith('.json') or file_name.endswith('yaml'):
-                    data += ['procgen', yaml.load(open(file_name))]
-                else:
-                    data += ['static', np.load(file_name)]
-            file_name, datatype, data = data
-            if datatype == "procgen":
-                # Maybe do a deep copy here?
-                named_regions = _default_params['named_regions'].copy()
-                named_regions.update(data.get('named_regions', {}))
-                data2 = _default_params.copy()
-                data2.update(**data)
-                data2['named_regions'] = named_regions
-                if callback is not None:
-                    callback(game_num, data2)
-                game = gen_game(**data2)
+        pool = Pool(processes=num_workers)
+        game_queue = queue.deque()
+        for data in _load_data(paths, repeat, shuffle):
+            if (len(game_queue) >= max_queue or
+                    len(game_queue) > 0 and game_queue[0].ready()):
+                next_game = game_queue.popleft().get()
             else:
-                game = SafeLifeGame.loaddata(data)
-            game.file_name = file_name
-            yield game
-        if len(all_data) == 0 or not repeat or repeat == "auto" and not (
-                len(all_data) == 1 and all_data[0][1] == "procgen"):
-            break
+                next_game = None
+            game_queue.append(pool.apply_async(_game_from_data, data))
+            if next_game is not None:
+                yield next_game
+        for result in game_queue:
+            yield result.get()

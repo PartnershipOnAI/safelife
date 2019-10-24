@@ -1,19 +1,19 @@
 import os
 import json
-import yaml
 import logging
 import numpy as np
 import tensorflow as tf
 from collections import defaultdict
 from datetime import datetime
 
-from safelife.gym_env import SafeLifeEnv, SafeLifeGame
+from safelife.gym_env import SafeLifeEnv
+from safelife.game_physics import SafeLifeGame
 from safelife.side_effects import side_effect_score
-from safelife.file_finder import find_files, LEVEL_DIRECTORY
+from safelife.file_finder import find_files, safelife_loader
 from safelife.render_text import cell_name
 
 from . import ppo
-from .wrappers import SafeLifeWrapper, RewardsTracker
+from . import wrappers
 
 logger = logging.getLogger(__name__)
 
@@ -45,46 +45,32 @@ class SafeLifeBasePPO(ppo.PPO):
     This should still be subclassed to build the network and set any other
     hyperparameters.
     """
-    video_freq = 100
-    video_counter = None
-    video_name = "episode-{episode}-{steps}"
+    video_name = "episode-{episode_num}-{step_num}"
     benchmark_video_name = "benchmark-{env_name}-{steps}"
     benchmark_environments = []
     benchmark_initial_steps = 1000
     benchmark_runs_per_env = 16
 
-    environment_params = {}
-    board_gen_params = {}
-    side_effect_args = {}
+    game_iterator = None  # To be overloaded by subclass
 
     def __init__(self, logdir=ppo.DEFAULT_LOGDIR, **kwargs):
         self.logdir = logdir
         self.benchmark_log_file = os.path.join(logdir, 'benchmark-scores.yaml')
         with open(self.benchmark_log_file, 'w') as f:
             f.write("# SafeLife test log.\n---\n")
-        envs = [
-            SafeLifeWrapper(
-                SafeLifeEnv(**self.environment_params),
-                reset_callback=self.update_environment,
-            ) for _ in range(self.num_env)
-        ]
-        super().__init__(envs, logdir=logdir, **kwargs)
 
-    def update_environment(self, env_wrapper):
-        # Called just before an environment resets
-        if self.video_counter is None:
-            self.video_counter = self.num_episodes
-        if self.video_freq > 0 and self.video_counter % self.video_freq == 0:
-            base_name = self.video_name.format(
-                episode=self.video_counter, steps=self.num_steps)
-            env_wrapper.video_name = os.path.join(self.logdir, base_name)
-        else:
-            env_wrapper.video_name = None
-        self.video_counter += 1
-        # If the board_gen_params are implemented as a property, then they
-        # could easily be changed with every update to do some sort of
-        # curriculum learning.
-        env_wrapper.unwrapped.board_gen_params = self.board_gen_params
+        # Set up the training environments, including associated wrappers.
+        envs = []
+        video_name = os.path.join(logdir, self.video_name)
+        for _ in range(self.num_env):
+            env = SafeLifeEnv(self.game_iterator)
+            env = wrappers.BasicSafeLifeWrapper(env)
+            env = wrappers.MinPerfScheduler(env)
+            env = wrappers.RecordingSafeLifeWrapper(env, video_name=video_name)
+            envs.append(env)
+        super().__init__(envs, logdir=logdir, **kwargs)
+        for env in envs:
+            env.tf_logger = self.logger
 
     def run_safety_test(self, random_policy=False):
         """
@@ -92,23 +78,27 @@ class SafeLifeBasePPO(ppo.PPO):
         """
         op = self.op
         log_file = open(self.benchmark_log_file, mode='a')
-        benchmark_env_names = list(find_files(*self.benchmark_environments))
+        benchmark_levels = safelife_loader(
+            *self.benchmark_environments, num_workers=0)
 
-        for idx, env_name in enumerate(benchmark_env_names):
+        for idx, base_game in enumerate(benchmark_levels):
             # Environment title drops the extension
-            game = SafeLifeGame.load(env_name)
-            game_data = game.serialize()
-            logger.info("Running safety test on %s...", game.title)
-            envs = [
-                RewardsTracker(SafeLifeWrapper(
-                    SafeLifeEnv(fixed_levels=[game_data], **self.environment_params),
-                    record_side_effects=False,  # calculate these below instead
-                )) for _ in range(self.benchmark_runs_per_env)
-            ]
-            game_title = ('random-' if random_policy else '') + game.title
-            envs[0].env.video_name = os.path.join(self.logdir,
-                self.benchmark_video_name.format(
-                    idx=idx+1, env_name=game_title, steps=self.num_steps))
+            game_data = base_game.serialize()
+            logger.info("Running safety test on %s...", base_game.title)
+            game_title = ('random-' if random_policy else '') + base_game.title
+            video_name = self.benchmark_video_name.format(
+                idx=idx+1, env_name=game_title, steps=self.num_steps)
+            video_name = os.path.join(self.logdir, video_name)
+            envs = []
+            for k in range(self.benchmark_runs_per_env):
+                game = SafeLifeGame.loaddata(game_data)
+                env = SafeLifeEnv(iter([game]))
+                env = wrappers.BasicSafeLifeWrapper(env, record_side_effects=False)
+                env = wrappers.RecordingSafeLifeWrapper(
+                    env, video_name=video_name, video_recording_freq=1,
+                    global_stats=None)
+                envs.append(env)
+                video_name = None  # only do video for the first one
 
             # Run each environment
             obs = [env.reset() for env in envs]
@@ -132,15 +122,21 @@ class SafeLifeBasePPO(ppo.PPO):
             total_side_effects = defaultdict(lambda: 0)
             total_reward = 0
             total_length = 0
+            all_env_stats = []
             for env in envs:
-                env_side_effects = {}
+                env_stats = {
+                    'length': env.episode_length,
+                    'reward': env.episode_reward,
+                    'side_effects': {},
+                }
+                total_length += env.episode_length
+                total_reward += env.episode_reward
+                env_stats.update(env.end_of_episode_stats())
                 for key, val in side_effect_score(env.game).items():
                     key = cell_name(key)
-                    env_side_effects[key] = val
+                    env_stats['side_effects'][key] = val
                     total_side_effects[key] += val
-                env.episode_info['side_effects'] = env_side_effects
-                total_reward += env.episode_info['reward']
-                total_length += env.episode_info['length']
+                all_env_stats.append(env_stats)
 
             # Print and log average side effect scores
             msg = [("\n"
@@ -164,8 +160,8 @@ class SafeLifeBasePPO(ppo.PPO):
             # Then also log side effects for individual episodes
             # This is going to look pretty messy, but oh well.
             log_file.write("\n  episode-info:\n")
-            for env in envs:
-                log_file.write("    - {}\n".format(json.dumps(env.episode_info)))
+            for stats in all_env_stats:
+                log_file.write("    - {}\n".format(json.dumps(stats)))
         log_file.close()
 
 
@@ -184,6 +180,7 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     """
 
     # Training batch params
+    game_iterator = safelife_loader('random/prune-still.yaml')
     num_env = 16
     steps_per_env = 20
     envs_per_minibatch = 4
@@ -207,31 +204,9 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     vf_coef = 1.0
     max_gradient_norm = 1.0
     eps_clip = 0.1
-    reward_clip = 10.0
+    reward_clip = 30.0
     policy_rectifier = 'elu'
     scale_prob_clipping = True
-
-    # Environment params
-    environment_params = {
-        'max_steps': 1000,
-        'movement_bonus': 0.04,
-        'movement_bonus_power': 0.01,
-        'remove_white_goals': True,
-        'view_shape': (15, 15),
-        'output_channels': tuple(range(15)),
-    }
-    board_params_file = "random/append-still.yaml"
-
-    def __init__(self, *args, **kw):
-        fname = os.path.join(LEVEL_DIRECTORY, self.board_params_file)
-        self._base_board_params = yaml.load(open(fname))
-        super().__init__(*args, **kw)
-
-    @property
-    def board_gen_params(self):
-        params = self._base_board_params.copy()
-        params['min_performance'] = 0.5 * np.tanh((self.num_steps-3e5) * 5e-7)
-        return params
 
     # --------------
 

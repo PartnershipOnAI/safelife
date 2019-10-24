@@ -1,6 +1,4 @@
-import queue
 import warnings
-from multiprocessing import Pool
 
 import gym
 from gym import spaces
@@ -8,10 +6,8 @@ from gym.utils import seeding
 import numpy as np
 
 from safelife import speedups
-from .game_physics import SafeLifeGame, CellTypes
+from .game_physics import CellTypes
 from .helper_utils import recenter_view
-from .proc_gen import gen_game
-from .file_finder import find_files
 
 
 class SafeLifeEnv(gym.Env):
@@ -22,8 +18,6 @@ class SafeLifeEnv(gym.Env):
 
     - A time limit is added. The episode ends when the time limit is reached
       with no further points awarded.
-    - An (optional) penalty is applied when the agent doesn't move between
-      time steps.
     - The observation is always centered on the agent, and the observation size
       doesn't have to match the size of the game board (it can be larger or
       smaller).
@@ -33,19 +27,12 @@ class SafeLifeEnv(gym.Env):
 
     Parameters
     ----------
-    max_steps : int
-    movement_bonus : float
-        Coefficients for the movement bonus. The agent's speed is calculated
-        simply as the distance traveled divided by the time taken to travel it.
-    movement_bonus_period : int
-        The number of steps over which the movement bonus is calculated.
-        By setting this to a larger number, one encourages the agent to
-        maintain a particular bearing rather than circling back to where it
-        was previously.
-    movement_bonus_power : float
-        Exponent applied to the movement bonus. Larger exponents will better
-        reward maximal speed, while very small exponents will encourage any
-        movement at all, even if not very fast.
+    level_iterator : iterator
+        An iterator which produces :class:`game_physics.SafeLifeGame` instances.
+        For example, :func:`file_finder.safelife_loader` will produce new games
+        from saved game files or procedural generation parameters. This can be
+        replaced with a custom iterator to do more complex level generation,
+        such as implementing a level curriculum.
     remove_white_goals : bool
     output_channels : None or tuple of ints
         Specifies which channels get output in the observation.
@@ -53,15 +40,6 @@ class SafeLifeEnv(gym.Env):
         If a tuple, each corresponding bit is given its own binary channel.
     view_shape : (int, int)
         Shape of the agent observation.
-    board_gen_params : dict
-        Parameters to be passed to :func:`proc_gen.gen_game()`.
-    fixed_levels : list or None
-        Each item in the list can either be a level name, or a dictionary of
-        serialized level data. If set, levels are either loaded from disk or
-        deserialized rather than procedurally generated.
-    randomize_fixed_levels : bool
-        If true, fixed levels will be played in a random order (shuffled once
-        per epoch).
     """
 
     metadata = {
@@ -82,27 +60,14 @@ class SafeLifeEnv(gym.Env):
     game = None
 
     # The following are default parameters that can be overridden during
-    # initialization, or really at any other time.
-    # `view_shape` and `output_channels` should probably be kept constant
-    # after initialization.
-    max_steps = 1200
-    movement_bonus = 0.0
-    movement_bonus_power = 1.0
-    movement_bonus_period = 4
+    # initialization.
     remove_white_goals = True
     view_shape = (15, 15)
     output_channels = tuple(range(15))  # default to all channels
 
-    rescale_rewards = 1/3.0  # Divide rewards by 3 to keep the build points at 1.0
+    def __init__(self, level_iterator, **kwargs):
+        self.level_iterator = level_iterator
 
-    _fixed_levels = []
-    randomize_fixed_levels = True
-
-    _pool = Pool(processes=8)
-    _min_queue_size = 1
-
-    def __init__(self, **kwargs):
-        self.board_gen_params = {}
         for key, val in kwargs.items():
             if (not key.startswith('_') and hasattr(self, key) and
                     not callable(getattr(self, key))):
@@ -124,7 +89,6 @@ class SafeLifeEnv(gym.Env):
                 dtype=np.uint16,
             )
         self.seed()
-        self._board_queue = queue.deque()
 
     @property
     def state(self):
@@ -133,25 +97,6 @@ class SafeLifeEnv(gym.Env):
             "'SafeLifeEnv.game'",
             DeprecationWarning, stacklevel=2)
         return self.game
-
-    @property
-    def fixed_levels(self):
-        return self._fixed_levels
-
-    @fixed_levels.setter
-    def fixed_levels(self, level_names):
-        self._fixed_levels = []
-        for data in level_names:
-            if isinstance(data, str):
-                self._fixed_levels += [
-                    SafeLifeGame.load(fname) for fname in find_files(data)]
-            elif isinstance(data, SafeLifeGame):
-                self._fixed_levels.append(data)
-            else:
-                game = SafeLifeGame(board_size=None)
-                game.deserialize(data)
-                self._fixed_levels.append(game)
-        self._level_idx = len(self._fixed_levels)
 
     def seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -193,61 +138,26 @@ class SafeLifeEnv(gym.Env):
     def step(self, action):
         assert self.game is not None, "Game state is not initialized."
         action_name = self.action_names[action]
-        base_reward = self.game.execute_action(action_name)
+        reward = self.game.execute_action(action_name)
         self.game.advance_board()
         new_game_value = self.game.current_points()
-        base_reward += new_game_value - self._old_game_value
+        reward += new_game_value - self._old_game_value
         self._old_game_value = new_game_value
         self._num_steps += 1
-        times_up = self._num_steps >= self.max_steps
-        done = self.game.game_over or times_up
-        reward = base_reward * self.rescale_rewards
-
-        p0 = self.game.agent_loc
-        n = self.movement_bonus_period
-        if n <= len(self._prior_positions):
-            p1 = self._prior_positions[-n]
-            dist = abs(p0[0]-p1[0]) + abs(p0[1]-p1[1])
-        elif len(self._prior_positions) > 0:
-            p1 = self._prior_positions[0]
-            dist = abs(p0[0]-p1[0]) + abs(p0[1]-p1[1])
-            # If we're at the beginning of an episode, treat the
-            # agent as if it were moving continuously before entering.
-            dist += n - len(self._prior_positions)
-        else:
-            dist = n
-        speed = dist / n
-        reward += self.movement_bonus * speed**self.movement_bonus_power
-        self._prior_positions.append(self.game.agent_loc)
         self.game.update_exit_colors()
 
-        return self.get_obs(), reward, done, {
-            'times_up': times_up,
-            'base_reward': base_reward,
+        return self.get_obs(), reward, self.game.game_over, {
             'board': self.game.board,
             'goals': self.game.goals,
             'agent_loc': self.game.agent_loc,
         }
 
     def reset(self):
-        if self._fixed_levels:
-            if self._level_idx >= len(self._fixed_levels):
-                self._level_idx = 0
-                if self.randomize_fixed_levels:
-                    np.random.shuffle(self._fixed_levels)
-            self.game = self._fixed_levels[self._level_idx]
-            self._level_idx += 1
-            self.game.revert()
-        else:
-            while len(self._board_queue) <= self._min_queue_size:
-                self._board_queue.append(self._pool.apply_async(
-                    gen_game, (), self.board_gen_params))
-            self.game = self._board_queue.popleft().get()
+        self.game = next(self.level_iterator)
+        self.game.revert()
+        self.game.update_exit_colors()
         self._old_game_value = self.game.current_points()
         self._num_steps = 0
-        self._prior_positions = queue.deque(
-            [self.game.agent_loc], self.movement_bonus_period)
-        self.game.update_exit_colors()
         return self.get_obs()
 
     def render(self, mode='ansi'):
@@ -268,13 +178,15 @@ def test_run(logdir=None):
     """
     import shutil
     import os
-    from . import wrappers
+    from training import wrappers
+    from . import file_finder
 
     if logdir is None:
         logdir = os.path.abspath(os.path.join(__file__, '../../data/gym-test/'))
     if os.path.exists(logdir):
         shutil.rmtree(logdir)
-    env = wrappers.VideoMonitor(SafeLifeEnv(), logdir)
+
+    env = wrappers.VideoMonitor(SafeLifeEnv(file_finder.safelife_loader()), logdir)
     env.reset()
     done = False
     while not done:

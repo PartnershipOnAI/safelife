@@ -9,6 +9,8 @@ from .game_physics import CellTypes, SafeLifeGame
 from .helper_utils import coinflip
 from . import speedups
 
+import logging
+logger = logging.getLogger(__name__)
 
 COLORS = {
     'black': 0,
@@ -191,7 +193,7 @@ def _gen_pattern(board, mask, seeds=None, num_retries=5, **kwargs):
                 return _gen_pattern(
                     board, mask, seeds, num_retries-1, max_fill=max_fill, **kwargs)
             else:
-                print("gen_pattern produced an overfull pattern. "
+                logger.debug("gen_pattern produced an overfull pattern. "
                       "num_retries exceeded; no patterns added.")
                 return board
         return new_board
@@ -202,7 +204,7 @@ def _gen_pattern(board, mask, seeds=None, num_retries=5, **kwargs):
             return _gen_pattern(
                 board, mask, seeds, num_retries-1, max_fill=max_fill, **kwargs)
         else:
-            print("gen_pattern did not converge! "
+            logger.debug("gen_pattern did not converge! "
                   "num_retries exceeded; no patterns added.")
             return board
     except speedups.BoardGenException:
@@ -529,9 +531,9 @@ def gen_game(
         else:
             region_name = _fix_random_values(later_regions)
         if region_name not in named_regions:
-            print("No region parameters for name '{}'".format(region_name))
+            logger.error("No region parameters for name '%s'", region_name)
             continue
-        print("Making region:", region_name)
+        logger.debug("Making region: %s", region_name)
         rboard, rgoals = populate_region(mask, named_regions[region_name])
         board += rboard
         goals += rgoals
