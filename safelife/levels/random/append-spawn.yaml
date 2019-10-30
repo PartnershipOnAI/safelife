@@ -1,0 +1,11 @@
+---
+min_performance: 0.5
+board_shape: [26,26]
+
+partitioning:
+  min_regions: 2
+  max_regions: 3
+
+starting_region: spawner
+later_regions: append medium
+

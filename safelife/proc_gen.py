@@ -178,7 +178,7 @@ def _fix_random_values(val):
         return {key: _fix_random_values(x) for key, x in val.items()}
 
 
-def _gen_pattern(board, mask, seeds=None, num_retries=5, **kwargs):
+def _gen_pattern(board, mask, seeds=None, num_retries=10, **kwargs):
     # temperature < 0.3 tends to not converge, or converge very slowly
     # temperature = 0.4, fill = 0.05 yields pretty simple patterns
     # temperature = 1.5, fill = 0.4 yields pretty complex patterns
@@ -209,6 +209,13 @@ def _gen_pattern(board, mask, seeds=None, num_retries=5, **kwargs):
             return board
     except speedups.BoardGenException:
         return board
+
+
+def _make_lattice(h, w, col_skip, row_skip, stagger):
+    rows = np.arange(h)[:, np.newaxis]
+    cols = np.arange(w)[np.newaxis, :]
+    return (rows % row_skip == 0) & (
+        (cols + (rows//row_skip)*stagger) % col_skip == 0)
 
 
 def populate_region(mask, layer_params):
@@ -318,6 +325,33 @@ def populate_region(mask, layer_params):
             gen_mask[new_cells] ^= NEW_CELL_MASK
             board[new_cells] = CellTypes.spawner + color
 
+        tree_lattice = layer.get('tree_lattice')
+        # Create a lattice of trees that are spread throughout the region
+        # such that every empty cell touches one (and only one) tree
+        # (modulo edge effects).
+        # Such a lattice tends to make the resulting board very chaotic.
+        # Note that this will disrupt any pre-existing patterns.
+        if tree_lattice is not None:
+            if not isinstance(tree_lattice, dict):
+                tree_lattice = {}
+            h, w = board.shape
+            stagger = tree_lattice.get('stagger', True)
+            spacing = int(tree_lattice.get('spacing', 5))
+            if not stagger:
+                new_cells = _make_lattice(h, w, spacing, spacing, 0)
+            elif spacing <= 3:
+                new_cells = _make_lattice(h, w, 3, 3, 1)
+            elif spacing == 4:
+                new_cells = _make_lattice(h, w, 10, 1, 3)
+            elif spacing == 5:
+                new_cells = _make_lattice(h, w, 13, 1, 5)
+            else:
+                # The following gets pretty sparse.
+                new_cells = _make_lattice(h, w, 6, 3, 3)
+
+            new_cells &= gen_mask & NEW_CELL_MASK > 0
+            board[new_cells] = CellTypes.tree + color
+
         period = 1
         if 'pattern' in layer:
             pattern_args = layer['pattern'].copy()
@@ -366,20 +400,6 @@ def populate_region(mask, layer_params):
             # The seeds are starting points for the next layer of patterns.
             # This just makes the patterns more likely to end up close together.
             seeds = ((board & CellTypes.alive) > 0) & mask
-        elif layer.get('tree_lattice', False):
-            # Create a lattice of trees that are spread throughout the region
-            # such that every empty cell touches one (and only one) tree
-            # (modulo edge effects).
-            # Such a lattice tends to make the resulting board very chaotic.
-            # Note that this will disrupt any pre-existing patterns.
-            new_cells = np.zeros(board.shape, dtype=bool)
-            max_h = board.shape[0] - board.shape[0] % 3
-            max_w = board.shape[1] - board.shape[1] % 3
-            new_cells[0:max_h:9, 0:max_w:3] = True
-            new_cells[3:max_h:9, 1:max_w:3] = True
-            new_cells[6:max_h:9, 2:max_w:3] = True
-            new_cells &= gen_mask & NEW_CELL_MASK > 0
-            board[new_cells] = CellTypes.tree + color
 
         new_mask = board != old_board
 
@@ -513,15 +533,26 @@ def gen_game(
     goals = np.zeros(board_shape, dtype=np.int16)
 
     # Create locations for the player and the exit
-    i, j = np.nonzero(regions == 0)
-    k1, k2 = np.random.choice(len(i), size=2, replace=False)
-    board[i[k1], j[k1]] = CellTypes.player
-    board[i[k2], j[k2]] = CellTypes.level_exit | CellTypes.color_r
+    zero_reg = regions == 0
+    i, j = np.nonzero(zero_reg)
+    k1 = np.random.choice(len(i))
+    i1, j1 = i[k1], j[k1]
+    board[i1, j1] = CellTypes.player
+    # Make the exit as far away from the player as possible
+    row_dist = np.abs(np.arange(board_shape[0])[:, np.newaxis] - i1)
+    col_dist = np.abs(np.arange(board_shape[1])[np.newaxis, :] - j1)
+    row_dist = np.minimum(row_dist, board_shape[0] - row_dist)
+    col_dist = np.minimum(col_dist, board_shape[1] - col_dist)
+    dist = (row_dist + col_dist) * zero_reg
+    k2 = np.argmax(dist)
+    i2 = k2 // board_shape[1]
+    j2 = k2 % board_shape[1]
+    board[i2, j2] = CellTypes.level_exit | CellTypes.color_r
 
     # Ensure that the player and exit aren't touching any other region
     n = np.array([[-1,-1,-1],[0,0,0],[1,1,1]])
-    regions[(i[k1]+n) % board.shape[0], (j[k1]+n.T) % board.shape[1]] = -1
-    regions[(i[k2]+n) % board.shape[0], (j[k2]+n.T) % board.shape[1]] = -1
+    regions[(i1+n) % board.shape[0], (j1+n.T) % board.shape[1]] = -1
+    regions[(i2+n) % board.shape[0], (j2+n.T) % board.shape[1]] = -1
 
     # and fill in the regions...
     for k in np.unique(regions)[2:]:

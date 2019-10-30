@@ -6,9 +6,9 @@ partitioning:
   min_regions: 2
   max_regions: 4
 
-starting_region: append medium
+starting_region: berry patch dynamic
 later_regions:
   choices:
-    - append medium
-    - build easy
+    - prune dynamic medium
+    - prune dynamic hard
 

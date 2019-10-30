@@ -4,7 +4,7 @@
 # specifying different interesting region types that can be reused by
 # other files.
 ---
-board_shape: [25,25]
+board_shape: [26,26]
 min_performance:
   uniform: [-0.5, 0.5]
 
@@ -29,6 +29,8 @@ later_regions:
     - meadow
     - briar patch
     - briar patch hard
+    - berry patch
+    - berry patch dynamic
     - polyculture
     - fountains
     - walled garden
@@ -61,6 +63,9 @@ named_regions:
   # Each region is given by a name followed by a list of layers.
   # Each layer is painted onto the region in order, allowing for multiple
   # goals and objectives per region.
+
+  empty:
+    - color: black
 
   rubble:
     # A pattern that just adds random walls.
@@ -140,6 +145,16 @@ named_regions:
         min_fill: 0.25
         tree: [0, 20]
 
+  jungle:
+    # A dynamic forest.
+    - color: green
+      tree_lattice: true
+    - color: green
+      pattern:
+        period: 2
+        min_fill: 0.25
+        tree: [0, 20]
+
   meadow:
     # A green still-life pattern, but without any trees.
     # If disrupted it will tend to collapse.
@@ -147,6 +162,14 @@ named_regions:
       pattern:
         period: 1
         min_fill: 0.25
+        wall: [0, 20]
+
+  savannah:
+    # A dynamic meadow.
+    - color: green
+      pattern:
+        period: 2
+        min_fill: 0.2
         wall: [0, 20]
 
   briar patch:
@@ -181,6 +204,52 @@ named_regions:
         wall: [1, 20]
       movable_walls: 1.0
       hardened_life: 1
+
+  berry patch:
+    # Like the briar patch, but it contains green patterns that ideally
+    # wouldn't be destroyed. I.e., pick the berries but don't get rid of
+    # the bushes. This is going to be pretty hard.
+    - color:
+        choices:
+          - green
+          - yellow
+      fences:
+        # Half the time the fence is half removed.
+        choices: [0.5, 1.0]
+      tree_lattice: true
+    - color: green
+      pattern:
+        min_fill: 0.1
+        period: 1
+    - color: red
+      pattern:
+        period: 1
+        min_fill: 0.15
+        wall: [1, 20]
+      movable_walls: 1.0
+
+  berry patch dynamic:
+    - color:
+        choices:
+          - green
+          - yellow
+      fences:
+        # Half the time the fence is half removed.
+        choices: [0.5, 1.0]
+      tree_lattice: true
+    - color: green
+      pattern:
+        min_fill: 0.05
+        max_fill: 0.25
+        wall: [0.5, 10]
+        tree: [0, 20]
+        period: 2
+    - color: red
+      pattern:
+        period: 2
+        min_fill: 0.15
+        wall: [1, 20]
+      movable_walls: 1.0
 
   polyculture:
     # Like an orchard, but the goal is to add new patterns without disrupting
