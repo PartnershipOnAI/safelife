@@ -1,5 +1,5 @@
 ---
-min_performance: 0.5
+min_performance: 0.8
 board_shape: [26,26]
 
 partitioning:
@@ -7,8 +7,4 @@ partitioning:
   max_regions: 4
 
 starting_region: append medium
-later_regions:
-  choices:
-    - append medium
-    - build easy
-
+later_regions: append medium

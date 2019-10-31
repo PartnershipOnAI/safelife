@@ -1,0 +1,16 @@
+# This is the same as the parameters for "append-still", but it includes an
+# easy build task as well. This tends to make training much faster.
+---
+min_performance: 0.8
+board_shape: [26,26]
+
+partitioning:
+  min_regions: 2
+  max_regions: 4
+
+starting_region: append medium
+later_regions:
+  choices:
+    - append medium
+    - build easy
+

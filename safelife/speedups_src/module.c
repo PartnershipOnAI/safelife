@@ -23,7 +23,7 @@ static PyObject *advance_board_py(PyObject *self, PyObject *args) {
 
     if (!PyArg_ParseTuple(args, "O|f", &board_obj, &spawn_prob)) return NULL;
     board_obj = PyArray_FROM_OTF(
-        board_obj, NPY_INT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
+        board_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
     if (!board_obj)  return NULL;
     b1 = (PyArrayObject *)board_obj;
     if (PyArray_NDIM(b1) != 2 || PyArray_SIZE(b1) == 0) {
@@ -31,10 +31,10 @@ static PyObject *advance_board_py(PyObject *self, PyObject *args) {
         return NULL;
     }
     b2 = (PyArrayObject *)PyArray_FROM_OTF(
-        board_obj, NPY_INT16, NPY_ARRAY_ENSURECOPY);
+        board_obj, NPY_UINT16, NPY_ARRAY_ENSURECOPY);
     advance_board(
-        (int16_t *)PyArray_DATA(b1),
-        (int16_t *)PyArray_DATA(b2),
+        (uint16_t *)PyArray_DATA(b1),
+        (uint16_t *)PyArray_DATA(b2),
         PyArray_DIM(b1, 0),
         PyArray_DIM(b1, 1),
         spawn_prob
@@ -163,7 +163,7 @@ static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {
     }
 
     board = (PyArrayObject *)PyArray_FROM_OTF(
-        board_obj, NPY_INT16,
+        board_obj, NPY_UINT16,
         NPY_ARRAY_IN_ARRAY | NPY_ARRAY_ENSURECOPY | NPY_ARRAY_FORCECAST);
     mask = (PyArrayObject *)PyArray_FROM_OTF(
         mask_obj, NPY_INT32,
@@ -198,8 +198,8 @@ static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {
     int layer_size = board_shape.cols * board_shape.rows;
     int board_size = board_shape.depth * layer_size;
 
-    int16_t *layers = malloc(sizeof(int16_t) * board_size);
-    memcpy(layers, PyArray_DATA(board), sizeof(int16_t) * layer_size);
+    uint16_t *layers = malloc(sizeof(uint16_t) * board_size);
+    memcpy(layers, PyArray_DATA(board), sizeof(uint16_t) * layer_size);
     // Advance to the next timestep
     for (int n = 1; n < board_shape.depth; n++) {
         advance_board(
@@ -216,7 +216,7 @@ static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {
 
     switch (err_code) {
         case 0:
-            memcpy(PyArray_DATA(board), layers, sizeof(int16_t) * layer_size);
+            memcpy(PyArray_DATA(board), layers, sizeof(uint16_t) * layer_size);
             goto success;
         case MAX_ITER_ERROR:
             PyErr_SetString(MaxIterException, "Max-iter hit. Aborting!");

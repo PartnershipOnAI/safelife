@@ -13,7 +13,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 COLORS = {
-    'black': 0,
+    'black': np.uint16(0),
     'red': CellTypes.color_r,
     'green': CellTypes.color_g,
     'blue': CellTypes.color_b,
@@ -289,7 +289,7 @@ def populate_region(mask, layer_params):
     ) + border * (
         INCLUDE_VIOLATIONS_MASK
     )
-    board = np.zeros(mask.shape, dtype=np.int16)
+    board = np.zeros(mask.shape, dtype=np.uint16)
     foreground = np.zeros(mask.shape, dtype=bool)
     background = np.zeros(mask.shape, dtype=bool)
     background_color = np.zeros(mask.shape, dtype=bool)
@@ -312,7 +312,7 @@ def populate_region(mask, layer_params):
             fences = build_fence(gen_mask & speedups.NEW_CELL_MASK)
             fences *= coinflip(fence_frac, fences.shape)
             gen_mask &= ~(fences * (NEW_CELL_MASK | CAN_OSCILLATE_MASK))
-            board += fences.astype(np.int16) * CellTypes.wall
+            board += fences.astype(np.uint16) * CellTypes.wall
 
         spawners = layer.get('spawners', 0)
         if spawners > 0:
@@ -529,8 +529,8 @@ def gen_game(
     partitioning = _fix_random_values(partitioning)
 
     regions = make_partioned_regions(board_shape, **partitioning)
-    board = np.zeros(board_shape, dtype=np.int16)
-    goals = np.zeros(board_shape, dtype=np.int16)
+    board = np.zeros(board_shape, dtype=np.uint16)
+    goals = np.zeros(board_shape, dtype=np.uint16)
 
     # Create locations for the player and the exit
     zero_reg = regions == 0

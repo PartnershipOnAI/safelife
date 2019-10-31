@@ -73,7 +73,8 @@ class CellTypes(object):
 
     alive_bit = 0  # Cell obeys Game of Life rules.
     agent_bit = 1
-    movable_bit = 2  # Can be pushed by agent.
+    pushable_bit = 2  # Can be pushed by agent.
+    pullable_bit = 15  # (out of order for historical reasons)
     destructible_bit = 3
     frozen_bit = 4  # Does not evolve.
     preserving_bit = 5  # Neighboring cells do not die.
@@ -82,25 +83,27 @@ class CellTypes(object):
     exit_bit = 8
     color_bit = 9
 
-    alive = 1 << alive_bit
-    agent = 1 << agent_bit
-    movable = 1 << movable_bit
-    destructible = 1 << destructible_bit
-    frozen = 1 << frozen_bit
-    preserving = 1 << preserving_bit
-    inhibiting = 1 << inhibiting_bit
-    spawning = 1 << spawning_bit
-    exit = 1 << exit_bit
-    color_r = 1 << color_bit
-    color_g = 1 << color_bit + 1
-    color_b = 1 << color_bit + 2
+    alive = np.uint16(1 << alive_bit)
+    agent = np.uint16(1 << agent_bit)
+    pushable = np.uint16(1 << pushable_bit)
+    pullable = np.uint16(1 << pullable_bit)
+    destructible = np.uint16(1 << destructible_bit)
+    frozen = np.uint16(1 << frozen_bit)
+    preserving = np.uint16(1 << preserving_bit)
+    inhibiting = np.uint16(1 << inhibiting_bit)
+    spawning = np.uint16(1 << spawning_bit)
+    exit = np.uint16(1 << exit_bit)
+    color_r = np.uint16(1 << color_bit)
+    color_g = np.uint16(1 << color_bit + 1)
+    color_b = np.uint16(1 << color_bit + 2)
 
-    empty = 0
+    empty = np.uint16(0)
     freezing = inhibiting | preserving
     # Note that the player is marked as "destructible" so that they never
     # contribute to producing indestructible cells.
     player = agent | freezing | frozen | destructible
     wall = frozen
+    movable = pushable | pullable
     crate = frozen | movable
     spawner = frozen | spawning
     level_exit = frozen | exit
@@ -111,8 +114,8 @@ class CellTypes(object):
     plant = frozen | alive | movable
     tree = frozen | alive
     fountain = preserving | frozen
-    parasite = inhibiting | alive | movable | frozen
-    weed = preserving | alive | movable | frozen
+    parasite = inhibiting | alive | pushable | frozen
+    weed = preserving | alive | pushable | frozen
     powers = alive | freezing | spawning
 
 
@@ -173,7 +176,7 @@ class GameState(object):
             self._init_data = self.serialize()
 
     def make_default_board(self, board_size):
-        self.board = np.zeros(board_size, dtype=np.int16)
+        self.board = np.zeros(board_size, dtype=np.uint16)
         self.board[0,0] = CellTypes.player
 
     def serialize(self):
@@ -304,8 +307,10 @@ class GameState(object):
 
         Returns any associated reward.
         """
-        x1, y1 = self.relative_loc(dy, dx)
         x0, y0 = self.agent_loc
+        x1, y1 = self.relative_loc(dy, dx)
+        x2, y2 = self.relative_loc(-dy, -dx)
+        can_push = (abs(dy), dx) == (1, 0)
         board = self.board
         reward = 0
         if board[y1, x1] == CellTypes.empty:
@@ -316,19 +321,23 @@ class GameState(object):
             # Don't actually move the agent, just mark as exited.
             self.game_over = True
             reward += self.points_on_level_exit
-        elif (dx, dy) == (0, 1) and board[y1, x1] & CellTypes.movable:
-            x2, y2 = self.relative_loc(+2)
-            if board[y2, x2] == CellTypes.empty:
+        elif can_push and board[y1, x1] & CellTypes.pushable:
+            x3, y3 = self.relative_loc(dy*2)
+            if board[y3, x3] == CellTypes.empty:
                 # Push the cell forward one.
-                board[y2, x2] = board[y1, x1]
+                board[y3, x3] = board[y1, x1]
                 board[y1, x1] = board[y0, x0]
                 board[y0, x0] = CellTypes.empty
                 self.agent_loc = (x1, y1)
-            elif board[y2, x2] & CellTypes.exit:
+            elif board[y3, x3] & CellTypes.exit:
                 # Push a block out of this level
                 board[y1, x1] = board[y0, x0]
                 board[y0, x0] = CellTypes.empty
                 self.agent_loc = (x1, y1)
+        agent_did_move = self.agent_loc == (x1, y1) and (x0, y0) != (x1, y1)
+        if can_push and board[y2, x2] & CellTypes.pullable and agent_did_move:
+            board[y0, x0] = board[y2, x2]
+            board[y2, x2] = CellTypes.empty
         return reward
 
     def execute_action(self, action):
@@ -680,7 +689,7 @@ class GameOfLife(GameWithGoals):
         # large boards.
         self.num_steps += 1
         board = self.board
-        cfilter = np.array([[1,1,1],[1,0,1],[1,1,1]], dtype=np.int16)
+        cfilter = np.array([[1,1,1],[1,0,1],[1,1,1]], dtype=np.uint16)
 
         alive = board & CellTypes.alive > 0
         spawning = board & CellTypes.spawning > 0

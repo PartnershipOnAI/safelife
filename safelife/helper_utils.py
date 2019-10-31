@@ -35,7 +35,7 @@ class wrapping_array(np.ndarray):
 
 def wrapped_convolution(*args, **kw):
     y = scipy.signal.convolve2d(*args, boundary='wrap', mode='same', **kw)
-    return y.astype(np.int16)
+    return y.astype(np.uint16)
 
 
 def recenter_view(board, view_size, center, move_to_perimeter=None):

@@ -8,6 +8,7 @@ The "levels" in this folder aren't levels per se; instead they're parameters use
 There are a lot of different parameters that one can change, but here we focus on changing just a few to get qualitatively different and interesting behavior.
 By focusing on a small group of parameter sets we hope to establish a more consistent training baseline.
 
+~need to rewrite this!!!~
 
 ## Level description
 

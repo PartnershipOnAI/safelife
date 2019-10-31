@@ -19,6 +19,6 @@ typedef struct {
 } board_shape_t;
 
 int gen_pattern(
-        int16_t *board, int32_t *mask, int32_t *seeds, board_shape_t shape,
+        uint16_t *board, int32_t *mask, int32_t *seeds, board_shape_t shape,
         double rel_max_iter, double rel_min_fill, double temperature, double osc_bonus,
         double *cell_penalties);

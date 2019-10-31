@@ -3,18 +3,18 @@
 #include "constants.h"
 #include "random.h"
 
-static const int16_t ALIVE_BITS = (1 << 4) - 1;
-static const int16_t DESTRUCTIBLE2 = 1 << 8;
-static const int16_t FLAGS1 = PRESERVING | INHIBITING | SPAWNING;
-static const int16_t FLAGS2 = (1 << 8) | COLORS;
+static const uint16_t ALIVE_BITS = (1 << 4) - 1;
+static const uint16_t DESTRUCTIBLE2 = 1 << 8;
+static const uint16_t FLAGS1 = PRESERVING | INHIBITING | SPAWNING;
+static const uint16_t FLAGS2 = (1 << 8) | COLORS;
 
 
-static void combine_neighbors(int16_t src, int16_t *dst) {
+static void combine_neighbors(uint16_t src, uint16_t *dst) {
     // Combine neighbors with base board.
-    int16_t alive = src & ALIVE;
-    int16_t src_flags1 = src & FLAGS1;
-    int16_t src_flags2 = (src & FLAGS2) * alive;
-    int16_t dst_flags2 = *dst & FLAGS2;
+    uint16_t alive = src & ALIVE;
+    uint16_t src_flags1 = src & FLAGS1;
+    uint16_t src_flags2 = (src & FLAGS2) * alive;
+    uint16_t dst_flags2 = *dst & FLAGS2;
     *dst |= (dst_flags2 & src_flags2) << 4;
     *dst |= ((src & COLORS) << 4) * ((src & SPAWNING) > 0);
     *dst |= src_flags1;
@@ -23,7 +23,7 @@ static void combine_neighbors(int16_t src, int16_t *dst) {
 }
 
 
-static void combine_neighbors2(int16_t src, int16_t *dst) {
+static void combine_neighbors2(uint16_t src, uint16_t *dst) {
     // Combine combinations.
     *dst |= (*dst & src & FLAGS2) << 4;
     *dst |= src & (FLAGS1 | FLAGS2 | (FLAGS2 << 4));
@@ -32,10 +32,10 @@ static void combine_neighbors2(int16_t src, int16_t *dst) {
 }
 
 void advance_board(
-        int16_t *b1, int16_t *b2, int nrow, int ncol, float spawn_prob) {
+        uint16_t *b1, uint16_t *b2, int nrow, int ncol, float spawn_prob) {
     int size = nrow*ncol;
     int i, j, start_of_row, end_of_row, end_of_col;
-    int16_t c1[size];
+    uint16_t c1[size];
     memset(c1, 0, sizeof(c1));
 
     // Adjust all of the bits in b2 so that the destructible bit overwrites
@@ -87,7 +87,7 @@ void advance_board(
 
     // Now loop over the board and advance it.
     for (i = 0; i < size; i++) {
-        int16_t num_alive = b2[i] & ALIVE_BITS;
+        uint16_t num_alive = b2[i] & ALIVE_BITS;
         if (b1[i] & ALIVE) {
             // Note that if it's alive, it counts as its own neighbor.
             if (b1[i] & FROZEN || b2[i] & PRESERVING ||

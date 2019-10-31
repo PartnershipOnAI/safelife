@@ -20,7 +20,7 @@
 #define TREE_IDX  3
 
 
-static int16_t cell_type_array[4] = {
+static uint16_t cell_type_array[4] = {
     0,
     FROZEN,
     ALIVE | DESTRUCTIBLE,
@@ -42,7 +42,7 @@ typedef struct {
 } bounds_t;
 
 
-static int idx_for_cell_type(int16_t cell) {
+static int idx_for_cell_type(uint16_t cell) {
     // only consider empty, alive, wall and tree
     // alive gets stored in second bit, frozen in first.
     return
@@ -93,7 +93,7 @@ static void wrapped_convolve(int *array, int *temp, int nrow, int ncol) {
 }
 
 
-static int calc_interior_area(int32_t *mask, int nrow, int ncol) {
+static int calc_interior_area(uint32_t *mask, int nrow, int ncol) {
     // Quick loop to calculate the number of unmasked cells that do not
     // border masked cells.
     int total = 0;
@@ -125,15 +125,15 @@ static int _idx(int i, int j, int k, board_shape_t s) {
 
 
 static int swap_single_cell(
-        int16_t *board, int *neighbors, board_shape_t board_shape,
-        int layer, int row, int col, int16_t new_cell) {
+        uint16_t *board, int *neighbors, board_shape_t board_shape,
+        int layer, int row, int col, uint16_t new_cell) {
     // Swap out a single cell type and update the neighboring cells.
     // Returns:
     //     0 if new cell is the same as old cell
     //     1 if only FROZEN bit switched
     //     2 if ALIVE bit switched
     int i0 = _idx(layer, row, col, board_shape);
-    int16_t old_cell = board[i0];
+    uint16_t old_cell = board[i0];
     if (old_cell == new_cell) {
         return 0;
     }
@@ -154,7 +154,7 @@ static int swap_single_cell(
 }
 
 
-static int check_for_violation(int16_t src, int16_t dst, int neighbors) {
+static int check_for_violation(uint16_t src, uint16_t dst, int neighbors) {
     int rval;
     if (src & FROZEN) {
         rval = src != dst;
@@ -187,8 +187,8 @@ static int check_for_violation(int16_t src, int16_t dst, int neighbors) {
 
 
 static swap_cells_t swap_cells(
-        int16_t *board, int *neighbors, int *violations, int *oscillations, int *mask,
-        board_shape_t board_shape, int row, int col, int16_t new_cell,
+        uint16_t *board, int *neighbors, int *violations, int *oscillations, int *mask,
+        board_shape_t board_shape, int row, int col, uint16_t new_cell,
         iset *bad_idx) {
 
     swap_cells_t delta_swap = {0, 0};
@@ -214,7 +214,7 @@ static swap_cells_t swap_cells(
         for (int r = area_of_effect.y1; r <= area_of_effect.y2; r++) {
             for (int c = area_of_effect.x1; c <= area_of_effect.x2; c++) {
                 int i1 = _idx(layer-1, r, c, board_shape);
-                int16_t b1 = board[i1], b2;
+                uint16_t b1 = board[i1], b2;
                 int n1 = neighbors[i1];
                 if (b1 & FROZEN) {
                     b2 = b1;
@@ -248,7 +248,7 @@ static swap_cells_t swap_cells(
             // spot, and live bits in the next bit over. If both are present
             // the total should be 3 * ALIVE.
             const int is_osc = 3 * ALIVE;
-            int16_t b1 = board[i1], b2;
+            uint16_t b1 = board[i1], b2;
             if (b1 & FROZEN) {
                 _oscillations = 0;
                 _violations = 0;
@@ -314,7 +314,7 @@ static swap_cells_t swap_cells(
 
 
 int gen_pattern(
-        int16_t *board, int32_t *mask, int32_t *seeds, board_shape_t shape,
+        uint16_t *board, int32_t *mask, int32_t *seeds, board_shape_t shape,
         double rel_max_iter, double rel_min_fill, double temperature, double osc_bonus,
         double *cell_penalties) {
     PRINT("\nStarting the oscillator! (%i %i %i)\n", shape.depth, shape.rows, shape.cols);
@@ -420,7 +420,7 @@ int gen_pattern(
         double beta = 1.0 / temperature;
         int neighborhood_size = (2*shape.depth+1) * (2*shape.depth+1);
         double log_probs[4 * neighborhood_size];
-        int16_t cell_types[4 * neighborhood_size];
+        uint16_t cell_types[4 * neighborhood_size];
         int switched_idx[4 * neighborhood_size];
         double max_log_prob = -1e100;
 
@@ -431,12 +431,12 @@ int gen_pattern(
                 //PRINT("\nr,c = %i,%i\n", r, c);
                 int i1 = _idx(0, r, c, shape);
                 if (!(mask[i1] & NEW_CELL_MASK)) continue;
-                int16_t current_cell = board[i1];
+                uint16_t current_cell = board[i1];
                 int start_idx = idx_for_cell_type(current_cell) + 1;
                 int delta_violations = 0;
                 int delta_oscillations = 0;
                 for (int j = start_idx; j < start_idx+3; j++) {
-                    int16_t target_type = cell_type_array[j & 3];
+                    uint16_t target_type = cell_type_array[j & 3];
                     swap_cells_t delta = swap_cells(
                         board, neighbors, violations, oscillations, mask,
                         shape, r, c, target_type, NULL);
@@ -475,8 +475,8 @@ int gen_pattern(
             if (cum_probs[k] > target_prob) {
                 // Pick this cell!
                 int cell_idx = switched_idx[k];
-                int16_t old_cell = board[cell_idx];
-                int16_t new_cell = cell_types[k];
+                uint16_t old_cell = board[cell_idx];
+                uint16_t new_cell = cell_types[k];
                 // PRINT("PICK: %c -> %c; i=(%i,%i); m=%i\n",
                 //     print_cell(old_cell), print_cell(new_cell),
                 //     cell_idx / shape.cols, cell_idx % shape.cols, mask[cell_idx]);

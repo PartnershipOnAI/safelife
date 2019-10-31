@@ -132,7 +132,7 @@ class SafeLifeEnv(gym.Env):
         # with the channels as the third dimension. Otherwise output a bit
         # array.
         if self.output_channels:
-            shift = np.array(list(self.output_channels), dtype=np.int16)
+            shift = np.array(list(self.output_channels), dtype=np.uint16)
             board = (board[...,None] & (1 << shift)) >> shift
         return board
 
