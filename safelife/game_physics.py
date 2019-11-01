@@ -193,16 +193,17 @@ class GameState(object):
 
     def deserialize(self, data, as_initial_state=True):
         """Load game state from a dictionary or npz archive."""
+        keys = data.dtype.fields if hasattr(data, 'dtype') else data
         if as_initial_state:
             self._init_data = data
         self.board = data['board'].copy()
-        if 'spawn_prob' in data:
+        if 'spawn_prob' in keys:
             self.spawn_prob = float(data['spawn_prob'])
-        if 'orientation' in data:
+        if 'orientation' in keys:
             self.orientation = int(data['orientation'])
-        if 'agent_loc' in data:
+        if 'agent_loc' in keys:
             self.agent_loc = tuple(data['agent_loc'])
-        if 'min_performance' in data:
+        if 'min_performance' in keys:
             self.min_performance = float(data['min_performance'])
         self.update_exit_locs()
         self.game_over = False
@@ -233,7 +234,8 @@ class GameState(object):
     @classmethod
     def loaddata(cls, data, auto_cls=True):
         """Load game state from a dictionary or npz archive (class agnostic)"""
-        if auto_cls and 'class' in data:
+        keys = data.dtype.fields if hasattr(data, 'dtype') else data
+        if auto_cls and 'class' in keys:
             cls_components = str(data['class']).split('.')
             mod_name = '.'.join(cls_components[:-1])
             cls_name = cls_components[-1]

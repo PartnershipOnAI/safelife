@@ -183,15 +183,16 @@ def _gen_pattern(board, mask, seeds=None, num_retries=10, **kwargs):
     # temperature = 0.4, fill = 0.05 yields pretty simple patterns
     # temperature = 1.5, fill = 0.4 yields pretty complex patterns
     try:
-        max_fill = kwargs.pop('max_fill', kwargs.get('min_fill', 0.2) * 2)
+        min_fill = kwargs.setdefault('min_fill', 0.2)
+        max_fill = kwargs.pop('max_fill', min_fill * 2)
         new_board = speedups.gen_pattern(board, mask, seeds=seeds, **kwargs)
         working_area = mask & speedups.NEW_CELL_MASK
         new_cells = new_board != 0
         fill_ratio = np.sum(new_cells * working_area) / np.sum(working_area)
         if fill_ratio > max_fill:
             if num_retries > 0:
-                return _gen_pattern(
-                    board, mask, seeds, num_retries-1, max_fill=max_fill, **kwargs)
+                kwargs['max_fill'] = 1.07 * max_fill
+                return _gen_pattern(board, mask, seeds, num_retries-1, **kwargs)
             else:
                 logger.debug("gen_pattern produced an overfull pattern. "
                       "num_retries exceeded; no patterns added.")
@@ -201,8 +202,9 @@ def _gen_pattern(board, mask, seeds=None, num_retries=10, **kwargs):
         return board
     except speedups.MaxIterException:
         if num_retries > 0:
-            return _gen_pattern(
-                board, mask, seeds, num_retries-1, max_fill=max_fill, **kwargs)
+            kwargs['min_fill'] *= 0.94
+            kwargs['max_fill'] = max_fill
+            return _gen_pattern(board, mask, seeds, num_retries-1, **kwargs)
         else:
             logger.debug("gen_pattern did not converge! "
                   "num_retries exceeded; no patterns added.")

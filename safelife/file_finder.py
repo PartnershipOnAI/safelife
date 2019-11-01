@@ -15,7 +15,7 @@ _default_params = yaml.load(
     open(os.path.join(LEVEL_DIRECTORY, 'random/_defaults.yaml')))
 
 
-def find_files(*paths, file_types=None, use_glob=True):
+def find_files(*paths, file_types=(), use_glob=True):
     """
     Find all files that match the given paths.
 
@@ -30,64 +30,95 @@ def find_files(*paths, file_types=None, use_glob=True):
 
 
 def _find_files(path, file_types, use_glob, use_level_dir=False):
-    path_0 = path
+    orig_path = path
     if use_level_dir:
         path = os.path.join(LEVEL_DIRECTORY, path)
     else:
         path = os.path.expanduser(path)
     path = os.path.abspath(path)
-    if os.path.isdir(path) and file_types:
-        use_glob = True
-        path = os.path.join(path, '*')
-    elif use_level_dir and file_types and '.' not in os.path.split(path)[1]:
-        # Don't need to include the file extension
-        use_glob = True
-        path += '.*'
-    if use_glob:
-        paths = sorted(glob.glob(path, recursive=True))
-        if not paths:
-            raise FileNotFoundError("No files found for '%s'" % path_0)
-        if file_types:
-            paths = filter(lambda p: p.split('.')[-1] in file_types, paths)
-        yield from paths
-    else:
-        if not os.path.exists(path):
-            raise FileNotFoundError("No files found for '%s'" % path_0)
-        yield path
+
+    def file_filter(path):
+        return os.path.exists(path) and not os.path.isdir(path) and (
+            path.split('.')[-1] in file_types if file_types is not None else True)
+
+    # First look for any file that directly matches the path.
+    paths1 = glob.glob(path, recursive=True) if use_glob else [path]
+    files = list(filter(file_filter, paths1))
+    if files:
+        yield from sorted(files)
+        return
+
+    # Next try adding an extension
+    paths2 = []
+    for ext in file_types:
+        path2 = path + '.' + ext
+        paths2 += glob.glob(path2, recursive=True) if use_glob else [path2]
+    files = list(filter(file_filter, paths2))
+    if files:
+        yield from sorted(files)
+        return
+
+    # Finally, try loading folders
+    folders = filter(os.path.isdir, paths1)
+    files = []
+    for folder in folders:
+        contents = [os.path.join(folder, file) for file in os.listdir(folder)]
+        files += list(filter(file_filter, contents))
+    if files:
+        yield from sorted(files)
+        return
+
+    raise FileNotFoundError("No files found for '%s'" % orig_path)
+
+
+def _load_files(paths):
+    if not paths:
+        return [[None, 'procgen', {}]]
+    all_data = []
+    for file_name in find_files(*paths, file_types=('json', 'npz', 'yaml')):
+        if file_name.endswith('.json') or file_name.endswith('.yaml'):
+            with open(file_name) as file_data:
+                all_data.append([file_name, 'procgen', yaml.load(file_data)])
+        else:  # npz
+            with np.load(file_name) as data:
+                if 'levels' in data:
+                    # Multiple levels in one archive
+                    for idx, level in enumerate(data['levels']):
+                        fname = os.path.join(file_name[:-4], level['name'])
+                        all_data.append([fname, 'static', level])
+                else:
+                    # npz files aren't pickleable, which will mess up
+                    # multiprocessing. Convert to a dict first.
+                    data = {k: data[k] for k in data.keys()}
+                    all_data.append([file_name, 'static', data])
+    return all_data
 
 
 def _load_data(paths, repeat, shuffle):
     """
     Generate data to be fed into `_game_from_data`.
     """
-    if paths:
-        all_data = [[f] for f in find_files(
-            *paths, file_types=('json', 'npz', 'yaml'))]
-    else:
-        all_data = [[None, 'procgen', {}]]
+    file_data = _load_files(paths)
+    if repeat == "auto":
+        repeat = len(file_data) == 1 and file_data[0][1] == "procgen"
 
     while True:
         if shuffle:
-            random.shuffle(all_data)
-        for data in all_data:
-            if len(data) == 1:
-                file_name = data[0]
-                if file_name.endswith('.json') or file_name.endswith('yaml'):
-                    data += ['procgen', yaml.load(open(file_name))]
-                else:
-                    file_data = np.load(file_name)
-                    # npz files aren't pickleable, which will mess up
-                    # multiprocessing. Convert to a dict first.
-                    file_data = {k: file_data[k] for k in file_data.keys()}
-                    data += ['static', file_data]
+            random.shuffle(file_data)
+        for data in file_data:
             yield data
-
-        if len(all_data) == 0 or not repeat or repeat == "auto" and not (
-                len(all_data) == 1 and all_data[0][1] == "procgen"):
+        if len(file_data) == 0 or not repeat:
             break
 
 
-def _game_from_data(file_name, data_type, data):
+def _game_from_data(file_name, data_type, data, set_seed=False):
+    if set_seed:
+        from . import speedups
+        seed = 0
+        for i, s in enumerate(os.urandom(4)):
+            seed += s << 8*i
+        np.random.seed(seed)
+        speedups.seed(seed)
     if data_type == "procgen":
         named_regions = _default_params['named_regions'].copy()
         named_regions.update(data.get('named_regions', {}))
@@ -144,6 +175,9 @@ def safelife_loader(
             yield _game_from_data(*data)
     else:
         pool = Pool(processes=num_workers)
+        # Need to reseed the random number in each request if we're using more
+        # than one worker.
+        kwargs = {'set_seed': num_workers > 1}
         game_queue = queue.deque()
         for data in _load_data(paths, repeat, shuffle):
             if (len(game_queue) >= max_queue or
@@ -151,8 +185,86 @@ def safelife_loader(
                 next_game = game_queue.popleft().get()
             else:
                 next_game = None
-            game_queue.append(pool.apply_async(_game_from_data, data))
+            game_queue.append(pool.apply_async(_game_from_data, data, kwargs))
             if next_game is not None:
                 yield next_game
         for result in game_queue:
             yield result.get()
+
+
+# ----------------------------
+
+# The following functions are utilities for creating and combining levels
+# into large archives. They're used to create the saved benchmark levels,
+# but once those are created they generally won't need to be called again.
+
+
+def gen_many(param_file, out_dir, num_gen, num_workers=8, max_queue=100):
+    """
+    Generate and save many levels using the above loader.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    fmt = "level-{{:0{}d}}.npz".format(int(np.log10(num_gen))+1)
+    fmt = os.path.join(out_dir, fmt)
+    game_gen = safelife_loader(
+        param_file, num_workers=num_workers, max_queue=max_queue)
+    k = 1
+    for game in game_gen:
+        fname = fmt.format(k)
+        while os.path.exists(fname):
+            k += 1
+            fname = fmt.format(k)
+        if k > num_gen:
+            break
+        game.save(fname)
+
+
+def combine_levels(directory):
+    """
+    Merge all files in a single directory.
+    """
+    files = sorted(glob.glob(os.path.join(directory, '*.npz')))
+    all_data = []
+    max_name_len = 0
+    for file in files:
+        with np.load(file) as data:
+            name = os.path.split(file)[1]
+            max_name_len = max(max_name_len, len(name))
+            all_data.append(data.items() + [('name', name)])
+    dtype = []
+    for key, val in all_data[0][:-1]:
+        dtype.append((key, val.dtype, val.shape))
+    dtype.append(('name', str, max_name_len))
+    combo_data = np.array([
+        tuple([val for key, val in data]) for data in all_data
+    ], dtype=dtype)
+    np.savez_compressed(directory + '.npz', levels=combo_data)
+
+
+def expand_levels(filename):
+    """
+    Opposite of combine_levels. Handy if we want to edit a single level.
+    """
+    with np.load(filename) as data:
+        directory = filename[:-4]  # assume .npz
+        os.makedirs(directory, exist_ok=True)
+        for level in data['levels']:
+            level_data = {k: level[k] for k in level.dtype.fields}
+            np.savez_compressed(
+                os.path.join(directory, level['name']), **level_data)
+
+
+def gen_benchmarks():
+    """
+    Generate the benchmark levels! Should only be run once.
+    """
+    names = (
+        'append-still append-dynamic append-spawn '
+        'prune-dynamic prune-spawn prune-still navigation'
+    )
+    for name in names.split():
+        directory = os.path.join(LEVEL_DIRECTORY, 'benchmarks/v1.0/', name)
+        gen_many('random/'+name, directory, 100)
+        with open(os.path.join(directory, ".gitignore"), 'w') as f:
+            f.write('*\n')
+        combine_levels(directory)

@@ -153,7 +153,7 @@ def render_game(game, view_size=None, edit_mode=None):
     return render_board(board, goals, game.orientation, edit_loc, edit_color)
 
 
-def render_file(fname, fps=30):
+def render_file(fname, fps=30, data=None):
     """
     Load a saved SafeLifeGame file and render it as a png or gif.
 
@@ -166,10 +166,18 @@ def render_file(fname, fps=30):
     fps : float
         Frames per second for gif animation.
     """
-    data = np.load(fname)
+    bare_fname = '.'.join(fname.split('.')[:-1])
+    if data is None:
+        data = np.load(fname)
+
+    if hasattr(data, 'keys') and 'levels' in data:
+        os.makedirs(bare_fname, exist_ok=True)
+        for level in data['levels']:
+            render_file(os.path.join(bare_fname, level['name']), fps, level)
+        return
+
     rgb_array = render_board(
         data['board'], data['goals'], data['orientation'][..., None, None])
-    bare_fname = '.'.join(fname.split('.')[:-1])
     if rgb_array.ndim == 3:
         imageio.imwrite(bare_fname+'.png', rgb_array)
     elif rgb_array.ndim == 4:
