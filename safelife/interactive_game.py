@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from collections import defaultdict, deque
 import numpy as np
 
-from .game_physics import SafeLifeGame, ORIENTATION
+from .game_physics import SafeLifeGame, ORIENTATION, CellTypes
 from . import render_text
 from . import render_graphics
 from .keyboard_input import KEYS, getch
@@ -88,6 +88,7 @@ class GameLoop(object):
             total_safety_score=0,
             level_start_steps=0,
             level_start_points=0,
+            total_undos=0,
             edit_mode=0,
             history=deque(maxlen=MAX_HISTORY_LENGTH),
             side_effects=None,
@@ -103,6 +104,8 @@ class GameLoop(object):
         self.state.game.edit_loc = self.state.game.agent_loc
         self.state.level_start_points = self.state.total_points
         self.state.level_start_steps = self.state.total_steps
+        self.state.level_start_undos = self.state.total_undos
+        self.state.level_start_time = time.time()
         self.state.history.clear()
         self.record_frame()
 
@@ -168,6 +171,35 @@ class GameLoop(object):
         np.savez_compressed(next_recording_name, **data)
         return next_recording_name
 
+    def log_level_stats(self):
+        state = self.state
+        if not state.game or not self.logfile:
+            return
+        with open(self.logfile, 'a') as logfile:
+            p1, p2 = state.game.performance_ratio()
+            msg = """
+            - level: {level}
+              score: {score}
+              steps: {steps}
+              undos: {undos}
+              time: {time:0.1f}
+              performance: [{p1}, {p2}]
+            """.format(
+                level=state.game.title,
+                score=state.total_points - state.level_start_points,
+                steps=state.total_steps - state.level_start_steps,
+                undos=state.total_undos - state.level_start_undos,
+                time=time.time() - state.level_start_time,
+                p1=p1, p2=p2,
+            )[1:]
+            logfile.write(textwrap.dedent(msg))
+            if state.side_effects:
+                logfile.write("  side_effects:\n")
+                for ctype, effect in state.side_effects.items():
+                    cname = render_text.cell_name(ctype)
+                    logfile.write("    {}: {:0.2f}\n".format(cname, effect))
+            logfile.write('\n')
+
     def undo(self):
         history = self.state.history
         game = self.state.game
@@ -179,6 +211,7 @@ class GameLoop(object):
         game.num_steps = snapshot['num_steps']
         self.state.total_points = snapshot['total_points']
         self.state.total_steps = snapshot['total_steps']
+        self.state.total_undos += 1
         return True
 
     def handle_input(self, key):
@@ -311,6 +344,7 @@ class GameLoop(object):
                 state.side_effects = side_effect_score(game)
                 for key, val in state.side_effects.items():
                     state.total_side_effects[key] += val
+                self.log_level_stats()
 
         if not is_repeatable_key:
             self.last_key_down = self.last_key_modifier = None
@@ -461,7 +495,7 @@ class GameLoop(object):
     def level_summary_message(self, ansi=True):
         output = "Side effect scores (lower is better):\n\n"
         output += self.print_side_effects(self.state.side_effects, ansi)
-        output += "\n\n(hit any key to continue)"
+        output += "\n\n(hit any key to continue)\n"
         return output
 
     def render_text(self):
@@ -735,6 +769,8 @@ def _make_cmd_args(subparsers):
             help="If set, the board is always centered on the agent.")
         parser.add_argument('--view_size', type=int, default=None,
             help="View size. Implies a centered view.", metavar="SIZE")
+    for parser in (play_parser,):
+        parser.add_argument('--logfile')
     for parser in (play_parser, print_parser, new_parser):
         parser.add_argument('-t', '--text_mode', action='store_true',
             help="Run the game in the terminal instead of using a graphical"
@@ -760,6 +796,8 @@ def _run_cmd_args(args):
         main_loop.centered_view = args.centered
         main_loop.relative_controls = not args.absolute_controls
         main_loop.view_size = args.view_size and (args.view_size, args.view_size)
+    if args.cmd == "play":
+        main_loop.logfile = args.logfile
     if args.text_mode:
         main_loop.run_text()
     else:
