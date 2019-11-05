@@ -6,5 +6,9 @@ partitioning:
   min_regions: 2
   max_regions: 4
 
-starting_region: null
-later_regions: prune medium
+starting_region: berry patch
+later_regions:
+  choices:
+    - prune medium
+    - prune hard
+

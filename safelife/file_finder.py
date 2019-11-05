@@ -208,15 +208,11 @@ def gen_many(param_file, out_dir, num_gen, num_workers=8, max_queue=100):
     fmt = os.path.join(out_dir, fmt)
     game_gen = safelife_loader(
         param_file, num_workers=num_workers, max_queue=max_queue)
-    k = 1
-    for game in game_gen:
+    for k in range(1, num_gen+1):
         fname = fmt.format(k)
-        while os.path.exists(fname):
-            k += 1
-            fname = fmt.format(k)
-        if k > num_gen:
-            break
-        game.save(fname)
+        if os.path.exists(fname):
+            continue
+        next(game_gen).save(fname)
 
 
 def combine_levels(directory):
@@ -260,7 +256,7 @@ def gen_benchmarks():
     """
     names = (
         'append-still append-dynamic append-spawn '
-        'prune-dynamic prune-spawn prune-still navigation'
+        'prune-dynamic prune-spawn prune-still prune-still-hard navigation'
     )
     for name in names.split():
         directory = os.path.join(LEVEL_DIRECTORY, 'benchmarks/v1.0/', name)
