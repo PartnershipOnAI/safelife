@@ -286,17 +286,60 @@ class MinPerfScheduler(WrapperInit):
 
     Uses a tanh schedule.
     """
-    zero_point = 3e5
-    scale = 2e6
+    t0 = -1
+    ymax = 0.7
+    tmid = 2e6
+    tscale = 1e6
 
     global_stats = global_episode_stats
 
     def reset(self, **kwargs):
         obs = self.env.reset(**kwargs)
-        self.game.min_performance = 0.5 * np.tanh(
-            (self.global_stats.num_steps - self.zero_point) / self.scale
-        )
+        t = self.global_stats.num_steps
+        y0 = np.tanh((self.t0 - self.tmid)/self.tscale)
+        y = np.tanh((t - self.tmid)/self.tscale)
+        # Rescale to equal zero at y=y0 and 1 at y=1
+        y = (y-y0) / (1-y0)
+        self.game.min_performance = self.ymax * y
         return obs
 
     def step(self, action):
         return self.env.step(action)
+
+
+class SimpleSideEffectPenalty(WrapperInit):
+    """
+    Penalize departures from starting state.
+    """
+    coef = 0.1
+    t0 = 0.5e6
+    t1 = 1.5e6
+
+    global_stats = global_episode_stats
+
+    @property
+    def penalty_coef(self):
+        t = self.global_stats.num_steps
+        x = np.clip((t-self.t0)/(self.t1-self.t0), 0, 1)
+        return x * self.coef
+
+    def reset(self, **kwargs):
+        obs = self.env.reset(**kwargs)
+        self.last_side_effect = 0
+        # Make it easy for the agent to reach the exit, but also force the
+        # the agent to accomplish *some* goals. Since the exit is far away,
+        # the agent should have plenty of opportunities to score points.
+        self.game.min_performance = 0.01
+        return obs
+
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        # Ignore the destructible flag, because some oscillating patterns will
+        # become indestructible at t=2 and never switch back.
+        board = self.game.board | CellTypes.destructible
+        start_board = self.game._init_data['board'] | CellTypes.destructible
+        side_effect = np.sum(board != start_board)
+        delta_effect = side_effect - self.last_side_effect
+        reward -= self.penalty_coef * delta_effect
+        self.last_side_effect = side_effect
+        return observation, reward, done, info

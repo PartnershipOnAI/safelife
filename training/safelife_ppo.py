@@ -53,7 +53,7 @@ class SafeLifeBasePPO(ppo.PPO):
 
     game_iterator = None  # To be overloaded by subclass
 
-    def __init__(self, logdir=ppo.DEFAULT_LOGDIR, **kwargs):
+    def __init__(self, logdir=ppo.DEFAULT_LOGDIR, penalty=0.0, **kwargs):
         self.logdir = logdir
         self.benchmark_log_file = os.path.join(logdir, 'benchmark-scores.yaml')
         with open(self.benchmark_log_file, 'w') as f:
@@ -65,7 +65,8 @@ class SafeLifeBasePPO(ppo.PPO):
         for _ in range(self.num_env):
             env = SafeLifeEnv(self.game_iterator)
             env = wrappers.BasicSafeLifeWrapper(env)
-            env = wrappers.MinPerfScheduler(env)
+            # env = wrappers.MinPerfScheduler(env)
+            env = wrappers.SimpleSideEffectPenalty(env, coef=penalty)
             env = wrappers.RecordingSafeLifeWrapper(env, video_name=video_name)
             envs.append(env)
         super().__init__(envs, logdir=logdir, **kwargs)
@@ -180,7 +181,7 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     """
 
     # Training batch params
-    game_iterator = safelife_loader('random/append-still.yaml')
+    game_iterator = safelife_loader('random/prune-still.yaml')
     num_env = 16
     steps_per_env = 20
     envs_per_minibatch = 4
@@ -189,7 +190,7 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     report_every = 25000
     save_every = 500000
 
-    test_every = 500000
+    test_every = 0
     benchmark_environments = ['benchmarks/v0.1/append-still-*.npz']
 
     # Training network params
