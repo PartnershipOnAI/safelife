@@ -64,13 +64,19 @@ class SafeLifeBasePPO(ppo.PPO):
         video_name = os.path.join(logdir, self.video_name)
         for _ in range(self.num_env):
             env = SafeLifeEnv(self.game_iterator)
-            env = wrappers.BasicSafeLifeWrapper(env)
+            env = wrappers.MovementBonusWrapper(env)
             env = wrappers.MinPerfScheduler(env)
             env = wrappers.RecordingSafeLifeWrapper(env, video_name=video_name)
             envs.append(env)
         super().__init__(envs, logdir=logdir, **kwargs)
         for env in envs:
             env.tf_logger = self.logger
+
+    def restore_checkpoint(self, logdir, raise_on_error=False):
+        super().restore_checkpoint(logdir, raise_on_error)
+        SafeLifeEnv.global_counter.episodes_started = self.num_episodes
+        SafeLifeEnv.global_counter.episodes_completed = self.num_episodes
+        SafeLifeEnv.global_counter.num_steps = self.num_steps
 
     def run_safety_test(self, random_policy=False):
         """
