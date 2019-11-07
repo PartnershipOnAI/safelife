@@ -154,7 +154,7 @@ class RecordingSafeLifeWrapper(WrapperInit):
 
     def log_episode(self):
         if self.global_counter is not None:
-            num_episodes = self.global_counter.episodes_started
+            num_episodes = self.global_counter.episodes_completed
             num_steps = self.global_counter.num_steps
         else:
             num_episodes = 0
@@ -177,13 +177,13 @@ class RecordingSafeLifeWrapper(WrapperInit):
 
         msg = textwrap.dedent("""
         - name: {name}
-          episode: {num_episodes}
+          episode: {episode_num}
           length: {length}
           reward: {reward:0.3g}
           performance: [{completed}, {possible}, {cutoff:0.3g}]
           initial green: {initial_green}
         """).format(
-            name=game.title, num_episodes=num_episodes,
+            name=game.title, episode_num=self.episode_num,
             length=self.episode_length, reward=self.episode_reward,
             completed=completed, possible=possible, cutoff=perf_cutoff,
             initial_green=initial_green)
@@ -219,6 +219,10 @@ class RecordingSafeLifeWrapper(WrapperInit):
     def reset(self):
         self._did_log_episode = False
         observation = self.env.reset()
+        if self.global_counter is not None:
+            self.episode_num = self.global_counter.episodes_started
+        else:
+            self.episode_num = -1
         self.reset_video_recorder()
         return observation
 

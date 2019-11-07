@@ -204,7 +204,11 @@ def gen_many(param_file, out_dir, num_gen, num_workers=8, max_queue=100):
     Generate and save many levels using the above loader.
     """
     os.makedirs(out_dir, exist_ok=True)
-    fmt = "level-{{:0{}d}}.npz".format(int(np.log10(num_gen))+1)
+    if out_dir.endswith('/'):
+        out_dir = out_dir[:-1]
+    base_name = os.path.split(out_dir)[1]
+    num_digits = int(np.log10(num_gen))+1
+    fmt = "{}-{{:0{}d}}.npz".format(base_name, num_digits)
     fmt = os.path.join(out_dir, fmt)
     game_gen = safelife_loader(
         param_file, num_workers=num_workers, max_queue=max_queue)
