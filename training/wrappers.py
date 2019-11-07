@@ -1,12 +1,14 @@
 import os
 import queue
 import logging
+import textwrap
 import numpy as np
 
 from gym import Wrapper
 from gym.wrappers.monitoring import video_recorder
 from safelife.side_effects import side_effect_score
 from safelife.game_physics import CellTypes
+from safelife.render_text import cell_name
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +54,6 @@ class MovementBonusWrapper(WrapperInit):
     movement_bonus = 0.1
     movement_bonus_power = 0.01
     movement_bonus_period = 4
-    record_side_effects = True
 
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
@@ -77,8 +78,8 @@ class MovementBonusWrapper(WrapperInit):
 
         return obs, reward, done, info
 
-    def reset(self, **kwargs):
-        obs = self.env.reset(**kwargs)
+    def reset(self):
+        obs = self.env.reset()
         self._prior_positions = queue.deque(
             [self.game.agent_loc], self.movement_bonus_period)
         return obs
@@ -140,47 +141,71 @@ class RecordingSafeLifeWrapper(WrapperInit):
     tf_logger : tensorflow.summary.FileWriter instance
         If set, all values in the episode info dictionary will be written
         to tensorboard at the end of the episode.
+    log_file : str
+        If set, all end of episode stats get written to the specified file.
+        Data is written in YAML format.
     """
     tf_logger = None
+    log_file = None
     video_name = None
     video_recorder = None
     video_recording_freq = 100
+    record_side_effects = True
 
-    def end_of_episode_stats(self):
-        completed, possible = self.game.performance_ratio()
-        stats = {
-            'performance_fraction': completed / max(possible, 1),
-            'performance_possible': possible,
-            'performance_cutoff': max(0, self.game.min_performance),
+    def log_episode(self):
+        if self.global_counter is not None:
+            num_episodes = self.global_counter.episodes_started
+            num_steps = self.global_counter.num_steps
+        else:
+            num_episodes = 0
+            num_steps = 0
+
+        game = self.game
+        completed, possible = game.performance_ratio()
+        perf_cutoff = max(0, game.min_performance)
+        green_life = CellTypes.life | CellTypes.color_g
+        initial_green = np.sum(
+            game._init_data['board'] | CellTypes.destructible == green_life)
+
+        tf_data = {
+            "num_episodes": num_episodes,
+            "length": self.episode_length,
+            "reward": self.episode_reward,
+            "performance": completed / max(possible, 1),
+            "performance_cutoff": perf_cutoff,
         }
+
+        msg = textwrap.dedent("""
+        - name: {name}
+          episode: {num_episodes}
+          length: {length}
+          reward: {reward:0.3g}
+          performance: [{completed}, {possible}, {cutoff:0.3g}]
+          initial green: {initial_green}
+        """).format(
+            name=game.title, num_episodes=num_episodes,
+            length=self.episode_length, reward=self.episode_reward,
+            completed=completed, possible=possible, cutoff=perf_cutoff,
+            initial_green=initial_green)
+
         if self.record_side_effects:
-            green_life = CellTypes.life | CellTypes.color_g
-            stats['side_effect'] = side_effect_score(
-                self.game, include={green_life}).get(green_life, 0)
-            start_board = self.game._init_data['board']
-            stats['green_total'] = np.sum(
-                (start_board | CellTypes.destructible) == green_life)
-        return stats
+            side_effects = side_effect_score(game)
+            tf_data["side_effect"] = side_effects.get(green_life, 0)
+            msg += "  side effects:\n"
+            msg += "\n".join([
+                "    {}: {:0.2f}".format(cell_name(cell), val)
+                for cell, val in side_effects.items()
+            ])
 
-    def log_episode(self, episode_info):
-        if self.global_counter is None:
-            return
-
-        msg = ["Episode %i:" % self.global_counter.episodes_completed]
-        for key, val in episode_info.items():
-            msg += ["    {:15s} = {:4g}".format(key, val)]
-        logger.info('\n'.join(msg))
-
-        if self.tf_logger is None:
-            return
-
-        import tensorflow as tf  # avoid top-level import so as to reduce reqs
-
-        summary = tf.Summary()
-        episode_info['completed'] = self.global_counter.episodes_completed
-        for key, val in episode_info.items():
-            summary.value.add(tag='episode/'+key, simple_value=val)
-        self.tf_logger.add_summary(summary, self.global_counter.num_steps)
+        logger.info(msg)
+        if self.log_file is not None:
+            self.log_file.write(msg)
+        if self.tf_logger is not None:
+            import tensorflow as tf  # delay import to reduce module reqs
+            summary = tf.Summary()
+            for key, val in tf_data.items():
+                summary.value.add(tag='episode/'+key, simple_value=val)
+            self.tf_logger.add_summary(summary, num_steps)
 
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
@@ -188,14 +213,12 @@ class RecordingSafeLifeWrapper(WrapperInit):
             self.video_recorder.capture_frame()
         if done and not self._did_log_episode:
             self._did_log_episode = True
-            episode_info = info['episode']
-            episode_info.update(self.end_of_episode_stats())
-            self.log_episode(episode_info)
+            self.log_episode()
         return observation, reward, done, info
 
-    def reset(self, **kwargs):
+    def reset(self):
         self._did_log_episode = False
-        observation = self.env.reset(**kwargs)
+        observation = self.env.reset()
         self.reset_video_recorder()
         return observation
 
@@ -247,8 +270,8 @@ class MinPerfScheduler(WrapperInit):
     zero_point = 3e5
     scale = 2e6
 
-    def reset(self, **kwargs):
-        obs = self.env.reset(**kwargs)
+    def reset(self):
+        obs = self.env.reset()
         self.game.min_performance = 0.5 * np.tanh(
             (self.global_counter.num_steps - self.zero_point) / self.scale
         )
@@ -256,3 +279,20 @@ class MinPerfScheduler(WrapperInit):
 
     def step(self, action):
         return self.env.step(action)
+
+
+class ContinuingEnv(Wrapper):
+    """
+    Change to a continuing (rather than episodic) environment.
+
+    The episode only ever ends if the 'times_up' flag gets set to True.
+    """
+    def reset(self):
+        return self.env.reset()
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        if done and not info['times_up']:
+            done = False
+            obs = self.env.reset()
+        return obs, reward, done, info

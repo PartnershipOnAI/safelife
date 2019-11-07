@@ -94,7 +94,7 @@ def cell_name(cell):
         CellTypes.color_r | CellTypes.color_b: 'magenta',
         CellTypes.color_g | CellTypes.color_r: 'yellow',
         CellTypes.color_b | CellTypes.color_g: 'cyan',
-        CellTypes.rainbow_color: 'all',
+        CellTypes.rainbow_color: 'white',
     }.get(cell & CellTypes.rainbow_color, 'x')
     return cell_type + '-' + color
 

@@ -70,6 +70,9 @@ class PPO(object):
     Note that essentially all of these attributes can get overridden by
     subclasses, so the defaults set here are basically just for example.
 
+    Note also that nothing in this class requires or assumes anything about
+    SafeLife or the rest of the code base. It should be pretty generic.
+
     Attributes
     ----------
     gamma : ndarray
@@ -129,16 +132,16 @@ class PPO(object):
     value_grad_rescaling = 'smooth'  # one of [False, 'smooth', 'per_batch', 'per_state']
     policy_rectifier = 'relu'  # or 'elu' or ...more to come
 
+    num_env = 16
     steps_per_env = 20
     envs_per_minibatch = 4
     epochs_per_batch = 3
     total_steps = 5e6
     report_every = 5000
     save_every = 10000
-    test_every = 100000
     record_histograms = False  # histograms take a lot of disk space; disable by default
 
-    def __init__(self, envs, logdir=DEFAULT_LOGDIR, saver_args={}, **kwargs):
+    def __init__(self, logdir=DEFAULT_LOGDIR, saver_args={}, **kwargs):
         for key, val in kwargs.items():
             if (not key.startswith('_') and hasattr(self, key) and
                     not callable(getattr(self, key))):
@@ -146,18 +149,27 @@ class PPO(object):
             else:
                 raise ValueError("Unrecognized parameter: '%s'" % (key,))
 
-        self.envs = envs
-
+        self.logdir = logdir
         self.op = SimpleNamespace()
         self.num_steps = 0
         self.num_episodes = 0
-        self.build_graph()
         self.session = tf.Session()
+        self.tf_logger = tf.summary.FileWriter(logdir, self.session.graph)
+        self.envs = [self.environment_factory() for _ in range(self.num_env)]
+        self.build_graph()
         self.session.run(tf.global_variables_initializer())
-        self.logger = tf.summary.FileWriter(logdir, self.session.graph)
+        self.tf_logger.add_graph(self.session.graph)
         self.saver = tf.train.Saver(**saver_args)
         self.save_path = os.path.join(logdir, 'model')
         self.restore_checkpoint(logdir)
+
+    def environment_factory(self):
+        """
+        Factory for building a OpenAI gym-like environment.
+
+        To be implemented by subclasses.
+        """
+        raise NotImplementedError
 
     def save_checkpoint(self):
         logger.info("Saving new checkpoint. %i episodes, %i steps.",
@@ -338,7 +350,7 @@ class PPO(object):
             return None
 
     @named_output(
-        'states', 'actions', 'rewards', 'end_episode', 'times_up',
+        'states', 'actions', 'rewards', 'end_episode',
         'rnn_states', 'info')
     def run_agents(self, steps_per_env):
         """
@@ -367,9 +379,6 @@ class PPO(object):
         rewards : ndarray shape(steps_per_env, num_env)
         end_episode : ndarray shape(steps_per_env, num_env), dtype bool
             True if the episode ended on that step, False otherwise.
-        times_up : ndarray shape(steps_per_env, num_env), dtype bool
-            True if the episode ended on that step due to the time limit being
-            exceeded, False otherwise.
         rnn_states : ndarray shape(num_env, ...)
             The initial internal state of the RNN for each environment at
             the beginning of each sequence. If an RNN isn't in use, this can
@@ -385,7 +394,6 @@ class PPO(object):
         actions = []
         rewards = []
         end_episode = []
-        times_up = []
         initial_rnn_states = []
         infos = []
         rnn_zero_state = self.rnn_zero_state
@@ -422,7 +430,6 @@ class PPO(object):
                 actions.append(action)
                 rewards.append(reward)
                 end_episode.append(done)
-                times_up.append(info.get('times_up', done))
                 infos.append(info)
         self.num_steps += len(actions)
 
@@ -433,7 +440,6 @@ class PPO(object):
             np.array(actions).reshape(out_shape),
             np.array(rewards).reshape(out_shape),
             np.array(end_episode).reshape(out_shape),
-            np.array(times_up).reshape(out_shape),
             np.array(initial_rnn_states),
             np.array(infos).reshape(out_shape),
         )
@@ -447,7 +453,7 @@ class PPO(object):
         op = self.op
         session = self.session
 
-        states, actions, rewards, end_episode, times_up, rnn_states, info = \
+        states, actions, rewards, end_episode, rnn_states, info = \
             self.run_agents(steps_per_env)
         # Note that there should be one more state than action/reward for
         # each environment.
@@ -462,7 +468,7 @@ class PPO(object):
         if self.reward_clip > 0:
             rewards = np.clip(rewards, -self.reward_clip, self.reward_clip)
 
-        reward_mask = ~times_up[..., np.newaxis]
+        reward_mask = ~end_episode[..., np.newaxis]
         rnn_mask = np.roll(~end_episode, 1, axis=0)
         rnn_mask[0] = True
         rewards = rewards[..., np.newaxis]
@@ -520,7 +526,7 @@ class PPO(object):
             if op.rnn_states_in is not None:
                 fd[op.rnn_states_in] = batch.c
             summary = session.run(op.summary, feed_dict=fd)
-            self.logger.add_summary(summary, self.num_steps)
+            self.tf_logger.add_summary(summary, self.num_steps)
 
     def train(self, total_steps=None):
         last_report = last_save = last_test = self.num_steps - 1
@@ -531,13 +537,4 @@ class PPO(object):
             if last_save // self.save_every < self.num_steps // self.save_every:
                 self.save_checkpoint()
                 last_save = self.num_steps
-            if self.test_every and last_test // self.test_every < self.num_steps // self.test_every:
-                self.run_safety_test()
-                last_test = self.num_steps
         logger.info("FINISHED TRAINING")
-
-    def run_safety_test(self):
-        """
-        To be implemented by subclasses.
-        """
-        pass

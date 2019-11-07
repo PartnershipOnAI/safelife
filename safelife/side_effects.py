@@ -78,10 +78,10 @@ def _add_cell_distribution(board, dist=None):
         dist[key] += board == ctype
 
     # Handle colorblind cells specially
-    key = CellTypes.life | CellTypes.rainbow_color
-    if key not in dist:
-        dist[key] = np.zeros(board.shape)
-    dist[key] += (board & ~CellTypes.rainbow_color) == CellTypes.alive
+    # key = CellTypes.life | CellTypes.rainbow_color
+    # if key not in dist:
+    #     dist[key] = np.zeros(board.shape)
+    # dist[key] += (board & ~CellTypes.rainbow_color) == CellTypes.alive
 
     return dist
 
@@ -124,9 +124,7 @@ def side_effect_score(game, num_samples=500, include=None, exclude=None):
     dict
         Side effect score for each cell type.
         Destructible and indestructible cells are treated as if they are the
-        same type. Cells of different colors are generally treated as
-        distinct, but a separate color-blind score is given to life-like cells
-        and stored as the 'rainbow' color cell (i.e., all color bits set).
+        same type. Cells of different colors are treated as distinct.
     """
     b0 = game._init_data['board'].copy()
     b1 = game.board.copy()
