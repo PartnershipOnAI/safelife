@@ -334,10 +334,16 @@ class SimpleSideEffectPenalty(WrapperInit):
 
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
-        # Ignore the destructible flag, because some oscillating patterns will
-        # become indestructible at t=2 and never switch back.
-        board = self.game.board | CellTypes.destructible
-        start_board = self.game._init_data['board'] | CellTypes.destructible
+        # Ignore the player's attributes so that moving around doesn't result
+        # in a penalty. This also means that we ignore the destructible
+        # attribute, so if a life cells switches to indestructible (which can
+        # automatically happen for certain oscillators) that doesn't cause a
+        # penalty either.
+        board = self.game.board & ~CellTypes.player
+        start_board = self.game._init_data['board'] & ~CellTypes.player
+        # Also ignore exit locations (they change color when they open up)
+        i1, i2 = self.game.exit_locs
+        board[i1,i2] = start_board[i1,i2]
         side_effect = np.sum(board != start_board)
         delta_effect = side_effect - self.last_side_effect
         reward -= self.penalty_coef * delta_effect
