@@ -42,6 +42,7 @@ class SafeLifeBasePPO(ppo.PPO):
     video_name = "episode-{episode_num}-{step_num}"
 
     game_iterator = None  # To be overloaded by subclass
+    impact_penalty = 0.0
 
     def environment_factory(self):
         if self.logdir:
@@ -62,7 +63,8 @@ class SafeLifeBasePPO(ppo.PPO):
 
         env = SafeLifeEnv(self.game_iterator)
         env = wrappers.MovementBonusWrapper(env)
-        env = wrappers.MinPerfScheduler(env)
+        # env = wrappers.MinPerfScheduler(env)
+        env = wrappers.SimpleSideEffectPenalty(env, coef=self.impact_penalty)
         env = wrappers.RecordingSafeLifeWrapper(
             env, video_name=video_name, tf_logger=self.tf_logger,
             log_file=self.episode_log)
@@ -105,7 +107,7 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     """
 
     # Training batch params
-    game_iterator = safelife_loader('random/append-still.yaml')
+    game_iterator = safelife_loader('random/prune-still.yaml')
     num_env = 16
     steps_per_env = 20
     envs_per_minibatch = 4
@@ -113,8 +115,6 @@ class SafeLifePPO_example(SafeLifeBasePPO):
     total_steps = 5.1e6
     report_every = 25000
     save_every = 500000
-
-    benchmark_environments = ['benchmarks/v0.1/append-still-*.npz']
 
     # Training network params
     #   Note that we can use multiple discount factors gamma to learn multiple

@@ -149,9 +149,16 @@ if args.port:
 # Start training!
 
 try:
+    import tensorflow as tf
+    import numpy as np
     from training.safelife_ppo import SafeLifePPO_example
-    model = SafeLifePPO_example(logdir=data_dir)
-    model.train()
+
+    for penalty in np.arange(0, 1, 0.1):
+        tf.reset_default_graph()
+        subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
+        os.makedirs(subdir, exist_ok=True)
+        model = SafeLifePPO_example(logdir=subdir, impact_penalty=penalty)
+        model.train(3e6)
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
 finally:

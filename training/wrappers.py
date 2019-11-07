@@ -299,3 +299,45 @@ class ContinuingEnv(Wrapper):
             done = False
             obs = self.env.reset()
         return obs, reward, done, info
+
+
+class SimpleSideEffectPenalty(WrapperInit):
+    """
+    Penalize departures from starting state.
+    """
+    coef = 0.1
+    t0 = 0.5e6
+    t1 = 1.5e6
+
+    @property
+    def penalty_coef(self):
+        t = self.global_counter.num_steps
+        x = np.clip((t-self.t0)/(self.t1-self.t0), 0, 1)
+        return x * self.coef
+
+    def reset(self, **kwargs):
+        obs = self.env.reset(**kwargs)
+        self.last_side_effect = 0
+        # Make it easy for the agent to reach the exit, but also force the
+        # the agent to accomplish *some* goals. Since the exit is far away,
+        # the agent should have plenty of opportunities to score points.
+        self.game.min_performance = 0.01
+        return obs
+
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action)
+        # Ignore the player's attributes so that moving around doesn't result
+        # in a penalty. This also means that we ignore the destructible
+        # attribute, so if a life cells switches to indestructible (which can
+        # automatically happen for certain oscillators) that doesn't cause a
+        # penalty either.
+        board = self.game.board & ~CellTypes.player
+        start_board = self.game._init_data['board'] & ~CellTypes.player
+        # Also ignore exit locations (they change color when they open up)
+        i1, i2 = self.game.exit_locs
+        board[i1,i2] = start_board[i1,i2]
+        side_effect = np.sum(board != start_board)
+        delta_effect = side_effect - self.last_side_effect
+        reward -= self.penalty_coef * delta_effect
+        self.last_side_effect = side_effect
+        return observation, reward, done, info
