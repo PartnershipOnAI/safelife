@@ -13,9 +13,6 @@ import tensorflow as tf
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_LOGDIR = os.path.join(__file__, '../../data/tmp')
-DEFAULT_LOGDIR = os.path.abspath(DEFAULT_LOGDIR)
-
 
 def named_output(*names):
     """
@@ -141,7 +138,10 @@ class PPO(object):
     save_every = 10000
     record_histograms = False  # histograms take a lot of disk space; disable by default
 
-    def __init__(self, logdir=DEFAULT_LOGDIR, saver_args={}, **kwargs):
+    logdir = None
+    tf_logger = None
+
+    def __init__(self, saver_args={}, **kwargs):
         for key, val in kwargs.items():
             if (not key.startswith('_') and hasattr(self, key) and
                     not callable(getattr(self, key))):
@@ -149,19 +149,19 @@ class PPO(object):
             else:
                 raise ValueError("Unrecognized parameter: '%s'" % (key,))
 
-        self.logdir = logdir
         self.op = SimpleNamespace()
         self.num_steps = 0
         self.num_episodes = 0
         self.session = tf.Session()
-        self.tf_logger = tf.summary.FileWriter(logdir, self.session.graph)
+        if self.logdir:
+            self.tf_logger = tf.summary.FileWriter(self.logdir, self.session.graph)
         self.envs = [self.environment_factory() for _ in range(self.num_env)]
         self.build_graph()
         self.session.run(tf.global_variables_initializer())
-        self.tf_logger.add_graph(self.session.graph)
         self.saver = tf.train.Saver(**saver_args)
-        self.save_path = os.path.join(logdir, 'model')
-        self.restore_checkpoint(logdir)
+        if self.logdir:
+            self.tf_logger.add_graph(self.session.graph)
+            self.restore_checkpoint(self.logdir)
 
     def environment_factory(self):
         """
@@ -172,11 +172,13 @@ class PPO(object):
         raise NotImplementedError
 
     def save_checkpoint(self):
-        logger.info("Saving new checkpoint. %i episodes, %i steps.",
-                    self.num_episodes, self.num_steps)
-        self.op.num_steps.load(self.num_steps, self.session)
-        self.op.num_episodes.load(self.num_episodes, self.session)
-        self.saver.save(self.session, self.save_path, self.num_steps)
+        if self.logdir:
+            logger.info("Saving new checkpoint. %i episodes, %i steps.",
+                        self.num_episodes, self.num_steps)
+            self.op.num_steps.load(self.num_steps, self.session)
+            self.op.num_episodes.load(self.num_episodes, self.session)
+            save_path = os.path.join(self.logdir, 'model')
+            self.saver.save(self.session, save_path, self.num_steps)
 
     def restore_checkpoint(self, logdir, raise_on_error=False):
         """
@@ -349,6 +351,33 @@ class PPO(object):
         else:
             return None
 
+    def policy(self, obs, rnn_state=None):
+        """
+        Probability of taking each action given an observation.
+        """
+        op = self.op
+        session = self.session
+
+        # Note that the op.states operator expects two dimensions for the
+        # observations: one for the number of environments, the other for the
+        # number of steps per environment. This only really matters when doing
+        # training on a batch, but we've got to get the shapes to match here.
+        if op.rnn_states_in is not None:
+            if rnn_state is None:
+                rnn_state = [self.rnn_zero_state()] * len(obs)
+            policies, rnn_state = session.run(
+                [op.policy, op.rnn_states_out],
+                feed_dict={
+                    op.states: [obs],
+                    op.rnn_states_in: rnn_state
+                })
+        else:
+            policies = session.run(op.policy, feed_dict={
+                op.states: [obs]
+            })
+            rnn_state = [None] * len(obs)
+        return policies[0], rnn_state
+
     @named_output(
         'states', 'actions', 'rewards', 'end_episode',
         'rnn_states', 'info')
@@ -386,8 +415,6 @@ class PPO(object):
         info : ndarray shape(steps_per_env, num_env)
             An array of info dictionaries for each environment.
         """
-        op = self.op
-        session = self.session
         num_env = len(self.envs)
 
         obs = []
@@ -405,19 +432,9 @@ class PPO(object):
             initial_rnn_states.append(env._ppo_rnn_state)
         new_rnn_states = initial_rnn_states
         for _ in range(steps_per_env):
-            if op.rnn_states_in is not None:
-                policies, new_rnn_states = session.run(
-                    [op.policy, op.rnn_states_out],
-                    feed_dict={
-                        op.states: [obs[-num_env:]],
-                        op.rnn_states_in: new_rnn_states
-                    })
-            else:
-                policies = session.run(op.policy, feed_dict={
-                    op.states: [obs[-num_env:]]
-                })
+            policies, new_rnn_states = self.policy(obs[-num_env:], new_rnn_states)
             for env, policy, rnn_state in zip(
-                    self.envs, policies[0], new_rnn_states):
+                    self.envs, policies, new_rnn_states):
                 action = np.random.choice(len(policy), p=policy)
                 new_obs, reward, done, info = env.step(action)
                 if done:
@@ -529,7 +546,7 @@ class PPO(object):
             self.tf_logger.add_summary(summary, self.num_steps)
 
     def train(self, total_steps=None):
-        last_report = last_save = last_test = self.num_steps - 1
+        last_report = last_save = self.num_steps - 1
         total_steps = total_steps or self.total_steps
         while self.num_steps < total_steps:
             summarize = last_report // self.report_every < self.num_steps // self.report_every

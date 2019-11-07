@@ -200,6 +200,7 @@ class RecordingSafeLifeWrapper(WrapperInit):
         logger.info(msg)
         if self.log_file is not None:
             self.log_file.write(msg)
+            self.log_file.flush()
         if self.tf_logger is not None:
             import tensorflow as tf  # delay import to reduce module reqs
             summary = tf.Summary()
@@ -237,16 +238,14 @@ class RecordingSafeLifeWrapper(WrapperInit):
             self.video_recorder.close()
             self.video_recorder = None
         if self.global_counter is not None:
-            num_episodes = self.global_counter.episodes_started
             num_steps = self.global_counter.num_steps
         else:
-            num_episodes = 1
             num_steps = 0
 
-        if self.video_name and num_episodes % self.video_recording_freq == 0:
+        if self.video_name and self.episode_num % self.video_recording_freq == 0:
             video_name = self.video_name.format(
                 level_title=self.game.title,
-                episode_num=num_episodes,
+                episode_num=self.episode_num,
                 step_num=num_steps)
             path = p0 = os.path.abspath(video_name)
             directory = os.path.split(path)[0]

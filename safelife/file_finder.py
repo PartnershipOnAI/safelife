@@ -2,7 +2,9 @@ import os
 import glob
 import random
 import queue
+import itertools
 from multiprocessing import Pool
+
 import yaml
 import numpy as np
 
@@ -99,16 +101,20 @@ def _load_data(paths, repeat, shuffle):
     Generate data to be fed into `_game_from_data`.
     """
     file_data = _load_files(paths)
+    if len(file_data) == 0:
+        return
     if repeat == "auto":
         repeat = len(file_data) == 1 and file_data[0][1] == "procgen"
+    if isinstance(repeat, bool):
+        loop = itertools.count() if repeat else range(1)
+    else:
+        loop = range(repeat)
 
-    while True:
+    for idx in loop:
         if shuffle:
             random.shuffle(file_data)
         for data in file_data:
             yield data
-        if len(file_data) == 0 or not repeat:
-            break
 
 
 def _game_from_data(file_name, data_type, data, set_seed=False):
@@ -149,10 +155,11 @@ def safelife_loader(
         If not found, the 'levels' directory will be searched as well.
         If no paths are supplied, this will generate a random level using
         default level generation parameters.
-    repeat : "auto" or bool
+    repeat : "auto" or bool or int
         If true, files will be loaded (yielded) repeatedly and forever.
         If "auto", it repeats if and only if 'paths' points to a single
         file of procedural generation parameters.
+        If an int, it repeats exactly that many times.
     shuffle : bool
         If true, the order of the files will be shuffled.
     num_workers : int

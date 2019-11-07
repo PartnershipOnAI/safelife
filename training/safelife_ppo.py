@@ -43,19 +43,29 @@ class SafeLifeBasePPO(ppo.PPO):
 
     game_iterator = None  # To be overloaded by subclass
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.benchmark_log_file = os.path.join(self.logdir, 'benchmark-scores.yaml')
-        with open(self.benchmark_log_file, 'w') as f:
-            f.write("# SafeLife test log.\n---\n")
-
     def environment_factory(self):
-        video_name = os.path.join(self.logdir, self.video_name)
+        if self.logdir:
+            video_name = os.path.join(self.logdir, self.video_name)
+        else:
+            video_name = None
+
+        if not hasattr(self, 'episode_log'):
+            if self.logdir:
+                fname = os.path.join(self.logdir, "training.yaml")
+                if os.path.exists(fname):
+                    self.episode_log = open(fname, 'a')
+                else:
+                    self.episode_log = open(fname, 'w')
+                    self.episode_log.write("# Training episodes\n---\n")
+            else:
+                self.episode_log = None
+
         env = SafeLifeEnv(self.game_iterator)
         env = wrappers.MovementBonusWrapper(env)
         env = wrappers.MinPerfScheduler(env)
         env = wrappers.RecordingSafeLifeWrapper(
-            env, video_name=video_name, tf_logger=self.tf_logger)
+            env, video_name=video_name, tf_logger=self.tf_logger,
+            log_file=self.episode_log)
         env = wrappers.ContinuingEnv(env)
         return env
 
