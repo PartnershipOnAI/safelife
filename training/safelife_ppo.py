@@ -32,17 +32,72 @@ def ortho_init(scale=1.0):
     return _ortho_init
 
 
-class SafeLifeBasePPO(ppo.PPO):
+class SafeLifePPO(ppo.PPO):
     """
-    Minimal extension to PPO to load the environment and record video.
+    Defines the network architecture and parameters for agent training.
 
-    This should still be subclassed to build the network and set any other
-    hyperparameters.
+    Note that this subclass is essentially designed to be a rich parameter
+    file. By changing some parameters to properties (or descriptors) one
+    can easily make the parameters a function of e.g. the total number of
+    training steps.
+
+    This class will generally change between training runs. Of course, copies
+    can be made to support different architectures, etc., and then those can
+    all be run together or in sequence.
     """
+
+    # Training batch params
+    game_iterator = safelife_loader('random/prune-still.yaml')
     video_name = "episode-{episode_num}-{step_num}"
-
-    game_iterator = None  # To be overloaded by subclass
+    num_env = 16
+    steps_per_env = 20
+    envs_per_minibatch = 4
+    epochs_per_batch = 3
+    total_steps = 5.1e6
+    report_every = 25000
+    save_every = 500000
     impact_penalty = 0.0
+
+    # Training network params
+    #   Note that we can use multiple discount factors gamma to learn multiple
+    #   value functions associated with rewards over different time frames.
+    gamma = np.array([0.97], dtype=np.float32)
+    policy_discount_weights = np.array([1.0], dtype=np.float32)
+    value_discount_weights = np.array([1.0], dtype=np.float32)
+    lmda = 0.9
+    learning_rate = 3e-4
+    entropy_reg = 5e-2
+    vf_coef = 1.0
+    max_gradient_norm = 1.0
+    eps_clip = 0.1
+    reward_clip = 30.0
+    policy_rectifier = 'elu'
+    scale_prob_clipping = True
+
+    # --------
+    # A few functions to keep episode and step counters synced:
+
+    def restore_checkpoint(self, logdir, raise_on_error=False):
+        super().restore_checkpoint(logdir, raise_on_error)
+        num_steps, num_episodes = self.session.run(
+            [self.op.num_steps, self.op.num_episodes])
+        SafeLifeEnv.global_counter.episodes_started = num_episodes
+        SafeLifeEnv.global_counter.episodes_completed = num_episodes
+        SafeLifeEnv.global_counter.num_steps = num_steps
+
+    @property
+    def num_episodes(self):
+        # Override the num_episodes attribute to always point to
+        # the global counter on SafeLifeEnv. This ensures that it
+        # increases even when using the ContinuingEnv wrapper.
+        return SafeLifeEnv.global_counter.episodes_completed
+
+    @num_episodes.setter
+    def num_episodes(self, val):
+        pass  # don't allow setting directly, but don't throw an error
+
+    # --------
+    # Functions for building environments and building network architecture:
 
     def environment_factory(self):
         if self.logdir:
@@ -70,69 +125,6 @@ class SafeLifeBasePPO(ppo.PPO):
             log_file=self.episode_log)
         env = wrappers.ContinuingEnv(env)
         return env
-
-    def restore_checkpoint(self, logdir, raise_on_error=False):
-        super().restore_checkpoint(logdir, raise_on_error)
-        num_steps, num_episodes = self.session.run(
-            [self.op.num_steps, self.op.num_episodes])
-        SafeLifeEnv.global_counter.episodes_started = num_episodes
-        SafeLifeEnv.global_counter.episodes_completed = num_episodes
-        SafeLifeEnv.global_counter.num_steps = num_steps
-
-    # Override the num_episodes attribute to always point to
-    # the global counter on SafeLifeEnv. This ensures that it
-    # increases even when using the ContinuingEnv wrapper.
-
-    @property
-    def num_episodes(self):
-        return SafeLifeEnv.global_counter.episodes_completed
-
-    @num_episodes.setter
-    def num_episodes(self, val):
-        pass  # don't allow setting directly, but don't throw an error
-
-
-class SafeLifePPO_example(SafeLifeBasePPO):
-    """
-    Defines the network architecture and parameters for agent training.
-
-    Note that this subclass is essentially designed to be a rich parameter
-    file. By changing some parameters to properties (or descriptors) one
-    can easily make the parameters a function of e.g. the total number of
-    training steps.
-
-    This class will generally change between training runs. Of course, copies
-    can be made to support different architectures, etc., and then those can
-    all be run together or in sequence.
-    """
-
-    # Training batch params
-    game_iterator = safelife_loader('random/prune-still.yaml')
-    num_env = 16
-    steps_per_env = 20
-    envs_per_minibatch = 4
-    epochs_per_batch = 3
-    total_steps = 5.1e6
-    report_every = 25000
-    save_every = 500000
-
-    # Training network params
-    #   Note that we can use multiple discount factors gamma to learn multiple
-    #   value functions associated with rewards over different time frames.
-    gamma = np.array([0.97], dtype=np.float32)
-    policy_discount_weights = np.array([1.0], dtype=np.float32)
-    value_discount_weights = np.array([1.0], dtype=np.float32)
-    lmda = 0.9
-    learning_rate = 3e-4
-    entropy_reg = 5e-2
-    vf_coef = 1.0
-    max_gradient_norm = 1.0
-    eps_clip = 0.1
-    reward_clip = 30.0
-    policy_rectifier = 'elu'
-    scale_prob_clipping = True
-
-    # --------------
 
     def build_logits_and_values(self, img_in, rnn_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)
