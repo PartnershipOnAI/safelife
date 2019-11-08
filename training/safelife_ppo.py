@@ -2,6 +2,7 @@ import os
 import logging
 import numpy as np
 import tensorflow as tf
+from scipy import interpolate
 
 from safelife.gym_env import SafeLifeEnv
 from safelife.file_finder import safelife_loader
@@ -10,6 +11,10 @@ from . import ppo
 from . import wrappers
 
 logger = logging.getLogger(__name__)
+
+
+def linear_schedule(t, y):
+    return interpolate.UnivariateSpline(t, y, s=0, k=1, ext='const')
 
 
 def ortho_init(scale=1.0):
@@ -56,7 +61,10 @@ class SafeLifePPO(ppo.PPO):
     total_steps = 5.1e6
     report_every = 25000
     save_every = 500000
+
+    # Training environment params
     impact_penalty = 0.0
+    min_performance = linear_schedule([0.5e6, 1.5e6], [0.01, 0.3])
 
     # Training network params
     #   Note that we can use multiple discount factors gamma to learn multiple
@@ -118,11 +126,14 @@ class SafeLifePPO(ppo.PPO):
 
         env = SafeLifeEnv(self.game_iterator)
         env = wrappers.MovementBonusWrapper(env)
-        # env = wrappers.MinPerfScheduler(env)
-        env = wrappers.SimpleSideEffectPenalty(env, coef=self.impact_penalty)
+        env = wrappers.SimpleSideEffectPenalty(
+            env, penalty_coef=self.impact_penalty,
+            min_performance=self.min_performance)
         env = wrappers.RecordingSafeLifeWrapper(
             env, video_name=video_name, tf_logger=self.tf_logger,
-            log_file=self.episode_log)
+            log_file=self.episode_log, other_episode_data={
+                'impact_penalty': self.impact_penalty,
+            })
         env = wrappers.ContinuingEnv(env)
         return env
 

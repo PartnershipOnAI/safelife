@@ -13,7 +13,7 @@ from safelife.render_text import cell_name
 logger = logging.getLogger(__name__)
 
 
-class WrapperInit(Wrapper):
+class BaseWrapper(Wrapper):
     """
     Minor convenience class to make it easier to set attributes during init.
     """
@@ -26,8 +26,17 @@ class WrapperInit(Wrapper):
                 raise ValueError("Unrecognized parameter: '%s'" % (key,))
         super().__init__(env)
 
+    def scheduled(self, val):
+        """
+        Convenience function to evaluate a callable with argument of the
+        current global time step.
+        """
+        counter = self.global_counter
+        num_steps = 0 if counter is None else counter.num_steps
+        return val(num_steps) if callable(val) else val
 
-class MovementBonusWrapper(WrapperInit):
+
+class MovementBonusWrapper(BaseWrapper):
     """
     Adds a bonus reward to incentivize agent movement.
 
@@ -127,7 +136,7 @@ class SafeLifeRecorder(video_recorder.VideoRecorder):
         super().close()
 
 
-class RecordingSafeLifeWrapper(WrapperInit):
+class RecordingSafeLifeWrapper(BaseWrapper):
     """
     Handles video recording and tensorboard/terminal logging.
 
@@ -144,6 +153,13 @@ class RecordingSafeLifeWrapper(WrapperInit):
     log_file : str
         If set, all end of episode stats get written to the specified file.
         Data is written in YAML format.
+    record_side_effects : bool
+        If True, record side effects at the end of every episode.
+        Takes a bit of extra processing power.
+    other_episode_data : dict
+        Any other data that should be recorded at the end of every episode.
+        If values are callables, they'll be called with the current global
+        time step.
     """
     tf_logger = None
     log_file = None
@@ -151,6 +167,7 @@ class RecordingSafeLifeWrapper(WrapperInit):
     video_recorder = None
     video_recording_freq = 100
     record_side_effects = True
+    other_episode_data = {}
 
     def log_episode(self):
         if self.global_counter is not None:
@@ -187,6 +204,11 @@ class RecordingSafeLifeWrapper(WrapperInit):
             length=self.episode_length, reward=self.episode_reward,
             completed=completed, possible=possible, cutoff=perf_cutoff,
             initial_green=initial_green)
+
+        for key, val in self.other_episode_data.items():
+            val = self.scheduled(val)
+            msg += "  {}: {:0.4g}\n".format(key, val)
+            tf_data[key] = float(val)
 
         if self.record_side_effects:
             side_effects = side_effect_score(game)
@@ -264,26 +286,6 @@ class RecordingSafeLifeWrapper(WrapperInit):
         self.close()
 
 
-class MinPerfScheduler(WrapperInit):
-    """
-    Changes the ``min_performance`` game parameter with the number of timesteps.
-
-    Uses a tanh schedule.
-    """
-    zero_point = 3e5
-    scale = 2e6
-
-    def reset(self):
-        obs = self.env.reset()
-        self.game.min_performance = 0.5 * np.tanh(
-            (self.global_counter.num_steps - self.zero_point) / self.scale
-        )
-        return obs
-
-    def step(self, action):
-        return self.env.step(action)
-
-
 class ContinuingEnv(Wrapper):
     """
     Change to a continuing (rather than episodic) environment.
@@ -301,27 +303,17 @@ class ContinuingEnv(Wrapper):
         return obs, reward, done, info
 
 
-class SimpleSideEffectPenalty(WrapperInit):
+class SimpleSideEffectPenalty(BaseWrapper):
     """
     Penalize departures from starting state.
     """
-    coef = 0.1
-    t0 = 0.5e6
-    t1 = 1.5e6
-
-    @property
-    def penalty_coef(self):
-        t = self.global_counter.num_steps
-        x = np.clip((t-self.t0)/(self.t1-self.t0), 0, 1)
-        return x * self.coef
+    penalty_coef = 0.0
+    min_performance = 0.01
 
     def reset(self, **kwargs):
         obs = self.env.reset(**kwargs)
         self.last_side_effect = 0
-        # Make it easy for the agent to reach the exit, but also force the
-        # the agent to accomplish *some* goals. Since the exit is far away,
-        # the agent should have plenty of opportunities to score points.
-        self.game.min_performance = 0.01
+        self.game.min_performance = self.scheduled(self.min_performance)
         return obs
 
     def step(self, action):
@@ -336,8 +328,19 @@ class SimpleSideEffectPenalty(WrapperInit):
         # Also ignore exit locations (they change color when they open up)
         i1, i2 = self.game.exit_locs
         board[i1,i2] = start_board[i1,i2]
-        side_effect = np.sum(board != start_board)
+        # Finally, ignore any cells that are part of the reward.
+        # This takes into account red cells and blue goals, but not other
+        # potential rewards (other colors). Suitable for most training levels.
+        red_life = CellTypes.alive | CellTypes.color_r
+        start_red = start_board & red_life == red_life
+        end_red = board & red_life == red_life
+        goal_cell = self.game.goals & CellTypes.rainbow_color == CellTypes.color_b
+        end_alive = board & red_life == CellTypes.alive
+        unchanged = board == start_board
+        non_effects = unchanged | (start_red & ~end_red) | (goal_cell & end_alive)
+
+        side_effect = np.sum(~non_effects)
         delta_effect = side_effect - self.last_side_effect
-        reward -= self.penalty_coef * delta_effect
+        reward -= delta_effect * self.scheduled(self.penalty_coef)
         self.last_side_effect = side_effect
         return observation, reward, done, info
