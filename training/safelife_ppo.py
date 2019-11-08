@@ -52,7 +52,7 @@ class SafeLifePPO(ppo.PPO):
     """
 
     # Training batch params
-    game_iterator = safelife_loader('random/prune-still.yaml')
+    game_iterator = safelife_loader('random/prune-still-easy.yaml')
     video_name = "episode-{episode_num}-{step_num}"
     num_env = 16
     steps_per_env = 20
@@ -124,7 +124,7 @@ class SafeLifePPO(ppo.PPO):
             else:
                 self.episode_log = None
 
-        env = SafeLifeEnv(self.game_iterator)
+        env = SafeLifeEnv(self.game_iterator, view_shape=(33,33))
         env = wrappers.MovementBonusWrapper(env)
         env = wrappers.SimpleSideEffectPenalty(
             env, penalty_coef=self.impact_penalty,
@@ -151,15 +151,15 @@ class SafeLifePPO(ppo.PPO):
             y = tf.bitwise.bitwise_and(img_in[...,None], bits) / bits
         self.op.layer0 = y
         self.op.layer1 = y = tf.layers.conv2d(
-            y, filters=32, kernel_size=5, strides=1,
+            y, filters=32, kernel_size=5, strides=2,
             activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
         )
         self.op.layer2 = y = tf.layers.conv2d(
-            y, filters=64, kernel_size=3, strides=1,
+            y, filters=64, kernel_size=3, strides=2,
             activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
         )
         self.op.layer3 = y = tf.layers.conv2d(
-            y, filters=64, kernel_size=3, strides=2,
+            y, filters=64, kernel_size=3, strides=1,
             activation=tf.nn.relu, kernel_initializer=ortho_init(np.sqrt(2)),
         )
         y_size = y.shape[1] * y.shape[2] * y.shape[3]
