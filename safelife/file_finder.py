@@ -13,7 +13,7 @@ from .proc_gen import gen_game
 
 
 LEVEL_DIRECTORY = os.path.abspath(os.path.join(__file__, '../levels'))
-_default_params = yaml.load(
+_default_params = yaml.safe_load(
     open(os.path.join(LEVEL_DIRECTORY, 'random/_defaults.yaml')))
 
 
@@ -80,7 +80,7 @@ def _load_files(paths):
     for file_name in find_files(*paths, file_types=('json', 'npz', 'yaml')):
         if file_name.endswith('.json') or file_name.endswith('.yaml'):
             with open(file_name) as file_data:
-                all_data.append([file_name, 'procgen', yaml.load(file_data)])
+                all_data.append([file_name, 'procgen', yaml.safe_load(file_data)])
         else:  # npz
             with np.load(file_name) as data:
                 if 'levels' in data:

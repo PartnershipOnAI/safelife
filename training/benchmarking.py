@@ -107,7 +107,7 @@ def load_benchmarks(logfile):
     Load benchmark data into a dictionary of numpy arrays.
     """
     with open(logfile) as logfile:
-        data = yaml.load(logfile)
+        data = yaml.safe_load(logfile)
     keys = set()
     side_keys = set()
     for episode in data:
