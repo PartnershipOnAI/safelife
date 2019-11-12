@@ -247,7 +247,7 @@ def populate_region(mask, layer_params):
         region without outside help.
     spawners : float
         Proportion of the layer's available area that are populated with
-        spawner cells. Not that spawners will almost always disrupt existing
+        spawner cells. Note that spawners will almost always disrupt existing
         patterns.
     pattern : dict
         If present, should contain a set of parameters to be passed to
@@ -318,10 +318,10 @@ def populate_region(mask, layer_params):
 
         spawners = layer.get('spawners', 0)
         if spawners > 0:
-            new_cells = (gen_mask0 & NEW_CELL_MASK > 0) & interior
-            new_cells &= coinflip(spawners, board.shape)
-            i, j = np.nonzero(new_cells)
-            if len(i) > 0:
+            _mask = (gen_mask0 & NEW_CELL_MASK > 0) & interior
+            new_cells = _mask & coinflip(spawners, board.shape)
+            if not new_cells.any() and _mask.any():
+                i, j = np.nonzero(_mask)
                 k = np.random.choice(len(i))  # ensure at least one spawner
                 new_cells[i[k], j[k]] = True
             gen_mask[new_cells] ^= NEW_CELL_MASK

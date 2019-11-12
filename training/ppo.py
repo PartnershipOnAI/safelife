@@ -4,6 +4,7 @@ Algorithm for Proximal Policy Optimization.
 
 import os
 import logging
+import inspect
 from types import SimpleNamespace
 from collections import namedtuple
 from functools import wraps
@@ -144,7 +145,7 @@ class PPO(object):
     def __init__(self, saver_args={}, **kwargs):
         for key, val in kwargs.items():
             if (not key.startswith('_') and hasattr(self, key) and
-                    not callable(getattr(self, key))):
+                    not inspect.ismethod(getattr(self, key))):
                 setattr(self, key, val)
             else:
                 raise ValueError("Unrecognized parameter: '%s'" % (key,))
@@ -192,12 +193,12 @@ class PPO(object):
         import re
         checkpoint_path = os.path.join(logdir, 'checkpoint')
         if not os.path.exists(checkpoint_path):
-            return
+            return False
         with open(checkpoint_path) as checkpoint_file:
             line = checkpoint_file.readline()
         match = re.match(r'.*"(.+)"', line)
         if not match:
-            return
+            return False
         last_checkpoint = os.path.split(match.group(1))[1]
         last_checkpoint = os.path.join(logdir, last_checkpoint)
         try:
@@ -206,11 +207,12 @@ class PPO(object):
             if raise_on_error:
                 raise
             else:
-                return
+                return False
         self.num_steps, self.num_episodes = self.session.run(
             [self.op.num_steps, self.op.num_episodes])
         logger.info("Restoring old checkpoint. %i episodes, %i steps.",
                     self.num_episodes, self.num_steps)
+        return True
 
     def build_graph(self):
         op = self.op

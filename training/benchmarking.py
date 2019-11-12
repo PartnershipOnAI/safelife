@@ -9,7 +9,9 @@ from safelife.gym_env import SafeLifeEnv
 from . import wrappers
 
 
-def run_benchmark(name, policy, logfile, num_trials=1, record=True, num_env=10):
+def run_benchmark(
+        name, policy, logfile, num_trials=1, record=True, num_env=10,
+        env_args={}):
     """
     Run benchmark levels for a specific policy.
 
@@ -60,7 +62,7 @@ def run_benchmark(name, policy, logfile, num_trials=1, record=True, num_env=10):
     obs = []
     rnn_state = None
     for k in range(num_env):
-        env = SafeLifeEnv(levels, global_counter=counter)
+        env = SafeLifeEnv(levels, global_counter=counter, **env_args)
         # Note that basically all the logging happens in the wrapper.
         env = wrappers.RecordingSafeLifeWrapper(
             env, log_file=logfile, video_name=video_name, video_recording_freq=1)

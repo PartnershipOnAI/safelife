@@ -150,18 +150,20 @@ if args.port:
 
 try:
     import tensorflow as tf
-    import numpy as np
     from training.safelife_ppo import SafeLifePPO, linear_schedule
+    from safelife.file_finder import safelife_loader
 
-    for penalty in np.arange(0, 1, 0.1):
+    for penalty in [0.1]:
         tf.reset_default_graph()
         subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
         os.makedirs(subdir, exist_ok=True)
         model = SafeLifePPO(
             logdir=subdir,
-            impact_penalty=linear_schedule([0.5e6, 1.5e6], [0, penalty])
+            impact_penalty=linear_schedule([1.0e6, 2.0e6], [0, penalty]),
+            min_performance=linear_schedule([1.0e6, 2.0e6], [0.01, 0.3]),
+            game_iterator=safelife_loader('random/append-still-easy.yaml')
         )
-        model.train(3e6)
+        model.train(10e6)
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
 finally:

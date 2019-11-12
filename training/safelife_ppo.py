@@ -86,12 +86,13 @@ class SafeLifePPO(ppo.PPO):
     # A few functions to keep episode and step counters synced:
 
     def restore_checkpoint(self, logdir, raise_on_error=False):
-        super().restore_checkpoint(logdir, raise_on_error)
+        success = super().restore_checkpoint(logdir, raise_on_error)
         num_steps, num_episodes = self.session.run(
             [self.op.num_steps, self.op.num_episodes])
         SafeLifeEnv.global_counter.episodes_started = num_episodes
         SafeLifeEnv.global_counter.episodes_completed = num_episodes
         SafeLifeEnv.global_counter.num_steps = num_steps
+        return success
 
     @property
     def num_episodes(self):
