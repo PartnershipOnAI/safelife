@@ -38,6 +38,7 @@ sprites = {
     CellTypes.parasite: load_sprite(2, 4),
     CellTypes.weed: load_sprite(1, 2),
     CellTypes.spawner: load_sprite(3, 0),
+    CellTypes.hard_spawner: load_sprite(3, 2),
     CellTypes.level_exit: load_sprite(3, 1),
     CellTypes.fountain: load_sprite(2, 1),
 }
@@ -76,6 +77,7 @@ cell_array = np.array([
     [CellTypes.parasite, (5*2 + 4) + 1],
     [CellTypes.weed, (5*1 + 2) + 1],
     [CellTypes.spawner, (5*3 + 0) + 1],
+    [CellTypes.hard_spawner, (5*3 + 2) + 1],
     [CellTypes.level_exit, (5*3 + 1) + 1],
     [CellTypes.fountain, (5*2 + 1) + 1],
 ])

@@ -63,7 +63,8 @@ def render_cell(cell, goal=0, orientation=0, edit_color=None):
             CellTypes.ice_cube: '=',
             CellTypes.parasite: '!',
             CellTypes.weed: '@',
-            CellTypes.spawner: 'S',
+            CellTypes.spawner: 's',
+            CellTypes.hard_spawner: 'S',
             CellTypes.level_exit: 'X',
             CellTypes.fountain: '\x1b[1m+',
         }.get(gray_cell, '?')
@@ -83,6 +84,7 @@ def cell_name(cell):
         CellTypes.parasite: 'parasite',
         CellTypes.weed: 'weed',
         CellTypes.spawner: 'spawner',
+        CellTypes.hard_spawner: 'hard-spawner',
         CellTypes.level_exit: 'exit',
         CellTypes.fountain: 'fountain',
     }.get(cell & ~CellTypes.rainbow_color, 'unknown')

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from collections import defaultdict, deque
 import numpy as np
 
-from .game_physics import SafeLifeGame, ORIENTATION, CellTypes
+from .game_physics import SafeLifeGame, ORIENTATION
 from . import render_text
 from . import render_graphics
 from .keyboard_input import KEYS, getch
@@ -45,6 +45,7 @@ EDIT_KEYS = {
     'p': "PUT PARASITE",
     'f': "PUT FOUNTAIN",
     'n': "PUT SPAWNER",
+    'N': "PUT HARD SPAWNER",
     '1': "TOGGLE ALIVE",
     '2': "TOGGLE PRESERVING",
     '3': "TOGGLE INHIBITING",
@@ -470,7 +471,7 @@ class GameLoop(object):
 
     def print_side_effects(self, side_effects, ansi=True):
         output = ""
-        fmt = "    {name:12s} {val:6.2f}\n"
+        fmt = "    {name:14s} {val:6.2f}\n"
         for ctype, score in side_effects.items():
             if not ansi:
                 name = render_text.cell_name(ctype)

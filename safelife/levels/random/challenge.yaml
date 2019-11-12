@@ -5,7 +5,7 @@ board_shape: [26,26]
 
 partitioning:
   min_regions: 2
-  max_regions: 5
+  max_regions: 4
 
 starting_region: null
 later_regions:

@@ -62,7 +62,7 @@ def make_partioned_regions(shape, alpha=1.0, max_regions=5, min_regions=2):
     exclusions = [set()]
     while sum(len(p) for p in perimeters) > 0:
         weights = np.array([len(p) for p in perimeters], dtype=float)
-        weights[0] = min(alpha, weights[0]) if len(weights) < max_regions else 1e-10
+        weights[0] = min(alpha, weights[0]) if len(weights) <= max_regions else 1e-10
         if len(weights) <= min_regions:
             weights[1:] = 1e-10
         weights /= np.sum(weights)

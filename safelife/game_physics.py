@@ -105,7 +105,8 @@ class CellTypes(object):
     wall = frozen
     movable = pushable | pullable
     crate = frozen | movable
-    spawner = frozen | spawning
+    spawner = frozen | spawning | destructible
+    hard_spawner = frozen | spawning
     level_exit = frozen | exit
     life = alive | destructible
     colors = (color_r, color_g, color_b)
@@ -405,6 +406,7 @@ class GameState(object):
             'WALL': CellTypes.wall,
             'CRATE': CellTypes.crate,
             'SPAWNER': CellTypes.spawner,
+            'HARD SPAWNER': CellTypes.hard_spawner,
             'EXIT': CellTypes.level_exit,
             'ICECUBE': CellTypes.ice_cube,
             'PLANT': CellTypes.plant,

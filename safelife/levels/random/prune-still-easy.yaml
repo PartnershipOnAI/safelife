@@ -2,7 +2,7 @@
 # we start to demand that there be no side effects. The "prune easy" region
 # should be relatively easy to complete with no side effects.
 ---
-min_performance: 0.8
+min_performance: 0.5
 board_shape: [26,26]
 
 partitioning:
