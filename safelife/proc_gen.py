@@ -216,8 +216,8 @@ def _gen_pattern(board, mask, seeds=None, num_retries=10, **kwargs):
 def _make_lattice(h, w, col_skip, row_skip, stagger):
     rows = np.arange(h)[:, np.newaxis]
     cols = np.arange(w)[np.newaxis, :]
-    return (rows % row_skip == 0) & (
-        (cols + (rows//row_skip)*stagger) % col_skip == 0)
+    return (rows % row_skip < 1) & (
+        (cols + (rows//row_skip)*stagger) % col_skip < 1)
 
 
 def populate_region(mask, layer_params):
@@ -338,7 +338,7 @@ def populate_region(mask, layer_params):
                 tree_lattice = {}
             h, w = board.shape
             stagger = tree_lattice.get('stagger', True)
-            spacing = int(tree_lattice.get('spacing', 5))
+            spacing = float(tree_lattice.get('spacing', 5))
             if not stagger:
                 new_cells = _make_lattice(h, w, spacing, spacing, 0)
             elif spacing <= 3:

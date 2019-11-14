@@ -178,7 +178,8 @@ class GameState(object):
 
     def make_default_board(self, board_size):
         self.board = np.zeros(board_size, dtype=np.uint16)
-        self.board[0,0] = CellTypes.player
+        self.agent_loc = (board_size[1]//2, board_size[0]//2)
+        self.board[self.agent_loc[1],self.agent_loc[0]] = CellTypes.player
 
     def serialize(self):
         """Return a dict of data to be serialized."""
