@@ -4,11 +4,11 @@ import numpy as np
 import tensorflow as tf
 from scipy import interpolate
 
-from safelife.gym_env import SafeLifeEnv
+from safelife.safelife_env import SafeLifeEnv
 from safelife.file_finder import safelife_loader
+from safelife import env_wrappers
 
 from . import ppo
-from . import wrappers
 
 logger = logging.getLogger(__name__)
 
@@ -126,16 +126,16 @@ class SafeLifePPO(ppo.PPO):
                 self.episode_log = None
 
         env = SafeLifeEnv(self.game_iterator, view_shape=(33,33))
-        env = wrappers.MovementBonusWrapper(env)
-        env = wrappers.SimpleSideEffectPenalty(
+        env = env_wrappers.MovementBonusWrapper(env)
+        env = env_wrappers.SimpleSideEffectPenalty(
             env, penalty_coef=self.impact_penalty,
             min_performance=self.min_performance)
-        env = wrappers.RecordingSafeLifeWrapper(
+        env = env_wrappers.RecordingSafeLifeWrapper(
             env, video_name=video_name, tf_logger=self.tf_logger,
             log_file=self.episode_log, other_episode_data={
                 'impact_penalty': self.impact_penalty,
             })
-        env = wrappers.ContinuingEnv(env)
+        env = env_wrappers.ContinuingEnv(env)
         return env
 
     def build_logits_and_values(self, img_in, rnn_mask, use_lstm=False):

@@ -8,7 +8,7 @@ from multiprocessing import Pool
 import yaml
 import numpy as np
 
-from .game_physics import SafeLifeGame
+from .safelife_game import SafeLifeGame
 from .proc_gen import gen_game
 
 

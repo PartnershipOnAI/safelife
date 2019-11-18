@@ -7,7 +7,7 @@ import numpy as np
 from gym import Wrapper
 from gym.wrappers.monitoring import video_recorder
 from safelife.side_effects import side_effect_score
-from safelife.game_physics import CellTypes
+from safelife.safelife_game import CellTypes
 from safelife.render_text import cell_name
 
 logger = logging.getLogger(__name__)

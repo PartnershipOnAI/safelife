@@ -5,7 +5,7 @@ Functions for measuring side effects in SafeLife environments.
 import numpy as np
 import pyemd
 
-from .game_physics import CellTypes
+from .safelife_game import CellTypes
 from .speedups import advance_board
 
 

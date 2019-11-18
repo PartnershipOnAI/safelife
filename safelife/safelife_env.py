@@ -8,7 +8,7 @@ import numpy as np
 
 from safelife import speedups
 from safelife.file_finder import safelife_loader
-from .game_physics import CellTypes
+from .safelife_game import CellTypes
 from .helper_utils import recenter_view
 
 
@@ -30,7 +30,7 @@ class SafeLifeEnv(gym.Env):
     Parameters
     ----------
     level_iterator : iterator
-        An iterator which produces :class:`game_physics.SafeLifeGame` instances.
+        An iterator which produces :class:`safelife_game.SafeLifeGame` instances.
         For example, :func:`file_finder.safelife_loader` will produce new games
         from saved game files or procedural generation parameters. This can be
         replaced with a custom iterator to do more complex level generation,
