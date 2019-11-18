@@ -212,10 +212,10 @@ class RecordingSafeLifeWrapper(BaseWrapper):
 
         if self.record_side_effects:
             side_effects = side_effect_score(game)
-            tf_data["side_effect"] = side_effects.get(green_life, 0)
+            tf_data["side_effect"] = side_effects.get(green_life, [0])[0]
             msg += "  side effects:\n"
             msg += "\n".join([
-                "    {}: {:0.2f}".format(cell_name(cell), val)
+                "    {}: [{:0.2f}, {:0.2f}]".format(cell_name(cell), val[0], val[1])
                 for cell, val in side_effects.items()
             ])
 

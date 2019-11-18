@@ -42,11 +42,12 @@ ssh_cmd = os.path.abspath(os.path.join(__file__, '../ssh'))
 
 with open('tmp_files_list', 'w') as f:
     f.write(
-        # Copy over all txt files.
+        # Copy over all txt and md files.
         # The only one that's really needed is requirements.txt,
         # but it can be handy to copy over notes in a text file as well.
-        '\n'.join(glob.glob('*.txt')) + '\n'
-        'setup.py\n'
+        '\n'.join(glob.glob('*.txt')) + '\n' +
+        '\n'.join(glob.glob('*.md')) + '\n' +
+        '\n'.join(glob.glob('*.py')) + '\n'
         'setup.cfg\n'
         'start-training\n'
         'training/\n'

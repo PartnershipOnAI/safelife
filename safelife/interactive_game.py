@@ -342,7 +342,10 @@ class GameLoop(object):
                     state.screen = "GAMEOVER"
             elif game.game_over:
                 state.screen = "LEVEL SUMMARY"
-                state.side_effects = side_effect_score(game)
+                state.side_effects = {
+                    key: val[0] for key, val in
+                    side_effect_score(game).items()
+                }
                 for key, val in state.side_effects.items():
                     state.total_side_effects[key] += val
                 self.log_level_stats()

@@ -123,7 +123,7 @@ def load_benchmarks(logfile):
             stats[key].append(episode.get(key, 0))
         episode_effects = episode.get('side effects', {})
         for key in side_effects:
-            side_effects[key].append(episode_effects.get(key, 0))
+            side_effects[key].append(episode_effects.get(key, [0.0,0.0]))
     for key in stats:
         stats[key] = np.array(stats[key])
     for key in side_effects:
