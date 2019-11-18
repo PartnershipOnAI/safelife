@@ -1,7 +1,7 @@
 import numpy as np
 
 from .helper_utils import recenter_view
-from .game_physics import CellTypes, GameWithGoals
+from .safelife_game import CellTypes, GameWithGoals
 
 
 background_colors = [

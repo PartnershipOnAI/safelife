@@ -6,7 +6,7 @@ import os
 import imageio
 import numpy as np
 
-from .game_physics import CellTypes, GameState
+from .safelife_game import CellTypes, GameState
 from .helper_utils import recenter_view
 
 

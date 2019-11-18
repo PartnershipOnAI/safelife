@@ -5,7 +5,7 @@ Procedural generation of SafeLife levels.
 import numpy as np
 from scipy import ndimage, signal
 
-from .game_physics import CellTypes, SafeLifeGame
+from .safelife_game import CellTypes, SafeLifeGame
 from .helper_utils import coinflip
 from . import speedups
 

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from collections import defaultdict, deque
 import numpy as np
 
-from .game_physics import SafeLifeGame, ORIENTATION
+from .safelife_game import SafeLifeGame, ORIENTATION
 from . import render_text
 from . import render_graphics
 from .keyboard_input import KEYS, getch
