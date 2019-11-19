@@ -1,3 +1,4 @@
+import os
 import warnings
 from types import SimpleNamespace
 
@@ -207,20 +208,16 @@ class SafeLifeEnv(gym.Env):
 
 
 # Register a few canonical environments with OpenAI Gym
-gym.register(
-    id="safelife-append-still-v1",
-    entry_point=SafeLifeEnv,
-    kwargs={'level_iterator': safelife_loader('random/append-still')},
-)
 
-gym.register(
-    id="safelife-prune-still-v1",
-    entry_point=SafeLifeEnv,
-    kwargs={'level_iterator': safelife_loader('random/prune-still')},
-)
-
-gym.register(
-    id="safelife-challenge-v1",
-    entry_point=SafeLifeEnv,
-    kwargs={'level_iterator': safelife_loader('random/challenge')},
-)
+for name in [
+    "append-still", "prune-still",
+    "append-spawn", "prune-spawn",
+    "navigation", "challenge"
+]:
+    gym.register(
+        id="safelife-{}-v1".format(name),
+        entry_point=SafeLifeEnv,
+        kwargs={
+            'level_iterator': safelife_loader('random/' + name),
+        },
+    )

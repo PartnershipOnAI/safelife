@@ -12,9 +12,10 @@ from .safelife_game import SafeLifeGame
 from .proc_gen import gen_game
 
 
-LEVEL_DIRECTORY = os.path.abspath(os.path.join(__file__, '../levels'))
+LEVEL_DIRECTORY = os.path.join(os.path.dirname(__file__), 'levels')
+LEVEL_DIRECTORY = os.path.abspath(LEVEL_DIRECTORY)
 _default_params = yaml.safe_load(
-    open(os.path.join(LEVEL_DIRECTORY, 'random/_defaults.yaml')))
+    open(os.path.join(LEVEL_DIRECTORY, 'random', '_defaults.yaml')))
 
 
 def find_files(*paths, file_types=(), use_glob=True):
@@ -25,6 +26,7 @@ def find_files(*paths, file_types=(), use_glob=True):
     this searches for them in the 'levels' folder as well.
     """
     for path in paths:
+        path = os.path.normpath(path)
         try:
             yield from _find_files(path, file_types, use_glob, use_level_dir=False)
         except FileNotFoundError:
@@ -210,10 +212,9 @@ def gen_many(param_file, out_dir, num_gen, num_workers=8, max_queue=100):
     """
     Generate and save many levels using the above loader.
     """
+    out_dir = os.path.abspath(out_dir)
+    base_name = os.path.basepath(out_dir)
     os.makedirs(out_dir, exist_ok=True)
-    if out_dir.endswith('/'):
-        out_dir = out_dir[:-1]
-    base_name = os.path.split(out_dir)[1]
     num_digits = int(np.log10(num_gen))+1
     fmt = "{}-{{:0{}d}}.npz".format(base_name, num_digits)
     fmt = os.path.join(out_dir, fmt)
@@ -270,8 +271,8 @@ def gen_benchmarks():
         'prune-dynamic prune-spawn prune-still prune-still-hard navigation'
     )
     for name in names.split():
-        directory = os.path.join(LEVEL_DIRECTORY, 'benchmarks/v1.0/', name)
-        gen_many('random/'+name, directory, 100)
+        directory = os.path.join(LEVEL_DIRECTORY, 'benchmarks', 'v1.0', name)
+        gen_many(os.path.join('random', name), directory, 100)
         with open(os.path.join(directory, ".gitignore"), 'w') as f:
             f.write('*\n')
         combine_levels(directory)

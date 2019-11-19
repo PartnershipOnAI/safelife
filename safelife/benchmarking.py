@@ -50,7 +50,8 @@ def run_benchmark(
         logfile.write("# SafeLife benchmark data\n---\n")
         logfile.flush()
 
-    levels = safelife_loader("benchmarks/v1.0/" + name, repeat=num_trials)
+    levels = safelife_loader(
+        os.path.join("benchmarks", "v1.0", name), repeat=num_trials)
     counter = SimpleNamespace(
         episodes_started=0,
         episodes_completed=0,
