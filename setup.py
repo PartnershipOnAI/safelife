@@ -9,12 +9,13 @@ class get_numpy_include(object):
         return numpy.get_include()
 
 
-ext_path = os.path.abspath(os.path.join(__file__, '../safelife/speedups_src'))
-levels_path = os.path.abspath(os.path.join(__file__, '../safelife/levels'))
+base_dir = os.path.abspath(os.path.dirname(__file__))
+ext_path = os.path.join(base_dir, 'safelife', 'speedups_src')
+levels_path = os.path.join(base_dir, 'safelife', 'levels')
 
 data_files = ['*.png']
-data_files += glob.glob(os.path.join(levels_path, '**/*.npz'), recursive=True)
-data_files += glob.glob(os.path.join(levels_path, '**/*.json'), recursive=True)
+data_files += glob.glob(os.path.join(levels_path, '**', '*.npz'), recursive=True)
+data_files += glob.glob(os.path.join(levels_path, '**', '*.json'), recursive=True)
 
 requirements = open('requirements.txt').read()
 requirements = [line for line in requirements.split('\n') if line]

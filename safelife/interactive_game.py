@@ -77,7 +77,7 @@ class GameLoop(object):
     gen_params = None
     print_only = False
     relative_controls = True
-    recording_directory = "./plays/"
+    recording_directory = "plays"  # in the current working directory
 
     def __init__(self, level_generator):
         self.level_generator = level_generator
