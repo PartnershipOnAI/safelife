@@ -32,6 +32,7 @@ parser.add_argument('--shutdown', action="store_true",
     "(helpful for running remotely).")
 parser.add_argument('--port', default=6006, type=int,
     help="Port on which to run tensorboard.")
+parser.add_argument('--impact-penalty', default=0.0, type=float)
 args = parser.parse_args()
 
 
@@ -63,7 +64,7 @@ if os.path.exists(data_dir) and args.data_dir is not None:
           "Would you like to overwrite the old data, append to it, or abort?" %
           data_dir)
     response = None
-    response = 'overwrite' if job_name == 'tmp' else None
+    response = 'overwrite' if job_name.startswith('tmp') else None
     while response not in ('overwrite', 'append', 'abort'):
         response = input("(overwrite / append / abort) > ")
     if response == 'overwrite':
@@ -122,7 +123,6 @@ logging.config.dictConfig({
     }
 })
 
-
 # Install dependencies if they aren't already there
 
 if args.install:
@@ -148,22 +148,74 @@ if args.port:
 
 # Start training!
 
+def spawn_loader(name):
+    # When training in spawn environments, we first pre-train in the static
+    # environments for a couple million time steps. This just provides more
+    # opportunities for rewards so makes the initial training easier.
+    from safelife.file_finder import safelife_loader
+    from safelife.safelife_env import SafeLifeEnv
+
+    loader1 = safelife_loader('random/{}-still-easy'.format(name))
+    loader2 = safelife_loader('random/{}-spawn'.format(name))
+
+    t0 = 1.5e6 if name == 'prune' else 2.0e6
+    while True:
+        if SafeLifeEnv.global_counter.num_steps < t0:
+            yield next(loader1)
+        else:
+            yield next(loader2)
+
+
 try:
     import tensorflow as tf
     from training.safelife_ppo import SafeLifePPO, linear_schedule
     from safelife.file_finder import safelife_loader
 
-    for penalty in [0.1]:
+    for penalty in [args.impact_penalty]:
         tf.reset_default_graph()
         subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
         os.makedirs(subdir, exist_ok=True)
-        model = SafeLifePPO(
-            logdir=subdir,
-            impact_penalty=linear_schedule([1.0e6, 2.0e6], [0, penalty]),
-            min_performance=linear_schedule([1.0e6, 2.0e6], [0.01, 0.3]),
-            game_iterator=safelife_loader('random/append-still-easy.yaml')
-        )
-        model.train(10e6)
+
+        if 'append-still' in job_name:
+            model = SafeLifePPO(
+                logdir=subdir,
+                impact_penalty=linear_schedule([1.0e6, 2.0e6], [0, penalty]),
+                min_performance=linear_schedule([1.0e6, 2.0e6], [0.01, 0.3]),
+                game_iterator=safelife_loader('random/append-still-easy.yaml'),
+            )
+            model.train(10e6)
+        elif 'prune-still' in job_name:
+            model = SafeLifePPO(
+                logdir=subdir,
+                impact_penalty=linear_schedule([0.5e6, 1.5e6], [0, penalty]),
+                min_performance=linear_schedule([0.5e6, 1.5e6], [0.01, 0.3]),
+                game_iterator=safelife_loader('random/prune-still-easy.yaml'),
+            )
+            model.train(6e6)
+        elif 'append-spawn' in job_name:
+            model = SafeLifePPO(
+                logdir=subdir,
+                impact_penalty=linear_schedule([2.0e6, 3.5e6], [0, penalty]),
+                min_performance=linear_schedule([1.0e6, 2.0e6], [0.01, 0.3]),
+                game_iterator=spawn_loader('append'),
+            )
+            model.train(10e6)
+        elif 'prune-spawn' in job_name:
+            model = SafeLifePPO(
+                logdir=subdir,
+                impact_penalty=linear_schedule([1.5e6, 2.5e6], [0, penalty]),
+                min_performance=linear_schedule([0.5e6, 1.5e6], [0.01, 0.3]),
+                game_iterator=spawn_loader('prune'),
+                num_env=4,
+            )
+            model.train(6e6)
+        elif 'navigate' in job_name:
+            model = SafeLifePPO(
+                logdir=subdir,
+                impact_penalty=linear_schedule([1.0e6, 2.0e6], [0, penalty]),
+                game_iterator=safelife_loader('random/navigation.yaml'),
+            )
+            model.train(6e6)
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
 finally:
