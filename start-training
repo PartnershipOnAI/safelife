@@ -216,6 +216,16 @@ try:
                 game_iterator=safelife_loader('random/navigation.yaml'),
             )
             model.train(6e6)
+        else:
+            # default to prune-still
+            model = SafeLifePPO(
+                logdir=subdir,
+                impact_penalty=linear_schedule([0.5e6, 1.5e6], [0, penalty]),
+                min_performance=linear_schedule([0.5e6, 1.5e6], [0.01, 0.3]),
+                game_iterator=safelife_loader('random/prune-still-easy.yaml'),
+            )
+            model.train(6e6)
+
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
 finally:

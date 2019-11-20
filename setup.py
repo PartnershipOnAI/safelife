@@ -15,19 +15,31 @@ levels_path = os.path.join(base_dir, 'safelife', 'levels')
 
 data_files = ['*.png']
 data_files += glob.glob(os.path.join(levels_path, '**', '*.npz'), recursive=True)
-data_files += glob.glob(os.path.join(levels_path, '**', '*.json'), recursive=True)
+data_files += glob.glob(os.path.join(levels_path, '**', '*.yaml'), recursive=True)
 
-requirements = open('requirements.txt').read()
-requirements = [line for line in requirements.split('\n') if line]
+with open("README.md", "r") as fh:
+    long_description = fh.read()
 
 setuptools.setup(
-    name='SafeLife',
-    version='0.1',
+    name='safelife',
+    version='1.0rc1',
     author="Carroll L. Wainwright",
+    author_email="carroll@partnershiponai.org",
     description="Safety benchmarks for reinforcement learning",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url="https://github.com/PartnershipOnAI/safelife",
     packages=['safelife'],
     package_data={'safelife': data_files},
-    install_requires=requirements,
+    install_requires=[
+        "pyemd==0.5.1",
+        "numpy>=1.11.0",
+        "scipy>=1.0.0",
+        "gym>=0.12.5",
+        "imageio>=2.5.0",
+        "pyglet==1.3.2",
+        "pyyaml>=3.12",
+    ],
     ext_modules=[
         setuptools.Extension(
             'safelife.speedups',
@@ -43,5 +55,16 @@ setuptools.setup(
                 '-Wno-c++11-extensions',
             ]
         ),
-    ]
+    ],
+    entry_points={
+        'console_scripts': [
+            'safelife = safelife.__main__:run',
+        ],
+    },
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: Apache Software License",
+        "Operating System :: OS Independent",
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    ],
 )

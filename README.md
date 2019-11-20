@@ -1,17 +1,14 @@
 # SafeLife
 
-*Note: this is a work in progress! A version 1.0 release is expected in late November, along with an accompanying paper and announcement. Any comments/questions/concerns should either be opened as GitHub issues or be directed to carroll@partnershiponai.org*
-
 SafeLife is a novel environment to test the safety of reinforcement learning agents. The long term goal of this project is to develop training environments and benchmarks for numerous technical reinforcement learning safety problems, with the following attributes:
 
 * Controllable difficulty for the environment
 * Controllable difficulty for safety constraints
 * Procedurally generated levels with richly adjustable distributions of mechanics and phenomena to reduce overfitting
 
-The initial SafeLife version 0.1 (and the roadmap for the next few releases)
+The initial SafeLife version 1.0 (and the roadmap for the next few releases)
 focuses at first on the problem of side effects: how can one specify that an
-agent do whatever it needs to do to accomplish its goals, but nothing more? In
-SafeLife, an agent is tasked with creating or removing certain specified
+agent does whatever it needs to do to accomplish its goals, but nothing more? In SafeLife, an agent is tasked with creating or removing certain specified
 patterns, but its reward function is indifferent to its effects on other
 pre-existing patterns. A *safe* agent will learn to minimize its effects on
 those other patterns without explicitly being told to do so.
@@ -24,37 +21,41 @@ The SafeLife code base includes
 - an implementation of proximal policy optimization to train reinforcement learning agents;
 - a set of scripts to simplify [training on Google Cloud](./gcloud).
 
-Minimizing side effects is very much an unsolved problem, and our baseline trained agents do not do a good job of it! The goal of SafeLife is to allow others to easily test their algorithms and improve upon the current state.
+Minimizing side effects is very much an unsolved problem, and our baseline trained agents do not necessarily do a good job of it! The goal of SafeLife is to allow others to easily test their algorithms and improve upon the current state.
 
 
 ## Quick start
 
-### Installation
+### Standard installation
 
-SafeLife requires Python 3.5 or better. If you wish to install in a clean environment, it's recommended to use [python virtual environments](https://docs.python.org/3/library/venv.html).
+SafeLife requires Python 3.5 or better. If you wish to install in a clean environment, it's recommended to use [python virtual environments](https://docs.python.org/3/library/venv.html). You can install SafeLife globally using
 
-SafeLife currently needs to be installed from source. First, download this repository and install the requirements:
+    pip3 install safelife
+
+If you wish to save training or benchmark videos (using `env_wrappers.RecordingSafeLifeWrapper`), you'll also need to install [ffmpeg](https://ffmpeg.org) (e.g., `sudo apt-get install ffmpeg` or `brew install ffmpeg`).
+
+### Local installation
+
+Alternatively, you can install locally by downloading this repository and running
 
     pip3 install -r requirements.txt
-
-If you want to train agents with the default training script, you'll also need to install [ffmpeg](https://ffmpeg.org) (e.g., `sudo apt-get install ffmpeg` or `brew install ffmpeg`; required to save training videos) and additional training requirements (`pip3 install -r requirements-training.txt`; primarily *tensorflow*).
-
-SafeLife includes C extensions which must be compiled. Running
-
     python3 setup.py build_ext --inplace
 
-should compile these extensions and install them in the `safelife` module. (You can also install SafeLife globally using `python3 setup.py install`, although it's often more convenient to work within this directory.) **Note: you must have have a C compiler installed on your system to compile the extensions!**
+This will download all of the requirements and build the C extensions in the `safelife` source folder. **Note that you must have have a C compiler installed on your system to compile the extensions!** This can be useful if forking the project or running the standard training scripts.
+
+When running locally, console commands will need to use `python3 -m safelife [args]` instead of just `safelife [args]`.
 
 
 ### Interactive play
 
 To jump into a game, run
 
-    python3 -m safelife play puzzles
+    safelife play puzzles
 
 All of the puzzle levels are solvable. See if you can do it without disturbing the green patterns!
 
-(You can run `python3 -m safelife play --help` to get help on the command-line options. More detail of how the game works is provided below, but it can be fun to try to figure out the basic mechanics yourself.)
+(You can run `safelife play --help` to get help on the command-line options. More detail of how the game works is provided below, but it can be fun to try to figure out the basic mechanics yourself.)
+
 
 ### Training an agent
 
@@ -132,26 +133,27 @@ More complex edits can be performed in an interactive IPython shell by hitting b
 
 ## Train and benchmark levels
 
-We focus on two distinct tasks for agents to accomplish:
+We focus on three distinct tasks for agents to accomplish:
 
 - in *build* tasks, the agent tries to match blue goal cells with its own gray life cells;
-- in *destroy* tasks, the agent tries to remove red cells from the board.
+- in *destroy* tasks, the agent tries to remove red cells from the board;
+- in the *navigate* task, the agent just tries to get to the level exit, but there may be obstacles in the way.
 
-In both tasks there can also be green life cells on the board. The agent's principal reward function is silent on the utility of these green cells, but a safe agent should be able to avoid disrupting them.
+In all tasks there can also be green life cells on the board. The agent's principal reward function is silent on the utility of these green cells, but a safe agent should be able to avoid disrupting them.
 
 Training tasks will typically be randomly generated via `safelife.proc_gen.gen_game()`. The type of task generated depends on the generation parameters. A set of suggested training parameters is supplied in `safelife/levels/random/`. To view typical training boards, run e.g.
 
-    python3 -m safelife print random/append
+    python3 -m safelife print random/append-still
 
 To play them interactively, use `play` instead of `print`.
 
-A set of benchmark levels is supplied in `safelife/levels/benchmarks-0.1/`. These levels are fixed to make it easy to gauge progress in both agent performance and agent safety. The benchmark levels use a few different scenarios for each task to more robustly measure side effect safety. They were created using SafeLife's procedural generation code, with human curatorship and a few manual tweaks to increase the probability that they successfully represent the side effect problem.
+A set of benchmark levels is supplied in `safelife/levels/benchmarks/v1.0/`. These levels are fixed to make it easy to gauge progress in both agent performance and agent safety.
+Each set of benchmarks consists of 100 different levels for each benchmark task, with an agent's benchmark score as its average performance across all levels in each set.
 
 ## Side Effects
 
 - Side effects in *static environments* should be relatively easy to calculate: any change in the environment is a side effect, and all changes are due to the agent.
-- Side effects in *dynamic environments* are more tricky because only some changes are due to the agent.
-- *Stochastic environments* essentially never repeat, which may make things like reachability analysis much more difficult.
+- Side effects in *dynamic and stochastic environments* are more tricky because only some changes are due to the agent. The agent will need to learn to reduce its own effects without disrupting the natural dynamics of the environment.
 - Environments that contain both *stochastic and oscillating* patterns can test an agent's ability to discern between fragile and robust patterns. Interfering with either permanently changes their subsequent evolution, but interfering with a fragile oscillating patterns tends to destroy it, while interfering with a robust stochastic pattern just changes it to a slightly different stochastic pattern.
 
 Side effects are measured with the `safelife.side_effects.side_effect_score()` function. This calculates the average displacement of each cell type from a board without agent interaction to a board where the agent acted. See the code or (forthcoming) paper for more details.
@@ -161,19 +163,21 @@ Safe agents will likely need to be trained with their own impacts measure which 
 
 ## Training with proximal policy optimization
 
-We include an implementation of proximal policy optimization in the `training` module. *Note that this implementation contains some custom modifications, and shouldn't be thought of as “reference” implementation. It will be cleaned up in a future release.* The `training.ppo.PPO` class implements the core RL algorithm, `training.safelife_ppo.SafeLifeBasePPO` adds functionality that is particular to the SafeLife environment, and `training.safelife_ppo.SafeLifePPO_example` provides a full implementation with reasonable hyperparameters and network architecture.
+We include an implementation of proximal policy optimization in the `training` module. *Note that this implementation contains some custom modifications, and shouldn't be thought of as “reference” implementation. It will be cleaned up in a future release.* The `training.ppo.PPO` class implements the core RL algorithm while `training.safelife_ppo.SafeLifePPO` adds functionality that is particular to the SafeLife environment and provides reasonable hyperparameters and network architecture.
 
-There are a few import parameters that deserve special attention.
+There are a few import parameters and functions that deserve special attention.
 
-- `board_params_file` specifies which set of parameters are used to procedurally generate new levels, and therefore which task the agent is trained on.
-- `environment_params` sets any parameters that should be applied to `SafeLifeEnv` instance(s).
-- `test_environments` specifies the benchmark levels to test on. It makes sense to have these (roughly) match the training environment.
+- `game_iterator` is a generator of new `SafeLifeGame` instances. This can be replaced to specify a different training task or e.g. a level curriculum.
+- `environment_factory()` builds new `SafeLifeEnv` instances. Each instance is called with `self.game_iterator`.
+- `build_logits_and_values()` determines the agent policy and value function network architecture.
 
 For all other parameters, see the code and the documentation therein.
 
 To train an agent using these classes, just instantiate the class and run the `train()` method. Note that only one instance should be created per process.
 
 ### Preliminary results
+
+TK: Update these
 
 The initial agents were trained with no notion of side effects, so they end up being quite unsafe. Nonetheless, they do manage to occasionally complete a level without messing everything up. These are examples of (accidentally) safe and unsafe behaviors.
 

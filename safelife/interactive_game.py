@@ -376,8 +376,15 @@ class GameLoop(object):
         state = self.state
         game = state.game  # noqa, just tee up local variables for the shell
         state.last_command = ""
-        from IPython import embed; embed()  # noqa
         self.set_needs_display()
+        try:
+            from IPython import embed
+        except ImportError:
+            print("Could not import IPython.")
+            print("Hit any key to return to the game.")
+            getch()
+        else:
+            embed()
 
     intro_text = """
     ##########################################################
