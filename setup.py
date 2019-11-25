@@ -22,7 +22,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name='safelife',
-    version='1.0rc1',
+    version='1.0rc2',
     author="Carroll L. Wainwright",
     author_email="carroll@partnershiponai.org",
     description="Safety benchmarks for reinforcement learning",

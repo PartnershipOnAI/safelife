@@ -211,6 +211,7 @@ class SafeLifeEnv(gym.Env):
 
 for name in [
     "append-still", "prune-still",
+    "append-still-easy", "prune-still-easy",
     "append-spawn", "prune-spawn",
     "navigation", "challenge"
 ]:

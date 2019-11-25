@@ -52,7 +52,7 @@ class SafeLifePPO(ppo.PPO):
     """
 
     # Training batch params
-    game_iterator = safelife_loader('random/prune-still-easy.yaml')
+    level_iterator = safelife_loader('random/prune-still-easy.yaml')
     video_name = "episode-{episode_num}-{step_num}"
     num_env = 16
     steps_per_env = 20
@@ -125,7 +125,7 @@ class SafeLifePPO(ppo.PPO):
             else:
                 self.episode_log = None
 
-        env = SafeLifeEnv(self.game_iterator, view_shape=(33,33))
+        env = SafeLifeEnv(self.level_iterator, view_shape=(33,33))
         env = env_wrappers.MovementBonusWrapper(env)
         env = env_wrappers.SimpleSideEffectPenalty(
             env, penalty_coef=self.impact_penalty,

@@ -1,35 +1,20 @@
 # Random levels
 
-The "levels" in this folder aren't levels per se; instead they're parameters used to generate new random levels. These can be used to train agents in a several different scenarios. To run them from the command line, use
+The "levels" in this folder aren't levels per se; instead they're parameters used to generate new random levels. These can be used to train agents in many different scenarios. To run them from the command line, use
 
     python3 -m safelife play random/append-still  # or
     python3 -m safelife print random/append-still
 
-There are a lot of different parameters that one can change, but here we focus on changing just a few to get qualitatively different and interesting behavior.
-By focusing on a small group of parameter sets we hope to establish a more consistent training baseline.
+Each level is split into several different regions that are separated by a 2-cell buffer zone. Each region has its own procedural generation parameters, and a single level can contain multiple different region types. Some regions will require that the agent build new patterns (`build` and `append`) while others will require the agent to remove unwanted red patterns (`remove` and `prune`). Each region is made of multiple *layers*, so it's possible to have multiple objectives in a single region. Importantly, many regions contain both goals and neutral green or yellow patterns so that one can test an agent's side effects.
 
-~need to rewrite this!!!~
+There are a few important ingredients when building each region layer:
+- The first step in region generation is (often) the addition of a *fence* around its perimeter. A fence will prevent patterns on the inside from escaping to the outside, assuming that the buffer zone is empty.
+- Layers can be saved as goals or applied to the main board. It's usually best to make goal layers last so that the goals are achievable.
+- *Patterns* are the heart of the procedural generation. The pattern generation algorithm can produce still lifes and oscillators, and these can be built off of previous layers. The pattern *temperature* and *min fill* ratio roughly control how complex the resulting pattern will be.
+- *Spawners* can be randomly placed around a region. These will generate stochastic patterns.
+- A *tree lattice* can be added to the region which will tend to make any disruption quickly and chaotically propagate across the region (and beyond if there's no fence). Regions with tree lattices are much more difficult to control.
 
-## Level description
+Almost all of the parameter values can be randomized. For example, if you want a particular region to have full fence coverage 50% of the time and no fences at all the other 50% of time, you could write `fences: {"choices": [0, 1]}`.
 
-Every level consists of a 25×25 grid which is split into several regions. Each region has a region type. We focus on three region types here.
-
-- **append**: neutral green life cells and blue goals. A safe agent will create new cells at the blue goals without disrupting the green cells.
-- **prune**: neutral green life cells and unwanted red cells. A safe agent will remove the red cells without disrupting the green ones.
-- **spawner**: a random pattern of blue cells and a stochastic "spawner" cell. Agents generally won't get points from spawner regions, although the region may disrupt nearby patterns or act as a barrier. Highly effective agents may learn to coax the blue spawner cells out of the region and into blue goals, earning the agent extra points. The random nature of the spawner region can make certain impact measure more difficult to calculate.
-
-The *append* and *prune* regions are each generated with still-life or oscillating patterns of medium complexity. Oscillators are generally much more difficult to create.
-
-We introduce 9 baseline sets of parameters, varying only the types of regions and the level of dynamics. Task types can be *append*, *prune*, or *mixed*. Dynamics can either be *still*, *oscillating*, or *stochastic*.
-
-
-## Varying level generation
-
-There are many more parameters that can be changed than just those described above. Some of the more interesting parameters include:
-
-- `min_fill` and `temperature` control the complexity of the generated patterns;
-- `cell_penalties` can be used to decrease (or increase) the likelihood of walls and trees being included in the patterns;
-- `spawner_colors`: a red spawner introduces an incentive to constrain and fence in a stochastic region;
-- `region_types`: other region types include "fountain" (the agent must move cells from other regions to the appropriately colored fountains) and "grow" (like append, but new cells should be "grown" from their neighbors);
-- `fence_frac` controls the degree to which each fence is "fenced-off" from the others, making individual regions safe from each other;
-- `crate_frac` controls the fraction of walls that are movable, potentially allowing the agent to make more interesting patterns.
+The default levels (those that you get when running `safelife play`) are aptly given by the parameters in `_defaults.yaml`. All other files inherit from this: parameters that are left blank in other files will inherit the default values, and files can reference named default regions.
+There are many region types—more than are used in the benchmarks—with lots of interesting characteristics. The `_defaults.yaml` contains rough descriptions of what each one is, and all of them can be encountered in default play. There are surely more interesting region types that are yet-to-be discovered, so you're encouraged to play around with the level generation to see what you can create.

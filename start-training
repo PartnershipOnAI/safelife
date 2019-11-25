@@ -12,6 +12,13 @@ import shutil
 import logging
 import logging.config
 
+env_types = [
+    'append-still',
+    'append-spawn',
+    'prune-still',
+    'prune-spawn',
+    'navigate',
+]
 
 parser = argparse.ArgumentParser(description="""
     Run agent training using proximal policy optimization.
@@ -33,8 +40,8 @@ parser.add_argument('--shutdown', action="store_true",
 parser.add_argument('--port', default=6006, type=int,
     help="Port on which to run tensorboard.")
 parser.add_argument('--impact-penalty', default=0.0, type=float)
+parser.add_argument('--env-type', choices=env_types)
 args = parser.parse_args()
-
 
 # Setup the directories
 
@@ -77,6 +84,17 @@ if os.path.exists(data_dir) and args.data_dir is not None:
 os.makedirs(data_dir, exist_ok=True)
 logfile = os.path.join(data_dir, 'training.log')
 
+# Get the environment type from the job name if not otherwise supplied
+if args.env_type:
+    env_type = args.env_type
+else:
+    for env_type in env_types:
+        if env_type in job_name:
+            break
+    else:
+        env_type = 'prune-still'
+
+assert env_type in env_types
 
 # Setup logging
 
@@ -176,55 +194,48 @@ try:
         subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
         os.makedirs(subdir, exist_ok=True)
 
-        if 'append-still' in job_name:
+        if env_type == 'append-still':
             model = SafeLifePPO(
                 logdir=subdir,
                 impact_penalty=linear_schedule([1.0e6, 2.0e6], [0, penalty]),
                 min_performance=linear_schedule([1.0e6, 2.0e6], [0.01, 0.3]),
-                game_iterator=safelife_loader('random/append-still-easy.yaml'),
+                level_iterator=safelife_loader('random/append-still-easy.yaml'),
             )
             model.train(10e6)
-        elif 'prune-still' in job_name:
+        elif env_type == 'prune-still':
             model = SafeLifePPO(
                 logdir=subdir,
                 impact_penalty=linear_schedule([0.5e6, 1.5e6], [0, penalty]),
                 min_performance=linear_schedule([0.5e6, 1.5e6], [0.01, 0.3]),
-                game_iterator=safelife_loader('random/prune-still-easy.yaml'),
+                level_iterator=safelife_loader('random/prune-still-easy.yaml'),
             )
             model.train(6e6)
-        elif 'append-spawn' in job_name:
+        elif env_type == 'append-spawn':
             model = SafeLifePPO(
                 logdir=subdir,
                 impact_penalty=linear_schedule([2.0e6, 3.5e6], [0, penalty]),
                 min_performance=linear_schedule([1.0e6, 2.0e6], [0.01, 0.3]),
-                game_iterator=spawn_loader('append'),
+                level_iterator=spawn_loader('append'),
             )
             model.train(10e6)
-        elif 'prune-spawn' in job_name:
+        elif env_type == 'prune-spawn':
             model = SafeLifePPO(
                 logdir=subdir,
                 impact_penalty=linear_schedule([1.5e6, 2.5e6], [0, penalty]),
                 min_performance=linear_schedule([0.5e6, 1.5e6], [0.01, 0.3]),
-                game_iterator=spawn_loader('prune'),
+                level_iterator=spawn_loader('prune'),
                 num_env=4,
             )
             model.train(6e6)
-        elif 'navigate' in job_name:
+        elif env_type == 'navigate':
             model = SafeLifePPO(
                 logdir=subdir,
                 impact_penalty=linear_schedule([1.0e6, 2.0e6], [0, penalty]),
-                game_iterator=safelife_loader('random/navigation.yaml'),
+                level_iterator=safelife_loader('random/navigation.yaml'),
             )
             model.train(6e6)
         else:
-            # default to prune-still
-            model = SafeLifePPO(
-                logdir=subdir,
-                impact_penalty=linear_schedule([0.5e6, 1.5e6], [0, penalty]),
-                min_performance=linear_schedule([0.5e6, 1.5e6], [0.01, 0.3]),
-                game_iterator=safelife_loader('random/prune-still-easy.yaml'),
-            )
-            model.train(6e6)
+            print("Unexpected environment type '{}'".format(env_type))
 
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
