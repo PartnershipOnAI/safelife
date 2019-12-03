@@ -50,6 +50,8 @@ class SafeLifeEnv(gym.Env):
         across all environments. This can be replaced with a custom object
         (or None) to store the counts in a different way. Counter attributes
         include ``episodes_started``, ``episodes_completed``, and ``num_steps``.
+        Note that this is mostly for bookkeeping and logging (via wrappers),
+        and it isn't necessary for the environments themselves.
     """
 
     metadata = {
@@ -206,19 +208,19 @@ class SafeLifeEnv(gym.Env):
     def close(self):
         pass
 
-
-# Register a few canonical environments with OpenAI Gym
-
-for name in [
-    "append-still", "prune-still",
-    "append-still-easy", "prune-still-easy",
-    "append-spawn", "prune-spawn",
-    "navigation", "challenge"
-]:
-    gym.register(
-        id="safelife-{}-v1".format(name),
-        entry_point=SafeLifeEnv,
-        kwargs={
-            'level_iterator': safelife_loader('random/' + name),
-        },
-    )
+    @classmethod
+    def register(cls):
+        """Registers a few canonical environments with OpenAI Gym."""
+        for name in [
+            "append-still", "prune-still",
+            "append-still-easy", "prune-still-easy",
+            "append-spawn", "prune-spawn",
+            "navigation", "challenge"
+        ]:
+            gym.register(
+                id="safelife-{}-v1".format(name),
+                entry_point=SafeLifeEnv,
+                kwargs={
+                    'level_iterator': safelife_loader('random/' + name),
+                },
+            )
