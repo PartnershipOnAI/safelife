@@ -17,12 +17,12 @@ data_files = ['*.png']
 data_files += glob.glob(os.path.join(levels_path, '**', '*.npz'), recursive=True)
 data_files += glob.glob(os.path.join(levels_path, '**', '*.yaml'), recursive=True)
 
-with open("README.md", "r") as fh:
+with open(os.path.join(base_dir, "README.md"), "rt", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name='safelife',
-    version='1.0rc2',
+    version='1.0',
     author="Carroll L. Wainwright",
     author_email="carroll@partnershiponai.org",
     description="Safety benchmarks for reinforcement learning",

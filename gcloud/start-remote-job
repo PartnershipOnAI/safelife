@@ -49,6 +49,7 @@ with open('tmp_files_list', 'w') as f:
         '\n'.join(glob.glob('*.md')) + '\n' +
         '\n'.join(glob.glob('*.py')) + '\n'
         'setup.cfg\n'
+        'MANIFEST.in\n'
         'start-training\n'
         'training/\n'
         'safelife/\n'

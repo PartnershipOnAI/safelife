@@ -1,0 +1,5 @@
+# Needed in order to get all of the source files included in source builds,
+# i.e. `python setup.py sdist`
+
+include safelife/speedups_src/*.c
+include safelife/speedups_src/*.h
