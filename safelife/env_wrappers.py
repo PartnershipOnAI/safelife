@@ -303,6 +303,19 @@ class ContinuingEnv(Wrapper):
         return obs, reward, done, info
 
 
+class ExtraExitBonus(Wrapper):
+    bonus = 0.5
+
+    def reset(self):
+        return self.env.reset()
+
+    def step(self, action):
+        obs, reward, done, info = self.env.step(action)
+        if done and not info['times_up']:
+            reward += self.scheduled(self.bonus) * self.episode_reward
+        return obs, reward, done, info
+
+
 class SimpleSideEffectPenalty(BaseWrapper):
     """
     Penalize departures from starting state.

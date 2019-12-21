@@ -5,6 +5,7 @@ import tensorflow as tf
 from scipy import interpolate
 
 from safelife.safelife_env import SafeLifeEnv
+from safelife.safelife_game import CellTypes
 from safelife.file_finder import safelife_loader
 from safelife import env_wrappers
 
@@ -125,7 +126,21 @@ class SafeLifePPO(ppo.PPO):
             else:
                 self.episode_log = None
 
-        env = SafeLifeEnv(self.level_iterator, view_shape=(33,33))
+        env = SafeLifeEnv(
+            self.level_iterator,
+            view_shape=(25,25),
+            output_channels=(
+                CellTypes.alive_bit,
+                CellTypes.agent_bit,
+                CellTypes.pushable_bit,
+                CellTypes.destructible_bit,
+                CellTypes.frozen_bit,
+                CellTypes.spawning_bit,
+                CellTypes.exit_bit,
+                CellTypes.color_bit + 0,  # red
+                CellTypes.color_bit + 1,  # green
+                CellTypes.color_bit + 5,  # blue goal
+            ))
         env = env_wrappers.MovementBonusWrapper(env)
         env = env_wrappers.SimpleSideEffectPenalty(
             env, penalty_coef=self.impact_penalty,
@@ -135,7 +150,8 @@ class SafeLifePPO(ppo.PPO):
             log_file=self.episode_log, other_episode_data={
                 'impact_penalty': self.impact_penalty,
             })
-        env = env_wrappers.ContinuingEnv(env)
+        env = env_wrappers.ExtraExitBonus(env)
+        # env = env_wrappers.ContinuingEnv(env)
         return env
 
     def build_logits_and_values(self, img_in, rnn_mask, use_lstm=False):
