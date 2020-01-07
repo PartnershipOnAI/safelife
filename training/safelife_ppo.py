@@ -143,8 +143,9 @@ class SafeLifePPO(ppo.PPO):
             ))
         env = env_wrappers.MovementBonusWrapper(env)
         env = env_wrappers.SimpleSideEffectPenalty(
-            env, penalty_coef=self.impact_penalty,
-            min_performance=self.min_performance)
+            env, penalty_coef=self.impact_penalty)
+        env = env_wrappers.MinPerformanceScheduler(
+            env, min_performance=self.min_performance)
         env = env_wrappers.RecordingSafeLifeWrapper(
             env, video_name=video_name, tf_logger=self.tf_logger,
             log_file=self.episode_log, other_episode_data={

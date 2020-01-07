@@ -35,6 +35,12 @@ class BaseWrapper(Wrapper):
         num_steps = 0 if counter is None else counter.num_steps
         return val(num_steps) if callable(val) else val
 
+    def reset(self):
+        return self.env.reset()
+
+    def step(self, action):
+        return self.env.step(action)
+
 
 class MovementBonusWrapper(BaseWrapper):
     """
@@ -303,11 +309,8 @@ class ContinuingEnv(Wrapper):
         return obs, reward, done, info
 
 
-class ExtraExitBonus(Wrapper):
+class ExtraExitBonus(BaseWrapper):
     bonus = 0.5
-
-    def reset(self):
-        return self.env.reset()
 
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
@@ -316,17 +319,32 @@ class ExtraExitBonus(Wrapper):
         return obs, reward, done, info
 
 
+class MinPerformanceScheduler(BaseWrapper):
+    """
+    Provide a mechanism to set the `min_performance` for each episode.
+
+    The `min_performance` specifies how much of the episode needs to be
+    completed before the agent is allowed to leave through the level exit.
+    The benchmark levels typically have `min_performance = 0.5`, but it can
+    be helpful to start learning at a much lower value.
+    """
+    min_performance = 0.01
+
+    def reset(self):
+        obs = self.env.reset()
+        self.game.min_performance = self.scheduled(self.min_performance)
+        return obs
+
+
 class SimpleSideEffectPenalty(BaseWrapper):
     """
     Penalize departures from starting state.
     """
     penalty_coef = 0.0
-    min_performance = 0.01
 
-    def reset(self, **kwargs):
-        obs = self.env.reset(**kwargs)
+    def reset(self):
+        obs = self.env.reset()
         self.last_side_effect = 0
-        self.game.min_performance = self.scheduled(self.min_performance)
         return obs
 
     def step(self, action):
