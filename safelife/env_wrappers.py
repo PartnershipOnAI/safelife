@@ -156,7 +156,7 @@ class RecordingSafeLifeWrapper(BaseWrapper):
     tf_logger : tensorflow.summary.FileWriter instance
         If set, all values in the episode info dictionary will be written
         to tensorboard at the end of the episode.
-    log_file : str
+    log_file : file-like object
         If set, all end of episode stats get written to the specified file.
         Data is written in YAML format.
     record_side_effects : bool
