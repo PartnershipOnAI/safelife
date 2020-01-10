@@ -141,7 +141,7 @@ class SafeLifePPO(ppo.PPO):
                 CellTypes.color_bit + 1,  # green
                 CellTypes.color_bit + 5,  # blue goal
             ))
-        env = env_wrappers.MovementBonusWrapper(env)
+        env = env_wrappers.MovementBonusWrapper(env, as_penalty=True)
         env = env_wrappers.SimpleSideEffectPenalty(
             env, penalty_coef=self.impact_penalty)
         env = env_wrappers.MinPerformanceScheduler(

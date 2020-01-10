@@ -65,10 +65,17 @@ class MovementBonusWrapper(BaseWrapper):
         Exponent applied to the movement bonus. Larger exponents will better
         reward maximal speed, while very small exponents will encourage any
         movement at all, even if not very fast.
+    as_penalty : bool
+        If True, the incentive is applied as a penalty for standing still
+        rather than a bonus for movement. This shifts all rewards by
+        a constant amount. This can be useful for episodic environments so
+        that the agent does not receive a bonus for dallying and not reaching
+        the level exit.
     """
     movement_bonus = 0.1
     movement_bonus_power = 0.01
     movement_bonus_period = 4
+    as_penalty = False
 
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
@@ -89,6 +96,8 @@ class MovementBonusWrapper(BaseWrapper):
             dist = n
         speed = dist / n
         reward += self.movement_bonus * speed**self.movement_bonus_power
+        if self.as_penalty:
+            reward -= self.movement_bonus
         self._prior_positions.append(self.game.agent_loc)
 
         return obs, reward, done, info
@@ -235,6 +244,7 @@ class RecordingSafeLifeWrapper(BaseWrapper):
             for key, val in tf_data.items():
                 summary.value.add(tag='episode/'+key, simple_value=val)
             self.tf_logger.add_summary(summary, num_steps)
+            self.tf_logger.flush()
 
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
