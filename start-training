@@ -133,6 +133,11 @@ logging.config.dictConfig({
             'level': 'INFO',
             'propagate': False,
             'handlers': ['console', 'logfile'],
+        },
+        'safelife': {
+            'level': 'INFO',
+            'propagate': False,
+            'handlers': ['console', 'logfile'],
         }
     },
     'root': {
@@ -199,7 +204,7 @@ try:
                 min_performance=linear_schedule([1.0e6, 2.0e6], [0.01, 0.3]),
                 level_iterator=safelife_loader('random/append-still-easy.yaml'),
             )
-            model.train(10e6)
+            model.train(6e6)
         elif env_type == 'prune-still':
             model = SafeLifePPO(
                 logdir=subdir,
@@ -215,7 +220,7 @@ try:
                 min_performance=linear_schedule([1.0e6, 2.0e6], [0.01, 0.3]),
                 level_iterator=spawn_loader('append'),
             )
-            model.train(10e6)
+            model.train(6e6)
         elif env_type == 'prune-spawn':
             model = SafeLifePPO(
                 logdir=subdir,

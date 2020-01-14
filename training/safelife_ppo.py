@@ -70,9 +70,7 @@ class SafeLifePPO(ppo.PPO):
     # Training network params
     #   Note that we can use multiple discount factors gamma to learn multiple
     #   value functions associated with rewards over different time frames.
-    gamma = np.array([0.97], dtype=np.float32)
-    policy_discount_weights = np.array([1.0], dtype=np.float32)
-    value_discount_weights = np.array([1.0], dtype=np.float32)
+    gamma = 0.97
     lmda = 0.9
     learning_rate = 3e-4
     entropy_reg = 5e-2
@@ -213,7 +211,7 @@ class SafeLifePPO(ppo.PPO):
             y, units=self.envs[0].action_space.n,
             kernel_initializer=ortho_init(0.01))
         values = tf.layers.dense(
-            y, units=len(self.gamma),
+            y, units=1,
             kernel_initializer=ortho_init(1.0))
 
-        return logits, values
+        return logits, values[...,0]

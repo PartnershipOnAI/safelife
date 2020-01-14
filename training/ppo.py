@@ -73,21 +73,12 @@ class PPO(object):
 
     Attributes
     ----------
-    gamma : ndarray
-        Set of discount factors used to calculate the discounted rewards.
-    lmda : float or ndarray
-        Discount factor for generalized advantage estimator. If an array,
-        it should be the same shape as gamma.
-    policy_discount_weights : ndarray
-        Relative importance of the advantages at the different discount
-        factors in the policy loss function. Should sum to one.
-    value_discount_weights : ndarray
-        Relative importance of the advantages at the different discount
-        factors in the value loss function. Should sum to one.
+    gamma : float
+        Discount factor for rewards.
+    lmda : float
+        Discount factor for generalized advantage estimator.
     vf_coef : float
         Overall coefficient of the value loss in the total loss function.
-        Would be redundant with `value_discount_weights` if we didn't
-        force that to sum to one.
     learning_rate : float
     entropy_reg : float
     entropy_clip : float
@@ -105,18 +96,11 @@ class PPO(object):
     reward_clip : float
         Clip absolute rewards to be no larger than this.
         If zero, no clipping occurs.
-    value_grad_rescaling : str
-        One of [False, 'smooth', 'per_batch', 'per_state'].
-        Sets the way in which value function is rescaled with entropy.
-        This makes sure that the total gradient isn't dominated by the
-        value function when entropy drops very low.
     policy_rectifier : str
         One of ['relu', 'elu'].
     """
-    gamma = np.array([0.99], dtype=np.float32)
+    gamma = 0.99
     lmda = 0.95  # generalized advantage estimation parameter
-    policy_discount_weights = np.array([1.0], dtype=np.float32)
-    value_discount_weights = np.array([1.0], dtype=np.float32)
 
     learning_rate = 1e-4
     entropy_reg = 0.01
@@ -127,7 +111,6 @@ class PPO(object):
     rescale_policy_eps = False
     min_eps_rescale = 1e-3  # Only relevant if rescale_policy_eps = True
     reward_clip = 0.0
-    value_grad_rescaling = 'smooth'  # one of [False, 'smooth', 'per_batch', 'per_state']
     policy_rectifier = 'relu'  # or 'elu' or ...more to come
 
     num_env = 16
@@ -217,18 +200,15 @@ class PPO(object):
     def build_graph(self):
         op = self.op
         input_space = self.envs[0].observation_space
-        n_gamma = len(self.gamma)
         op.states = tf.placeholder(input_space.dtype, [None, None] + list(input_space.shape), name="state")
         op.actions = tf.placeholder(tf.int32, [None, None], name="actions")
         op.old_policy = tf.placeholder(tf.float32, [None, None], name="old_policy")
-        op.returns = tf.placeholder(tf.float32, [None, None, n_gamma], name="returns")
-        op.advantages = tf.placeholder(tf.float32, [None, None, n_gamma], name="advantages")
-        op.old_value = tf.placeholder(tf.float32, [None, None, n_gamma], name="old_value")
+        op.returns = tf.placeholder(tf.float32, [None, None], name="returns")
+        op.advantages = tf.placeholder(tf.float32, [None, None], name="advantages")
+        op.old_value = tf.placeholder(tf.float32, [None, None], name="old_value")
         op.learning_rate = tf.constant(self.learning_rate, name="learning_rate")
         op.eps_clip = tf.constant(self.eps_clip, name="eps_clip")
         op.rnn_mask = tf.fill(tf.shape(op.states)[:2], True, name="rnn_mask")
-        op.policy_discount_weights = tf.constant(self.policy_discount_weights, name="policy_discount_weights")
-        op.value_discount_weights = tf.constant(self.value_discount_weights, name="value_discount_weights")
         op.num_steps = tf.get_variable('num_steps', initializer=tf.constant(0))
         op.num_episodes = tf.get_variable('num_episodes', initializer=tf.constant(0))
 
@@ -241,7 +221,7 @@ class PPO(object):
         op.hot_actions = tf.one_hot(op.actions, num_actions, dtype=tf.float32)
         with tf.name_scope("policy_loss"):
             a_policy = tf.reduce_sum(op.policy * op.hot_actions, axis=-1)
-            prob_diff = tf.sign(op.advantages) * (1 - a_policy / op.old_policy)[..., None]
+            prob_diff = tf.sign(op.advantages) * (1 - a_policy / op.old_policy)
             if self.rescale_policy_eps:
                 # Scaling the clipping by 1 - old_policy ensures that
                 # the clipping is active even when the new policy is 1.
@@ -254,46 +234,21 @@ class PPO(object):
                 'elu': eps_elu,
             }[self.policy_rectifier]
             policy_loss = tf.abs(op.advantages) * rectifier(prob_diff, eps)
-            policy_loss = tf.reduce_mean(policy_loss * op.policy_discount_weights)
+            policy_loss = tf.reduce_mean(policy_loss)
         with tf.name_scope("entropy"):
             op.entropy = tf.reduce_sum(
                 -op.policy * tf.log(op.policy + 1e-12), axis=-1)
             mean_entropy = tf.reduce_mean(op.entropy)
-            pseudo_entropy = tf.stop_gradient(
-                tf.reduce_sum(op.policy*(1-op.policy), axis=-1))
-            avg_pseudo_entropy = tf.reduce_mean(pseudo_entropy)
-            smoothed_pseudo_entropy = tf.get_variable(
-                'smoothed_pseudo_entropy', initializer=tf.constant(1.0))
-            # The first term in the entropy loss encourages higher entropy
-            # in the policy, encouraging exploration.
-            # Note that this uses the pseudo-entropy rather than the
-            # conventional entropy. This is because the derivative of the
-            # normal entropy diverges at zero.
-            entropy_loss = -self.entropy_reg * tf.minimum(avg_pseudo_entropy, self.entropy_clip)
-            # The second term in the entropy loss is just used to adjust the
-            # smoothed pseudo entropy.
-            entropy_loss += 0.5 * tf.square(avg_pseudo_entropy - smoothed_pseudo_entropy)
+            # The entropy loss encourages higher entropy in the policy, which
+            # in turn encourages more exploration.
+            entropy_loss = tf.minimum(mean_entropy, self.entropy_clip)
+            entropy_loss *= -self.entropy_reg
         with tf.name_scope("value_loss"):
             v_clip = op.old_value + tf.clip_by_value(
                 op.v - op.old_value, -op.eps_clip, op.eps_clip)
             value_loss = tf.maximum(
                 tf.square(op.v - op.returns), tf.square(v_clip - op.returns))
-            # Rescale the value function with entropy.
-            # The gradient of the policy function becomes very small when
-            # the entropy is very low, essentially because it means the softmax
-            # of the policy logits is being saturated. By rescaling the value
-            # loss we attempt to make it have the same relative importance
-            # as the policy loss. Not clear how necessary this is.
-            if self.value_grad_rescaling == 'per_state':
-                value_loss *= pseudo_entropy
-            elif self.value_grad_rescaling == 'per_batch':
-                value_loss *= avg_pseudo_entropy
-            elif self.value_grad_rescaling == 'smooth':
-                value_loss *= tf.stop_gradient(smoothed_pseudo_entropy)
-            elif self.value_grad_rescaling:
-                raise ValueError("Unrecognized value reweighting type: '%s'" % (
-                    self.value_grad_rescaling,))
-            value_loss = 0.5 * tf.reduce_mean(value_loss * op.value_discount_weights)
+            value_loss = 0.5 * tf.reduce_mean(value_loss)
 
         with tf.name_scope("trainer"):
             total_loss = policy_loss + value_loss * self.vf_coef + entropy_loss
@@ -305,15 +260,13 @@ class PPO(object):
             op.train = optimizer.apply_gradients(zip(grads2, variables))
 
         with tf.name_scope("rollouts"):
-            for i in range(n_gamma):
-                k = str(i+1)
-                tf.summary.scalar("returns_"+k, tf.reduce_mean(op.returns[...,i]))
-                tf.summary.scalar("advantages_"+k, tf.reduce_mean(op.advantages[...,i]))
-                tf.summary.scalar("values_"+k, tf.reduce_mean(op.v[...,i]))
-                if self.record_histograms:
-                    tf.summary.histogram("returns_"+k, op.returns[...,i])
-                    tf.summary.histogram("advantages_"+k, op.advantages[...,i])
-                    tf.summary.histogram("values_"+k, op.v[...,i])
+            tf.summary.scalar("returns", tf.reduce_mean(op.returns))
+            tf.summary.scalar("advantages", tf.reduce_mean(op.advantages))
+            tf.summary.scalar("values", tf.reduce_mean(op.v))
+            if self.record_histograms:
+                tf.summary.histogram("returns", op.returns)
+                tf.summary.histogram("advantages", op.advantages)
+                tf.summary.histogram("values", op.v)
         tf.summary.scalar("entropy", mean_entropy)
         if self.record_histograms:
             tf.summary.histogram("entropy", op.entropy)
@@ -333,9 +286,7 @@ class PPO(object):
         """
         Operations for creating policy logits and value functions.
 
-        There should be an equal number of logits and possible actions,
-        and the number of value functions should match the number of distinct
-        discount factors (gamma).
+        There should be an equal number of logits and possible actions.
 
         If the policy function uses an RNN, it should store the input and
         output cell states in self.op.rnn_states_in and rnn_states_out.
@@ -487,23 +438,21 @@ class PPO(object):
         if self.reward_clip > 0:
             rewards = np.clip(rewards, -self.reward_clip, self.reward_clip)
 
-        reward_mask = ~end_episode[..., np.newaxis]
+        reward_mask = ~end_episode
         rnn_mask = np.roll(~end_episode, 1, axis=0)
         rnn_mask[0] = True
-        rewards = rewards[..., np.newaxis]
 
         gamma = self.gamma
         lmda = self.lmda * gamma
-        n_gamma = len(gamma)
         advantages = rewards + gamma * reward_mask * values[1:] - values[:-1]
-        returns = np.broadcast_to(rewards, rewards.shape[:-1] + (n_gamma,)).copy()
+        returns = rewards.copy()
         returns[-1] += reward_mask[-1] * gamma * values[-1]
         for i in range(steps_per_env - 2, -1, -1):
             returns[i] += gamma * reward_mask[i] * returns[i+1]
             advantages[i] += lmda * reward_mask[i] * advantages[i+1]
 
         return (
-            states[:-1], actions, action_prob, rewards[...,0], returns, advantages,
+            states[:-1], actions, action_prob, rewards, returns, advantages,
             values[:-1], rnn_mask, rnn_states
         )
 
