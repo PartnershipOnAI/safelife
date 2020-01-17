@@ -78,7 +78,7 @@ class SafeLifePPO(ppo.PPO):
     max_gradient_norm = 1.0
     eps_clip = 0.1
     reward_clip = 30.0
-    policy_rectifier = 'elu'
+    policy_rectifier = 'relu'
     scale_prob_clipping = True
 
     # --------
