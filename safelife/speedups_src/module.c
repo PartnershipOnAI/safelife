@@ -246,8 +246,16 @@ static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {
 static PyObject *seed_py(PyObject *self, PyObject *args) {
     unsigned int i;
     if (!PyArg_ParseTuple(args, "I", &i)) return NULL;
-    int error = random_seed(i);
-    if (error) return NULL;
+    if(!random_seed(i)) return NULL;
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+
+static PyObject *set_bit_generator_py(PyObject *self, PyObject *args) {
+    PyObject *bit_gen_obj;
+    if (!PyArg_ParseTuple(args, "O", &bit_gen_obj)) return NULL;
+    if (!set_bit_generator(bit_gen_obj)) return NULL;
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -268,7 +276,14 @@ static PyMethodDef methods[] = {
     },
     {
         "seed", (PyCFunction)seed_py, METH_VARARGS,
-        "Seed the random number generator."
+        "Seed the random number generator. (deprecated)"
+    },
+    {
+        "set_bit_generator", (PyCFunction)set_bit_generator_py, METH_VARARGS,
+        "Sets the bit generator for random functions.\n\n"
+        "Parameters\n"
+        "----------\n"
+        "bit_generator : numpy.random.BitGenerator\n"
     },
     {NULL, NULL, 0, NULL}  /* Sentinel */
 };

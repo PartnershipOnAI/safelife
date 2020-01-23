@@ -1,15 +1,15 @@
 import os
 import glob
-import random
 import queue
-import itertools
-from multiprocessing import Pool
+import warnings
+from multiprocessing.pool import Pool, ApplyResult
 
 import yaml
 import numpy as np
 
 from .safelife_game import SafeLifeGame
 from .proc_gen import gen_game
+from .random import set_rng
 
 
 LEVEL_DIRECTORY = os.path.join(os.path.dirname(__file__), 'levels')
@@ -98,52 +98,24 @@ def _load_files(paths):
     return all_data
 
 
-def _load_data(paths, repeat, shuffle):
-    """
-    Generate data to be fed into `_game_from_data`.
-    """
-    file_data = _load_files(paths)
-    if len(file_data) == 0:
-        return
-    if repeat == "auto":
-        repeat = len(file_data) == 1 and file_data[0][1] == "procgen"
-    if isinstance(repeat, bool):
-        loop = itertools.count() if repeat else range(1)
-    else:
-        loop = range(repeat)
-
-    for idx in loop:
-        if shuffle:
-            random.shuffle(file_data)
-        for data in file_data:
-            yield data
-
-
-def _game_from_data(file_name, data_type, data, set_seed=False):
-    if set_seed:
-        from . import speedups
-        seed = 0
-        for i, s in enumerate(os.urandom(4)):
-            seed += s << 8*i
-        np.random.seed(seed)
-        speedups.seed(seed)
+def _game_from_data(file_name, data_type, data, seed=None):
     if data_type == "procgen":
-        named_regions = _default_params['named_regions'].copy()
-        named_regions.update(data.get('named_regions', {}))
-        data2 = _default_params.copy()
-        data2.update(**data)
-        data2['named_regions'] = named_regions
-        game = gen_game(**data2)
+        with set_rng(np.random.default_rng(seed)):
+            named_regions = _default_params['named_regions'].copy()
+            named_regions.update(data.get('named_regions', {}))
+            data2 = _default_params.copy()
+            data2.update(**data)
+            data2['named_regions'] = named_regions
+            game = gen_game(**data2)
     else:
         game = SafeLifeGame.loaddata(data)
     game.file_name = file_name
     return game
 
 
-def safelife_loader(
-        *paths, repeat="auto", shuffle=False, num_workers=1, max_queue=10):
+class SafeLifeLevelIterator(object):
     """
-    Generator function to Load SafeLifeGame instances from the specified paths.
+    Iterator to load SafeLifeGame instances from the specified paths.
 
     Note that the paths can either point to json files (for procedurally
     generated levels) or to npz files (specific files saved to disk).
@@ -158,12 +130,11 @@ def safelife_loader(
         If no paths are supplied, this will generate a random level using
         default level generation parameters.
     repeat : "auto" or bool or int
-        If true, files will be loaded (yielded) repeatedly and forever.
+        If true, new levels will be iterated repeatedly and forever, and each
+        level will be chosen randomly from the set of available files.
         If "auto", it repeats if and only if 'paths' points to a single
         file of procedural generation parameters.
         If an int, it repeats exactly that many times.
-    shuffle : bool
-        If true, the order of the files will be shuffled.
     num_workers : int
         Number of workers used to generate new instances. If this is nonzero,
         then new instances will be generated asynchronously using the
@@ -171,34 +142,95 @@ def safelife_loader(
         needed to retrieve new levels, as there will tend to be a ready queue.
     max_queue : int
         Maximum number of levels to queue up at once. This should be at least
-        as large as the number of workers.
-
-    Returns
-    -------
-    SafeLifeGame generator
-        Note that if repeat is true, infinite items will be returned.
-        Only iterate over as many instances as you need!
+        as large as the number of workers. Not applicable for zero workers.
+    seed : int or numpy.random.SeedSequence or None
+        Seed for the random number generator(s). The same seed ought to produce
+        the same set of sequence of SafeLife levels across different trials.
     """
-    if num_workers < 1 or max_queue < 1:
-        for data in _load_data(paths, repeat, shuffle):
-            yield _game_from_data(*data)
-    else:
-        pool = Pool(processes=num_workers)
-        # Need to reseed the random number in each request if we're using more
-        # than one worker.
-        kwargs = {'set_seed': num_workers > 1}
-        game_queue = queue.deque()
-        for data in _load_data(paths, repeat, shuffle):
-            if (len(game_queue) >= max_queue or
-                    len(game_queue) > 0 and game_queue[0].ready()):
-                next_game = game_queue.popleft().get()
+    def __init__(self, *paths, repeat="auto", num_workers=1, max_queue=10, seed=None):
+        self.file_data = _load_files(paths)
+
+        if repeat == "auto":
+            repeat = len(self.file_data) == 1 and self.file_data[0][1] == "procgen"
+        if isinstance(repeat, bool):
+            repeat = -1 * repeat  # negative means repeat forever
+        assert isinstance(repeat, int)
+        self.repeat = repeat
+
+        self.num_workers = num_workers
+        if num_workers > 0:
+            self.max_queue = max_queue
+            self.pool = Pool(processes=num_workers)
+        else:
+            self.max_queue = 1
+            self.pool = None
+        self.results = queue.deque(maxlen=self.max_queue)
+        self.idx = 0
+        self.seed(seed)
+
+    def seed(self, seed):
+        if not isinstance(seed, np.random.SeedSequence):
+            seed = np.random.SeedSequence(seed)
+        self._seed = seed
+        self.rng = np.random.default_rng(seed)
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if self.num_workers >= 1:
+            # Don't pickle the multiprocessing pool, and wait on all queued results.
+            del state['pool']
+            state['results'] = queue.deque([
+                r.get() if isinstance(r, ApplyResult) else r
+                for r in self.results
+            ], maxlen=self.max_queue)
+
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        if self.num_workers > 0:
+            self.pool = Pool(processes=self.num_workers)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        num_files = len(self.file_data)
+        while len(self.results) < self.max_queue:
+            if self.repeat < 0:
+                data = self.rng.choice(self.file_data)
+            elif self.idx >= num_files * self.repeat:
+                break
             else:
-                next_game = None
-            game_queue.append(pool.apply_async(_game_from_data, data, kwargs))
-            if next_game is not None:
-                yield next_game
-        for result in game_queue:
-            yield result.get()
+                data = self.file_data[self.idx % num_files]
+            self.idx += 1
+            kwargs = {'seed': self._seed.spawn(1)[0]}
+            if self.num_workers < 1:
+                result = _game_from_data(*data, **kwargs)
+            else:
+                result = self.pool.apply_async(_game_from_data, data, kwargs)
+            self.results.append(result)
+
+        if not self.results:
+            raise StopIteration
+        result = self.results.popleft()
+        if isinstance(result, ApplyResult):
+            result = result.get()
+        return result
+
+
+def safelife_loader(*paths, **kwargs):
+    """
+    Alias for SafeLifeLevelIterator. Deprecated.
+
+    Note that the "shuffle" parameter is no longer used. Level parameters will
+    be shuffled if repeat is True, and otherwise they will be used in order.
+    """
+    warnings.warn(
+        "`safelife_loader` is deprecated. Use `SafeLifeLevelIterator` instead.",
+        DeprecationWarning)
+    kwargs.pop('shuffle', None)
+    return SafeLifeLevelIterator(*paths, **kwargs)
 
 
 # ----------------------------

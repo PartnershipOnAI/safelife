@@ -173,11 +173,11 @@ def spawn_loader(name):
     # When training in spawn environments, we first pre-train in the static
     # environments for a couple million time steps. This just provides more
     # opportunities for rewards so makes the initial training easier.
-    from safelife.file_finder import safelife_loader
+    from safelife.file_finder import SafeLifeLevelIterator
     from safelife.safelife_env import SafeLifeEnv
 
-    loader1 = safelife_loader('random/{}-still-easy'.format(name))
-    loader2 = safelife_loader('random/{}-spawn'.format(name))
+    loader1 = SafeLifeLevelIterator('random/{}-still-easy'.format(name))
+    loader2 = SafeLifeLevelIterator('random/{}-spawn'.format(name))
 
     t0 = 1.5e6 if name == 'prune' else 2.0e6
     while True:
@@ -190,7 +190,7 @@ def spawn_loader(name):
 try:
     import tensorflow as tf
     from training.safelife_ppo import SafeLifePPO, linear_schedule
-    from safelife.file_finder import safelife_loader
+    from safelife.file_finder import SafeLifeLevelIterator
 
     for penalty in [args.impact_penalty]:
         tf.reset_default_graph()
@@ -202,7 +202,7 @@ try:
                 logdir=subdir,
                 impact_penalty=linear_schedule([1.0e6, 2.0e6], [0, penalty]),
                 min_performance=linear_schedule([1.0e6, 2.0e6], [0.01, 0.3]),
-                level_iterator=safelife_loader('random/append-still-easy.yaml'),
+                level_iterator=SafeLifeLevelIterator('random/append-still-easy.yaml'),
             )
             model.train(6e6)
         elif env_type == 'prune-still':
@@ -210,7 +210,7 @@ try:
                 logdir=subdir,
                 impact_penalty=linear_schedule([0.5e6, 1.5e6], [0, penalty]),
                 min_performance=linear_schedule([0.5e6, 1.5e6], [0.01, 0.3]),
-                level_iterator=safelife_loader('random/prune-still-easy.yaml'),
+                level_iterator=SafeLifeLevelIterator('random/prune-still-easy.yaml'),
             )
             model.train(6e6)
         elif env_type == 'append-spawn':
@@ -234,7 +234,7 @@ try:
             model = SafeLifePPO(
                 logdir=subdir,
                 impact_penalty=linear_schedule([1.0e6, 2.0e6], [0, penalty]),
-                level_iterator=safelife_loader('random/navigation.yaml'),
+                level_iterator=SafeLifeLevelIterator('random/navigation.yaml'),
             )
             model.train(6e6)
         else:

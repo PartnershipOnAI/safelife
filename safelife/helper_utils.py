@@ -72,17 +72,3 @@ def recenter_view(board, view_size, center, move_to_perimeter=None):
         # and replace the board values.
         board2[jy, jx] = board[iy, ix]
     return board2
-
-
-def coinflip(p, n=None):
-    """
-    Return True with probability `p`, False with probability `1-p`.
-
-    Parameters
-    ----------
-    p : float
-    n : None or int or tuple
-        If not None, return an array of `n` coin flips.
-        Tuples can be used to return a multi-dimensional array.
-    """
-    return np.random.random(n) < p

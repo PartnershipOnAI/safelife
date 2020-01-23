@@ -1,16 +1,14 @@
-import os
 import warnings
 from types import SimpleNamespace
 
 import gym
 from gym import spaces
-from gym.utils import seeding
 import numpy as np
 
-from safelife import speedups
-from safelife.file_finder import safelife_loader
+from safelife.file_finder import SafeLifeLevelIterator
 from .safelife_game import CellTypes
 from .helper_utils import recenter_view
+from .random import set_rng
 
 
 class SafeLifeEnv(gym.Env):
@@ -32,10 +30,13 @@ class SafeLifeEnv(gym.Env):
     ----------
     level_iterator : iterator
         An iterator which produces :class:`safelife_game.SafeLifeGame` instances.
-        For example, :func:`file_finder.safelife_loader` will produce new games
-        from saved game files or procedural generation parameters. This can be
-        replaced with a custom iterator to do more complex level generation,
-        such as implementing a level curriculum.
+        For example, :func:`file_finder.SafeLifeLevelIterator` will produce
+        new games from saved game files or procedural generation parameters.
+        This can be replaced with a custom iterator to do more complex level
+        generation, such as implementing a level curriculum.
+
+        Note that if the level iterator has a `seed` method it will be called
+        with a :class:`numpy.random.SeedSequence` object.
     time_limit : int
         Maximum steps allowed per episode.
     remove_white_goals : bool
@@ -118,9 +119,12 @@ class SafeLifeEnv(gym.Env):
         return self.game
 
     def seed(self, seed=None):
-        self.np_random, seed = seeding.np_random(seed)
-        speedups.seed(seed)
-        return [seed]
+        if not isinstance(seed, np.random.SeedSequence):
+            seed = np.random.SeedSequence(seed)
+        self.rng = np.random.default_rng(seed)
+        if hasattr(self.level_iterator, 'seed'):
+            self.level_iterator.seed(seed.spawn(1)[0])
+        return [seed.entropy]
 
     def get_obs(self, board=None, goals=None, agent_loc=None):
         if board is None:
@@ -158,7 +162,8 @@ class SafeLifeEnv(gym.Env):
         assert self.game is not None, "Game state is not initialized."
         action_name = self.action_names[action]
         reward = self.game.execute_action(action_name)
-        self.game.advance_board()
+        with set_rng(self.rng):
+            self.game.advance_board()
         new_game_value = self.game.current_points()
         reward += new_game_value - self._old_game_value
         self._old_game_value = new_game_value
@@ -221,6 +226,6 @@ class SafeLifeEnv(gym.Env):
                 id="safelife-{}-v1".format(name),
                 entry_point=SafeLifeEnv,
                 kwargs={
-                    'level_iterator': safelife_loader('random/' + name),
+                    'level_iterator': SafeLifeLevelIterator('random/' + name),
                 },
             )

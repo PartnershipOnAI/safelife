@@ -6,7 +6,7 @@ import numpy as np
 from scipy import ndimage, signal
 
 from .safelife_game import CellTypes, SafeLifeGame
-from .helper_utils import coinflip
+from .random import coinflip, get_rng
 from . import speedups
 
 import logging
@@ -66,9 +66,9 @@ def make_partioned_regions(shape, alpha=1.0, max_regions=5, min_regions=2):
         if len(weights) <= min_regions:
             weights[1:] = 1e-10
         weights /= np.sum(weights)
-        k = np.random.choice(len(perimeters), p=weights)
+        k = get_rng().choice(len(perimeters), p=weights)
         plist = list(perimeters[k])
-        i, j = plist[np.random.randint(len(plist))]
+        i, j = plist[get_rng().choice(len(plist))]
         perimeters[0].discard((i, j))
         perimeters[k].discard((i, j))
         if (i, j) in exclusions[k]:
@@ -124,7 +124,7 @@ def build_fence(mask, shuffle=True):
 
     # First pass. Add in fence where needed.
     if shuffle:
-        k = np.random.permutation(len(edge_i))
+        k = get_rng().permutation(len(edge_i))
         edge_i = edge_i[k]
         edge_j = edge_j[k]
     for i, j in zip(edge_i, edge_j):
@@ -137,7 +137,7 @@ def build_fence(mask, shuffle=True):
     # Second pass. Remove fence where unneeded.
     fence_i, fence_j = np.nonzero(fence)
     if shuffle:
-        k = np.random.permutation(len(fence_i))
+        k = get_rng().permutation(len(fence_i))
         fence_i = fence_i[k]
         fence_j = fence_j[k]
     for i, j in zip(fence_i, fence_j):
@@ -170,10 +170,10 @@ def _fix_random_values(val):
             raise ValueError(
                 "The values for different choices must be non-negative and their "
                 "sum must be positive.")
-        return np.random.choice(keys, p=vals / np.sum(vals))
+        return get_rng().choice(keys, p=vals / np.sum(vals))
     if 'uniform' in val:
         low, high = np.array(val['uniform'])
-        return (low + (high - low) * np.random.random()).tolist()
+        return (low + (high - low) * get_rng().random()).tolist()
     else:
         return {key: _fix_random_values(x) for key, x in val.items()}
 
@@ -322,7 +322,7 @@ def populate_region(mask, layer_params):
             new_cells = _mask & coinflip(spawners, board.shape)
             if not new_cells.any() and _mask.any():
                 i, j = np.nonzero(_mask)
-                k = np.random.choice(len(i))  # ensure at least one spawner
+                k = get_rng().choice(len(i))  # ensure at least one spawner
                 new_cells[i[k], j[k]] = True
             gen_mask[new_cells] ^= NEW_CELL_MASK
             board[new_cells] = CellTypes.spawner + color
@@ -537,7 +537,7 @@ def gen_game(
     # Create locations for the player and the exit
     zero_reg = regions == 0
     i, j = np.nonzero(zero_reg)
-    k1 = np.random.choice(len(i))
+    k1 = get_rng().choice(len(i))
     i1, j1 = i[k1], j[k1]
     board[i1, j1] = CellTypes.player
     # Make the exit as far away from the player as possible

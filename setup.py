@@ -33,7 +33,7 @@ setuptools.setup(
     package_data={'safelife': data_files},
     install_requires=[
         "pyemd==0.5.1",
-        "numpy>=1.11.0",
+        "numpy>=1.17.0",
         "scipy>=1.0.0",
         "gym>=0.12.5",
         "imageio>=2.5.0",

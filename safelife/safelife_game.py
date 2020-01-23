@@ -19,8 +19,8 @@ import numpy as np
 from .helper_utils import (
     wrapping_array,
     wrapped_convolution as convolve2d,
-    coinflip,
 )
+from .random import coinflip, get_rng
 from .speedups import advance_board
 
 
@@ -811,9 +811,10 @@ class AsyncGame(GameWithGoals):
             neighborhood = np.array([[1,1,1],[1,0,1],[1,1,1]])
         else:
             raise RuntimeError("async rules must have length 5, 7, or 9")
+        rng = get_rng()
         for _ in range(int(board.size * self.cells_per_update)):
-            x = np.random.randint(w)
-            y = np.random.randint(h)
+            x = rng.choice(w)
+            y = rng.choice(h)
             if board[y, x] & CellTypes.frozen:
                 continue
             neighbors = board.view(wrapping_array)[y-1:y+2, x-1:x+2] * neighborhood

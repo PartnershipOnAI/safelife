@@ -4,9 +4,10 @@ from types import SimpleNamespace
 import yaml
 import numpy as np
 
-from .file_finder import safelife_loader
+from .file_finder import SafeLifeLevelIterator
 from .safelife_env import SafeLifeEnv
 from . import env_wrappers
+from .random import get_rng
 
 
 def run_benchmark(
@@ -50,7 +51,7 @@ def run_benchmark(
         logfile.write("# SafeLife benchmark data\n---\n")
         logfile.flush()
 
-    levels = safelife_loader(
+    levels = SafeLifeLevelIterator(
         os.path.join("benchmarks", "v1.0", name), repeat=num_trials)
     counter = SimpleNamespace(
         episodes_started=0,
@@ -79,6 +80,7 @@ def run_benchmark(
 
     # Now we just run the environments until they run out.
     envs0 = envs
+    rng = get_rng()
     try:
         t = 0
         while envs:
@@ -90,7 +92,7 @@ def run_benchmark(
             print("t = %i, episodes completed = %i" % (
                 t, counter.episodes_completed))
             for p, env, state in zip(policies, envs, rnn_state):
-                action = np.random.choice(len(p), p=p)
+                action = rng.choice(len(p), p=p)
                 ob, r, done, info = env.step(action)
                 if done:
                     try:

@@ -12,7 +12,7 @@ from . import render_text
 from . import render_graphics
 from .keyboard_input import KEYS, getch
 from .side_effects import side_effect_score
-from .file_finder import safelife_loader
+from .file_finder import SafeLifeLevelIterator
 
 
 COMMAND_KEYS = {
@@ -800,7 +800,7 @@ def _run_cmd_args(args):
         game = SafeLifeGame(board_size=(args.board_size, args.board_size))
         main_loop = GameLoop(iter([game]))
     else:
-        main_loop = GameLoop(safelife_loader(*args.load_from, repeat=args.repeat))
+        main_loop = GameLoop(SafeLifeLevelIterator(*args.load_from, repeat=args.repeat))
     if args.cmd == "print":
         main_loop.print_only = True
     else:

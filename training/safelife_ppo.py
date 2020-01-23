@@ -6,7 +6,7 @@ from scipy import interpolate
 
 from safelife.safelife_env import SafeLifeEnv
 from safelife.safelife_game import CellTypes
-from safelife.file_finder import safelife_loader
+from safelife.file_finder import SafeLifeLevelIterator
 from safelife import env_wrappers
 
 from . import ppo
@@ -53,7 +53,7 @@ class SafeLifePPO(ppo.PPO):
     """
 
     # Training batch params
-    level_iterator = safelife_loader('random/prune-still-easy.yaml')
+    level_iterator = SafeLifeLevelIterator('random/prune-still-easy.yaml')
     video_name = "episode-{episode_num}-{step_num}"
     num_env = 16
     steps_per_env = 20
