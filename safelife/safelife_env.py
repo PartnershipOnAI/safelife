@@ -5,7 +5,7 @@ import gym
 from gym import spaces
 import numpy as np
 
-from safelife.file_finder import SafeLifeLevelIterator
+from .file_finder import SafeLifeLevelIterator
 from .safelife_game import CellTypes
 from .helper_utils import recenter_view
 from .random import set_rng
