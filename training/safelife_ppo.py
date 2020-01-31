@@ -145,7 +145,7 @@ class SafeLifePPO(ppo.PPO):
         env = env_wrappers.MinPerformanceScheduler(
             env, min_performance=self.min_performance)
         env = env_wrappers.RecordingSafeLifeWrapper(
-            env, video_name=video_name, tf_logger=self.tf_logger,
+            env, video_name=video_name, summary_writer=self.summary_writer,
             log_file=self.episode_log, other_episode_data={
                 'impact_penalty': self.impact_penalty,
             })

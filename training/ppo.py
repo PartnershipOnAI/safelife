@@ -61,6 +61,15 @@ def eps_elu(x, eps):
     return eps * tf.nn.elu(x / eps)
 
 
+class SummaryWriter(tf.summary.FileWriter):
+    # Temporary shim to make it look like a tensorboardX.SummaryWriter
+
+    def add_scalar(self, tag, val, steps):
+        summary = tf.Summary()
+        summary.value.add(tag=tag, simple_value=val)
+        self.add_summary(summary, steps)
+
+
 class PPO(object):
     """
     Proximal policy optimization.
@@ -123,7 +132,7 @@ class PPO(object):
     record_histograms = False  # histograms take a lot of disk space; disable by default
 
     logdir = None
-    tf_logger = None
+    summary_writer = None
 
     def __init__(self, saver_args={}, **kwargs):
         for key, val in kwargs.items():
@@ -138,13 +147,13 @@ class PPO(object):
         self.num_episodes = 0
         self.session = tf.Session()
         if self.logdir:
-            self.tf_logger = tf.summary.FileWriter(self.logdir, self.session.graph)
+            self.summary_writer = SummaryWriter(self.logdir)
         self.envs = [self.environment_factory() for _ in range(self.num_env)]
         self.build_graph()
         self.session.run(tf.global_variables_initializer())
         self.saver = tf.train.Saver(**saver_args)
         if self.logdir:
-            self.tf_logger.add_graph(self.session.graph)
+            self.summary_writer.add_graph(self.session.graph)
             self.restore_checkpoint(self.logdir)
 
     def environment_factory(self):
@@ -494,7 +503,7 @@ class PPO(object):
             if op.rnn_states_in is not None:
                 fd[op.rnn_states_in] = batch.c
             summary = session.run(op.summary, feed_dict=fd)
-            self.tf_logger.add_summary(summary, self.num_steps)
+            self.summary_writer.add_summary(summary, self.num_steps)
 
     def train(self, total_steps=None):
         last_report = last_save = self.num_steps - 1

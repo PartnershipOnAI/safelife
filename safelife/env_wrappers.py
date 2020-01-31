@@ -19,13 +19,13 @@ class BaseWrapper(Wrapper):
     Minor convenience class to make it easier to set attributes during init.
     """
     def __init__(self, env, **kwargs):
+        super().__init__(env)
         for key, val in kwargs.items():
             if (not key.startswith('_') and hasattr(self, key) and
                     not callable(getattr(self, key))):
                 setattr(self, key, val)
             else:
                 raise ValueError("Unrecognized parameter: '%s'" % (key,))
-        super().__init__(env)
 
     def scheduled(self, val):
         """
@@ -155,7 +155,6 @@ class SafeLifeRecorder(video_recorder.VideoRecorder):
 class RecordingSafeLifeWrapper(BaseWrapper):
     """
     Handles video recording and tensorboard/terminal logging.
-
     Attributes
     ----------
     video_name : str
@@ -163,9 +162,12 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         "episode_num", "step_num", and "level_title".
     video_recording_freq : int
         Record a video every n episodes.
-    tf_logger : tensorflow.summary.FileWriter instance
+    summary_writer : tensorboardX.SummaryWriter instance
         If set, all values in the episode info dictionary will be written
-        to tensorboard at the end of the episode.
+        to tensorboard at the end of the episode. Note that the only interface
+        used here is `summary_writer.add_scalar(key, val, step)` and
+        `summary_writer.flush()`, so any other appropriate logging class could
+        be swapped in with a thin shim.
     log_file : file-like object
         If set, all end of episode stats get written to the specified file.
         Data is written in YAML format.
@@ -177,7 +179,7 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         If values are callables, they'll be called with the current global
         time step.
     """
-    tf_logger = None
+    summary_writer = None
     log_file = None
     video_name = None
     video_recorder = None
@@ -200,7 +202,7 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         initial_green = np.sum(
             game._init_data['board'] | CellTypes.destructible == green_life)
 
-        tf_data = {
+        summary_data = {
             "num_episodes": num_episodes,
             "length": self.episode_length,
             "reward": self.episode_reward,
@@ -224,11 +226,11 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         for key, val in self.other_episode_data.items():
             val = self.scheduled(val)
             msg += "  {}: {:0.4g}\n".format(key, val)
-            tf_data[key] = float(val)
+            summary_data[key] = float(val)
 
         if self.record_side_effects:
             side_effects = side_effect_score(game)
-            tf_data["side_effect"] = side_effects.get(green_life, [0])[0]
+            summary_data["side_effect"] = side_effects.get(green_life, [0])[0]
             msg += "  side effects:\n"
             msg += "\n".join([
                 "    {}: [{:0.2f}, {:0.2f}]".format(cell_name(cell), val[0], val[1])
@@ -239,13 +241,10 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         if self.log_file is not None:
             self.log_file.write(msg)
             self.log_file.flush()
-        if self.tf_logger is not None:
-            import tensorflow as tf  # delay import to reduce module reqs
-            summary = tf.Summary()
-            for key, val in tf_data.items():
-                summary.value.add(tag='episode/'+key, simple_value=val)
-            self.tf_logger.add_summary(summary, num_steps)
-            self.tf_logger.flush()
+        if self.summary_writer is not None:
+            for key, val in summary_data.items():
+                self.summary_writer.add_scalar("episode/"+key, val, num_steps)
+            self.summary_writer.flush()
 
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
