@@ -129,12 +129,14 @@ class SafeLifeLevelIterator(object):
         If not found, the 'levels' directory will be searched as well.
         If no paths are supplied, this will generate a random level using
         default level generation parameters.
-    repeat : "auto" or bool or int
-        If true, new levels will be iterated repeatedly and forever, and each
-        level will be chosen randomly from the set of available files.
-        If "auto", it repeats if and only if 'paths' points to a single
-        file of procedural generation parameters.
-        If an int, it repeats exactly that many times.
+    distinct_levels : int
+        Number of distinct levels to produce.
+        If zero, levels are not cached and will be continually regenerated.
+    total_levels : int or None
+        Total number of levels to produce. If negative, levels are looped
+        forever. Defaults to -1 if 'paths' points to a single file of
+        procedural generation parameters, otherwise defaults to the number of
+        distinct levels.
     num_workers : int
         Number of workers used to generate new instances. If this is nonzero,
         then new instances will be generated asynchronously using the
@@ -147,15 +149,22 @@ class SafeLifeLevelIterator(object):
         Seed for the random number generator(s). The same seed ought to produce
         the same set of sequence of SafeLife levels across different trials.
     """
-    def __init__(self, *paths, repeat="auto", num_workers=1, max_queue=10, seed=None):
+    def __init__(
+            self, *paths, distinct_levels=0, total_levels=None,
+            num_workers=1, max_queue=10, seed=None
+    ):
         self.file_data = _load_files(paths)
+        self.level_cache = []
 
-        if repeat == "auto":
-            repeat = len(self.file_data) == 1 and self.file_data[0][1] == "procgen"
-        if isinstance(repeat, bool):
-            repeat = -1 * repeat  # negative means repeat forever
-        assert isinstance(repeat, int)
-        self.repeat = repeat
+        if total_levels is None:
+            if len(self.file_data) == 1 and self.file_data[0][1] == "procgen":
+                total_levels = -1
+            elif distinct_levels == 0:
+                total_levels = len(self.file_data)
+            else:
+                total_levels = distinct_levels
+        self.total_levels = total_levels
+        self.distinct_levels = distinct_levels
 
         self.num_workers = num_workers
         if num_workers > 0:
@@ -172,7 +181,6 @@ class SafeLifeLevelIterator(object):
         if not isinstance(seed, np.random.SeedSequence):
             seed = np.random.SeedSequence(seed)
         self._seed = seed
-        self.rng = np.random.default_rng(seed)
 
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -195,27 +203,38 @@ class SafeLifeLevelIterator(object):
         return self
 
     def __next__(self):
-        num_files = len(self.file_data)
         while len(self.results) < self.max_queue:
-            if self.repeat < 0:
-                data = self.rng.choice(self.file_data)
-            elif self.idx >= num_files * self.repeat:
+            if self.idx >= self.total_levels and self.total_levels >= 0:
+                break
+            elif self.idx >= self.distinct_levels and self.distinct_levels > 0:
                 break
             else:
-                data = self.file_data[self.idx % num_files]
+                data = self.file_data[self.idx % len(self.file_data)]
             self.idx += 1
             kwargs = {'seed': self._seed.spawn(1)[0]}
             if self.num_workers < 1:
                 result = _game_from_data(*data, **kwargs)
             else:
                 result = self.pool.apply_async(_game_from_data, data, kwargs)
-            self.results.append(result)
+            self.results.append((data, result))
 
         if not self.results:
-            raise StopIteration
-        result = self.results.popleft()
+            if self.idx < self.total_levels or self.total_levels < 0:
+                # Repeat levels that we've already seen.
+                # Should only get here if we've maxed out distinct levels.
+                data = self.level_cache[self.idx % self.distinct_levels]
+                result = _game_from_data(*data)
+                self.idx += 1
+            else:
+                raise StopIteration
+        else:
+            data, result = self.results.popleft()
         if isinstance(result, ApplyResult):
             result = result.get()
+        if self.distinct_levels > 0 and len(self.level_cache) < self.distinct_levels:
+            if data[1] == "procgen":
+                data = (data[0], "static", result.serialize())
+            self.level_cache.append(data)
         return result
 
 
@@ -250,8 +269,9 @@ def gen_many(param_file, out_dir, num_gen, num_workers=8, max_queue=100):
     num_digits = int(np.log10(num_gen))+1
     fmt = "{}-{{:0{}d}}.npz".format(base_name, num_digits)
     fmt = os.path.join(out_dir, fmt)
-    game_gen = safelife_loader(
-        param_file, num_workers=num_workers, max_queue=max_queue)
+    game_gen = SafeLifeLevelIterator(
+        param_file, total_levels=num_gen,
+        num_workers=num_workers, max_queue=max_queue)
     for k in range(1, num_gen+1):
         fname = fmt.format(k)
         if os.path.exists(fname):

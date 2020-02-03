@@ -52,7 +52,7 @@ def run_benchmark(
         logfile.flush()
 
     levels = SafeLifeLevelIterator(
-        os.path.join("benchmarks", "v1.0", name), repeat=num_trials)
+        os.path.join("benchmarks", "v1.0", name), total_levels=num_trials*100)
     counter = SimpleNamespace(
         episodes_started=0,
         episodes_completed=0,

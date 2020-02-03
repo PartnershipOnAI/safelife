@@ -227,7 +227,6 @@ try:
                 impact_penalty=linear_schedule([1.5e6, 2.5e6], [0, penalty]),
                 min_performance=linear_schedule([0.5e6, 1.5e6], [0.01, 0.3]),
                 level_iterator=spawn_loader('prune'),
-                num_env=4,
             )
             model.train(6e6)
         elif env_type == 'navigate':

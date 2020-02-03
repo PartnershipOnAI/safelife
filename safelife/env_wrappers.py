@@ -178,6 +178,8 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         Any other data that should be recorded at the end of every episode.
         If values are callables, they'll be called with the current global
         time step.
+    tag : str
+        Tag prepended to tensorboard output.
     """
     summary_writer = None
     log_file = None
@@ -185,6 +187,7 @@ class RecordingSafeLifeWrapper(BaseWrapper):
     video_recorder = None
     video_recording_freq = 100
     record_side_effects = True
+    tag = "episodes/"
     other_episode_data = {}
 
     def log_episode(self):
@@ -243,7 +246,7 @@ class RecordingSafeLifeWrapper(BaseWrapper):
             self.log_file.flush()
         if self.summary_writer is not None:
             for key, val in summary_data.items():
-                self.summary_writer.add_scalar("episode/"+key, val, num_steps)
+                self.summary_writer.add_scalar(self.tag+key, val, num_steps)
             self.summary_writer.flush()
 
     def step(self, action):

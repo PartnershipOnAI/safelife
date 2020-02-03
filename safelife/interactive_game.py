@@ -758,14 +758,9 @@ def _make_cmd_args(subparsers):
             " folder if not found in the current working directory."
             " If no files are provided, a new board will be randomly generated"
             " with the default parameters.")
-        group = parser.add_mutually_exclusive_group()
-        group.add_argument('-r', '--repeat', action="store_const",
-            default="auto", const=True,
-            help="If set, repeat levels in an endless loop."
-            " Levels will automatically repeat if they're procedurally"
-            " generated with a single set of parameters.")
-        group.add_argument('--no-repeat', action="store_false", dest="repeat",
-            help="Prevent levels from repeating.")
+        parser.add_argument('-n', '--num_levels', type=int,
+            help="Number of levels to load. "
+            "If negative, levels are repeated endlessly.")
     for parser in (new_parser,):
         parser.add_argument('-b', '--board_size', type=int, default=15,
             help="Width and height of the empty board.",
@@ -805,7 +800,7 @@ def _run_cmd_args(args):
         main_loop = GameLoop(iter([game]))
     else:
         main_loop = GameLoop(SafeLifeLevelIterator(
-            *args.load_from, repeat=args.repeat, seed=seed.spawn(1)[0]))
+            *args.load_from, total_levels=args.num_levels, seed=seed.spawn(1)[0]))
     if args.cmd == "print":
         main_loop.print_only = True
     else:
