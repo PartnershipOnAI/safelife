@@ -7,7 +7,7 @@ import numpy as np
 
 from .file_finder import SafeLifeLevelIterator
 from .safelife_game import CellTypes
-from .helper_utils import recenter_view
+from .helper_utils import recenter_view, load_kwargs
 from .random import set_rng
 
 
@@ -88,12 +88,7 @@ class SafeLifeEnv(gym.Env):
     def __init__(self, level_iterator, **kwargs):
         self.level_iterator = level_iterator
 
-        for key, val in kwargs.items():
-            if (not key.startswith('_') and hasattr(self, key) and
-                    not callable(getattr(self, key))):
-                setattr(self, key, val)
-            else:
-                raise ValueError("Unrecognized parameter: '%s'" % (key,))
+        load_kwargs(self, kwargs)
 
         self.action_space = spaces.Discrete(len(self.action_names))
         if self.output_channels is None:

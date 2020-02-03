@@ -4,13 +4,14 @@ Algorithm for Proximal Policy Optimization.
 
 import os
 import logging
-import inspect
 from types import SimpleNamespace
 from collections import namedtuple
 from functools import wraps
 
 import numpy as np
 import tensorflow as tf
+
+from safelife.helper_utils import load_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -135,12 +136,7 @@ class PPO(object):
     summary_writer = None
 
     def __init__(self, saver_args={}, **kwargs):
-        for key, val in kwargs.items():
-            if (not key.startswith('_') and hasattr(self, key) and
-                    not inspect.ismethod(getattr(self, key))):
-                setattr(self, key, val)
-            else:
-                raise ValueError("Unrecognized parameter: '%s'" % (key,))
+        load_kwargs(self, kwargs)
 
         self.op = SimpleNamespace()
         self.num_steps = 0

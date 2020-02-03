@@ -10,6 +10,7 @@ from gym.wrappers.monitoring import video_recorder
 from .side_effects import side_effect_score
 from .safelife_game import CellTypes
 from .render_text import cell_name
+from .helper_utils import load_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +21,7 @@ class BaseWrapper(Wrapper):
     """
     def __init__(self, env, **kwargs):
         super().__init__(env)
-        for key, val in kwargs.items():
-            if (not key.startswith('_') and hasattr(self, key) and
-                    not callable(getattr(self, key))):
-                setattr(self, key, val)
-            else:
-                raise ValueError("Unrecognized parameter: '%s'" % (key,))
+        load_kwargs(self, kwargs)
 
     def scheduled(self, val):
         """

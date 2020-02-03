@@ -1,3 +1,4 @@
+import inspect
 import numpy as np
 import scipy.signal
 
@@ -72,3 +73,15 @@ def recenter_view(board, view_size, center, move_to_perimeter=None):
         # and replace the board values.
         board2[jy, jx] = board[iy, ix]
     return board2
+
+
+def load_kwargs(self, kwargs):
+    """
+    Simple function to load kwargs during class initialization.
+    """
+    for key, val in kwargs.items():
+        if (not key.startswith('_') and hasattr(self, key) and
+                not inspect.ismethod(getattr(self, key))):
+            setattr(self, key, val)
+        else:
+            raise ValueError("Unrecognized parameter: '%s'" % (key,))
