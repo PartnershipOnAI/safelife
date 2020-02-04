@@ -243,7 +243,7 @@ class GameState(object):
             cls_name = cls_components[-1]
             try:
                 mod = import_module(mod_name)
-            except ModuleNotFoundError:
+            except ImportError:
                 mod = import_module(__name__)
             cls = getattr(mod, cls_name)
         obj = cls(board_size=None)

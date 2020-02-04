@@ -31,6 +31,7 @@ parser.add_argument('instance_name', help="name of the gcloud instance")
 parser.add_argument('job_name', help="a unique name for this training job")
 parser.add_argument('--port', default='6006',
     help="local port used to monitor tensorboard")
+parser.add_argument('--algo', choices=('ppo', 'dqn'))
 args = parser.parse_args()
 
 src_dir = '~/' + args.job_name
@@ -75,6 +76,8 @@ result = subprocess.run([
     ssh_cmd, args.instance_name, '-L', args.port + ':localhost:6006',
     ("ln -nsf {src_dir} ~/current_job; "
     "tmux new-session -s {job_name} "
-    "{src_dir}/start-training {data_dir} --install --shutdown").format(
-        src_dir=src_dir, job_name=args.job_name, data_dir=data_dir)
+    "{src_dir}/start-training {data_dir} "
+    "--install --shutdown --algo={algo}").format(
+        src_dir=src_dir, job_name=args.job_name,
+        data_dir=data_dir, algo=args.algo)
 ])

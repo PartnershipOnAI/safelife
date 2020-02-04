@@ -41,6 +41,7 @@ parser.add_argument('--port', default=6006, type=int,
     help="Port on which to run tensorboard.")
 parser.add_argument('--impact-penalty', default=0.0, type=float)
 parser.add_argument('--env-type', choices=env_types)
+parser.add_argument('--algo', choices=('ppo', 'dqn'))
 args = parser.parse_args()
 
 # Setup the directories
@@ -156,7 +157,7 @@ if args.install:
 # should just get built into the source directory.
 subprocess.run([
     "python3", os.path.join(safety_dir, "setup.py"),
-    "build", "--build-lib", safety_dir
+    "build_ext", "--build-lib", safety_dir
 ])
 
 
@@ -188,56 +189,88 @@ def spawn_loader(name):
 
 
 try:
-    import tensorflow as tf
-    from training.safelife_ppo import SafeLifePPO, linear_schedule
+    from training.env_factory import linear_schedule, safelife_env_factory
     from safelife.file_finder import SafeLifeLevelIterator
 
     for penalty in [args.impact_penalty]:
-        tf.reset_default_graph()
         subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
         os.makedirs(subdir, exist_ok=True)
 
+        if args.algo == 'ppo':
+            from training.ppo import SummaryWriter
+        else:
+            from tensorboardX import SummaryWriter
+
         if env_type == 'append-still':
-            model = SafeLifePPO(
-                logdir=subdir,
-                impact_penalty=linear_schedule([1.0e6, 2.0e6], [0, penalty]),
-                min_performance=linear_schedule([1.0e6, 2.0e6], [0.01, 0.3]),
-                level_iterator=SafeLifeLevelIterator('random/append-still-easy.yaml'),
-            )
-            model.train(6e6)
+            t_penalty = [1.0e6, 2.0e6]
+            t_performance = [1.0e6, 2.0e6]
+            level_iterator = SafeLifeLevelIterator('random/append-still-easy.yaml')
+            test_levels = 'benchmarks/v1.0/append-still.npz'
+
         elif env_type == 'prune-still':
-            model = SafeLifePPO(
-                logdir=subdir,
-                impact_penalty=linear_schedule([0.5e6, 1.5e6], [0, penalty]),
-                min_performance=linear_schedule([0.5e6, 1.5e6], [0.01, 0.3]),
-                level_iterator=SafeLifeLevelIterator('random/prune-still-easy.yaml'),
-            )
-            model.train(6e6)
+            t_penalty = [0.5e6, 1.5e6]
+            t_performance = [0.5e6, 1.5e6]
+            level_iterator = SafeLifeLevelIterator('random/prune-still-easy.yaml')
+            test_levels = 'benchmarks/v1.0/prune-still.npz'
+
         elif env_type == 'append-spawn':
-            model = SafeLifePPO(
-                logdir=subdir,
-                impact_penalty=linear_schedule([2.0e6, 3.5e6], [0, penalty]),
-                min_performance=linear_schedule([1.0e6, 2.0e6], [0.01, 0.3]),
-                level_iterator=spawn_loader('append'),
-            )
-            model.train(6e6)
+            t_penalty = [2.0e6, 3.5e6]
+            t_performance = [1.0e6, 2.0e6]
+            level_iterator = spawn_loader('append')
+            test_levels = 'benchmarks/v1.0/append-spawn.npz'
+
         elif env_type == 'prune-spawn':
-            model = SafeLifePPO(
-                logdir=subdir,
-                impact_penalty=linear_schedule([1.5e6, 2.5e6], [0, penalty]),
-                min_performance=linear_schedule([0.5e6, 1.5e6], [0.01, 0.3]),
-                level_iterator=spawn_loader('prune'),
-            )
-            model.train(6e6)
+            t_penalty = [1.5e6, 2.5e6]
+            t_performance = [0.5e6, 1.5e6]
+            level_iterator = spawn_loader('append')
+            test_levels = 'benchmarks/v1.0/append-spawn.npz'
+
         elif env_type == 'navigate':
-            model = SafeLifePPO(
-                logdir=subdir,
-                impact_penalty=linear_schedule([1.0e6, 2.0e6], [0, penalty]),
-                level_iterator=SafeLifeLevelIterator('random/navigation.yaml'),
-            )
-            model.train(6e6)
+            t_penalty = [1.0e6, 2.0e6]
+            t_performance = [1.0e6, 2.0e6]  # not actually relevant for navigate
+            level_iterator = SafeLifeLevelIterator('random/navigation.yaml')
+            test_levels = 'benchmarks/v1.0/navigation.npz'
         else:
             print("Unexpected environment type '{}'".format(env_type))
+
+        summary_writer = SummaryWriter(subdir)
+
+        training_envs = safelife_env_factory(
+            logdir=subdir, summary_writer=summary_writer, num_envs=16,
+            impact_penalty=linear_schedule(t_penalty, [0, penalty]),
+            min_performance=linear_schedule(t_performance, [0.01, 0.3]),
+            level_iterator=level_iterator,
+        )
+        testing_envs = safelife_env_factory(
+            logdir=subdir, summary_writer=summary_writer, num_envs=5, testing=True,
+            level_iterator=SafeLifeLevelIterator(
+                test_levels, distinct_levels=5, total_levels=-1)
+        )
+
+        if args.algo == 'ppo':
+            import tensorflow as tf
+            from training.safelife_ppo import SafeLifePPO
+            tf.reset_default_graph()
+
+            algo = SafeLifePPO(
+                envs=training_envs,
+                logdir=subdir, summary_writer=summary_writer)
+            algo.train(6e6)
+
+        elif args.algo == 'dqn':
+            from training.models import SafeLifeQNetwork
+            from training.dqn import DQN
+
+            obs_shape = training_envs[0].observation_space.shape
+            train_model = SafeLifeQNetwork(obs_shape)
+            target_model = SafeLifeQNetwork(obs_shape)
+            algo = DQN(
+                train_model, target_model,
+                training_envs=training_envs,
+                testing_envs=testing_envs,
+                logdir=subdir, summary_writer=summary_writer)
+            algo.train(6e6)
+
 
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")

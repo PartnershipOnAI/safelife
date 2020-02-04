@@ -1,13 +1,10 @@
-import os
 import logging
 import numpy as np
 import tensorflow as tf
 from scipy import interpolate
 
 from safelife.safelife_env import SafeLifeEnv
-from safelife.safelife_game import CellTypes
 from safelife.file_finder import SafeLifeLevelIterator
-from safelife import env_wrappers
 
 from . import ppo
 
@@ -105,53 +102,7 @@ class SafeLifePPO(ppo.PPO):
         pass  # don't allow setting directly, but don't throw an error
 
     # --------
-    # Functions for building environments and building network architecture:
-
-    def environment_factory(self):
-        if self.logdir:
-            video_name = os.path.join(self.logdir, self.video_name)
-        else:
-            video_name = None
-
-        if not hasattr(self, 'episode_log'):
-            if self.logdir:
-                fname = os.path.join(self.logdir, "training.yaml")
-                if os.path.exists(fname):
-                    self.episode_log = open(fname, 'a')
-                else:
-                    self.episode_log = open(fname, 'w')
-                    self.episode_log.write("# Training episodes\n---\n")
-            else:
-                self.episode_log = None
-
-        env = SafeLifeEnv(
-            self.level_iterator,
-            view_shape=(25,25),
-            output_channels=(
-                CellTypes.alive_bit,
-                CellTypes.agent_bit,
-                CellTypes.pushable_bit,
-                CellTypes.destructible_bit,
-                CellTypes.frozen_bit,
-                CellTypes.spawning_bit,
-                CellTypes.exit_bit,
-                CellTypes.color_bit + 0,  # red
-                CellTypes.color_bit + 1,  # green
-                CellTypes.color_bit + 5,  # blue goal
-            ))
-        env = env_wrappers.MovementBonusWrapper(env, as_penalty=True)
-        env = env_wrappers.SimpleSideEffectPenalty(
-            env, penalty_coef=self.impact_penalty)
-        env = env_wrappers.MinPerformanceScheduler(
-            env, min_performance=self.min_performance)
-        env = env_wrappers.RecordingSafeLifeWrapper(
-            env, video_name=video_name, summary_writer=self.summary_writer,
-            log_file=self.episode_log, other_episode_data={
-                'impact_penalty': self.impact_penalty,
-            })
-        env = env_wrappers.ExtraExitBonus(env)
-        # env = env_wrappers.ContinuingEnv(env)
-        return env
+    # Building network architecture:
 
     def build_logits_and_values(self, img_in, rnn_mask, use_lstm=False):
         # img_in has shape (num_steps, num_env, ...)
