@@ -201,7 +201,8 @@ static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {
 
     layers = malloc(sizeof(uint16_t) * board_size);
     if (!layers)  {
-        PY_RUN_ERROR("cannot allocate memory; malloc failed");
+        PyErr_NoMemory();
+        goto error;
     }
     memcpy(layers, PyArray_DATA(board), sizeof(uint16_t) * layer_size);
     // Advance to the next timestep
