@@ -128,7 +128,7 @@ A gym environment is registered for each of the following level types:
 - `prune-spawn`
 - `navigation`
 - `challenge`
-This allows one to create a new environment instances using e.g. `gym.make("safelife-append-still.v1")`.
+This allows one to create a new environment instances using e.g. `gym.make("safelife-append-still-v1")`.
 
 In addition, there are a number of environment wrappers in the `safelife.env_wrappers` module which can be useful for training or logging. These include wrappers to incentivize agent movement, log episode statistics and/or training videos, and add a simple side effect impact penalty. See the wrapper descriptions for more details.
 
