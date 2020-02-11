@@ -147,6 +147,7 @@ static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {
         "temperature", "osc_bonus", "alive", "wall", "tree",
         NULL
     };
+    uint16_t *layers = NULL;
 
     if (!PyArg_ParseTupleAndKeywords(
             args, kw, "OOi|Odddd(dd)(dd)(dd):gen_still_life",
@@ -198,7 +199,10 @@ static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {
     int layer_size = board_shape.cols * board_shape.rows;
     int board_size = board_shape.depth * layer_size;
 
-    uint16_t *layers = malloc(sizeof(uint16_t) * board_size);
+    layers = malloc(sizeof(uint16_t) * board_size);
+    if (!layers)  {
+        PY_RUN_ERROR("cannot allocate memory; malloc failed");
+    }
     memcpy(layers, PyArray_DATA(board), sizeof(uint16_t) * layer_size);
     // Advance to the next timestep
     for (int n = 1; n < board_shape.depth; n++) {
@@ -233,12 +237,14 @@ static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {
     success:
     Py_DECREF(mask);
     if (seeds_obj != Py_None) Py_DECREF(seeds);
+    free(layers);
     return (PyObject *)board;
 
     error:
     Py_XDECREF((PyObject *)board);
     Py_XDECREF((PyObject *)mask);
     if (seeds_obj != Py_None) Py_XDECREF(seeds);
+    if (layers) free(layers);
     return NULL;
 }
 
