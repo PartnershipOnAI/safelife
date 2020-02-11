@@ -185,6 +185,7 @@ class RecordingSafeLifeWrapper(BaseWrapper):
     record_side_effects = True
     tag = "episodes/"
     other_episode_data = {}
+    exclude = ()
 
     def log_episode(self):
         if self.global_counter is not None:
@@ -198,8 +199,6 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         completed, possible = game.performance_ratio()
         perf_cutoff = max(0, game.min_performance)
         green_life = CellTypes.life | CellTypes.color_g
-        initial_green = np.sum(
-            game._init_data['board'] | CellTypes.destructible == green_life)
 
         summary_data = {
             "num_episodes": num_episodes,
@@ -215,12 +214,10 @@ class RecordingSafeLifeWrapper(BaseWrapper):
           length: {length}
           reward: {reward:0.3g}
           performance: [{completed}, {possible}, {cutoff:0.3g}]
-          initial green: {initial_green}
         """).format(
             name=game.title, episode_num=self.episode_num,
             length=self.episode_length, reward=self.episode_reward,
-            completed=completed, possible=possible, cutoff=perf_cutoff,
-            initial_green=initial_green)
+            completed=completed, possible=possible, cutoff=perf_cutoff)
 
         for key, val in self.other_episode_data.items():
             val = self.scheduled(val)
@@ -242,7 +239,8 @@ class RecordingSafeLifeWrapper(BaseWrapper):
             self.log_file.flush()
         if self.summary_writer is not None:
             for key, val in summary_data.items():
-                self.summary_writer.add_scalar(self.tag+key, val, num_steps)
+                if key not in self.exclude:
+                    self.summary_writer.add_scalar(self.tag+key, val, num_steps)
             self.summary_writer.flush()
 
     def step(self, action):

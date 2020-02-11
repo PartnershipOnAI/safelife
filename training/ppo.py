@@ -123,7 +123,7 @@ class PPO(object):
     reward_clip = 0.0
     policy_rectifier = 'relu'  # or 'elu' or ...more to come
 
-    num_env = 16
+    envs = None
     steps_per_env = 20
     envs_per_minibatch = 4
     epochs_per_batch = 3
@@ -137,14 +137,15 @@ class PPO(object):
 
     def __init__(self, saver_args={}, **kwargs):
         load_kwargs(self, kwargs)
+        if self.envs is None:
+            raise RuntimeError("No environments set")
 
         self.op = SimpleNamespace()
         self.num_steps = 0
         self.num_episodes = 0
         self.session = tf.Session()
-        if self.logdir:
+        if self.logdir and self.summary_writer is None:
             self.summary_writer = SummaryWriter(self.logdir)
-        self.envs = [self.environment_factory() for _ in range(self.num_env)]
         self.build_graph()
         self.session.run(tf.global_variables_initializer())
         self.saver = tf.train.Saver(**saver_args)
