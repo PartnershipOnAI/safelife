@@ -4,10 +4,11 @@ import numpy
 # import tensorflow as tf
 import torch
 
-from safelife.safelife.safelife_env import SafeLifeEnv
-from safelife.safelife.safelife_game import CellTypes
-from safelife.safelife.file_finder import SafeLifeLevelIterator
-from safelife.safelife import env_wrappers
+from safelife.safelife_env import SafeLifeEnv
+from safelife.safelife_game import CellTypes
+from safelife.file_finder import SafeLifeLevelIterator
+from safelife import env_wrappers
+
 
 
 class SafelifeConvNetork(torch.nn.Module):
