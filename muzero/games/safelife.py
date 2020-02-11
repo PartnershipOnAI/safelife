@@ -4,39 +4,48 @@ import numpy
 # import tensorflow as tf
 import torch
 
-from safelife.safelife_env import SafeLifeEnv
-from safelife.safelife_game import CellTypes
-from safelife.file_finder import SafeLifeLevelIterator
-from safelife import env_wrappers
+from safelife.safelife.safelife_env import SafeLifeEnv
+from safelife.safelife.safelife_game import CellTypes
+from safelife.safelife.file_finder import SafeLifeLevelIterator
+from safelife.safelife import env_wrappers
 
 
 class SafelifeConvNetork(torch.nn.Module):
     "This is hardcoded due to artistic disagreements with this codebase's layout :)"
-    def __init__(self):
-        embedding_layer1 = torch.nn.Conv2d(10, 32, 5, stride=2)
-        embedding_layer2 = torch.nn.Conv2d(32, 64, 3, stride=2)
+    def __init__(self, conf):
 
-        dynamics_layer1 = torch.nn.Conv2d(64, 64, 3, stride=1, padding=1)
-        dynamics_mid = FullyConnectedNetwork(...)
-        dynamics_layer2 = torch.nn.Conv2d(64, 64, 3, stride=1, padding=1)
+        m = lambda l: torch.nn.ModuleList(l)
+        s = torch.nn.Sequential
+        c = 'circular' # https://github.com/pytorch/pytorch/pull/17240
 
-        prediction_layer1 = torch.nn.Conv2d(64, 64, 3, stride=1)
-        prediction_layer2 = FullyConnectedNetwork(512)
-        prediction_layer3 = SoftMaxNetwork(9)
+        self.embedding = s([torch.nn.Conv2d(10, 32, 5, stride=2, padding_mode=c), torch.nn.ReLU(),
+                            torch.nn.Conv2d(32, 64, 3, stride=2, padding_mode=c), torch.nn.ReLU(),
+                            torch.nn.Linear])
 
-        reward_layer1 = torch.nn.Conv2d(64, 64, 3, stride=1)
-        reward_layer2 = FullyConnectedNetwork(512)
-        reward_layer3 = FullyConnectedNetwork(1)
+        self.dynamics = ([torch.nn.Conv2d(64, 64, 3, stride=1, padding=1, padding_mode=c), torch.nn.ReLU(),
+                          torch.nn.Linear(conf.hidden_size)              , torch.nn.ReLU(),
+                          torch.nn.Conv2d(64, 64, 3, stride=1, padding=1, padding_mode=c), torch.nn.ReLU()]
 
-        value_layer1 = torch.nn.Conv2d(64, 64, 3, stride=1)
-        value_layer2 = FullyConnectedNetwork(512)
-        value_layer3 = FullyConnectedNetwork(1)
+        self.dynamics_reward = m(dynamics + [torch.nn.Linear(conf.hidden_size), torch.nn.ReLU(),
+                                             torch.nn.Linear(conf.hidden_size, 1)])
 
-        # share some of these layers across functions
+        self.dynamics = m(self.dynamics)
+
+        # todo: figure out how much layer reuse we really want here
+        self.policy_value = [torch.nn.Conv2d(64, 64, 3, stride=1), torch.nn.ReLU(),
+                             torch.nn.Linear(conf.hidden_size)   , torch.nn.ReLU(),
+                             torch.nn.Linear(conf.hidden_size, 1)]
+
+        self.policy = policy_value[0:4] + [
+            # torch.nn.Linear(conf.hidden_size), torch.nn.ReLU(),
+            torch.nn.Softmax(len(conf.action_space))
+        ]
+
+        self.policy_value = m(self.policy_value)
+
 
     def forward(self, x):
-        ...
-
+        pass
 
 class MuZeroConfig:
     def __init__(self):
@@ -64,7 +73,7 @@ class MuZeroConfig:
 
         ### Network
         self.encoding_size = 64
-        self.hidden_size = 32
+        self.hidden_size = 512
 
         # Training
         self.results_path = "./pretrained"  # Path to store the model weights
