@@ -43,20 +43,20 @@ class DynamicsNetwork(t.Module):
     "This is hardcoded due to artistic disagreements with this codebase's layout :)"
     def __init__(self, conf):
         super().__init__()
-        self.linear_inp = t.Linear(np.product(conf.embedding_shape) + len(conf.action_space), 
+        self.linear_inp = t.Linear(np.product(conf.embedding_shape) + len(conf.action_space),
                                    conf.global_dense_embedding_size)
-        self.conv1 = s(t.Conv2d(conf.embedding_depth+conf.global_dense_embedding_size, conf.embedding_depth+conf.global_dense_embedding_size, 3, stride=1, padding=2-1, padding_mode=c), t.ReLU())
-        self.conv2 = s(t.Conv2d(conf.embedding_depth+conf.global_dense_embedding_size, conf.embedding_depth, 3, stride=1, padding=2-1, padding_mode=c), t.ReLU())
+        self.conv1 = s(t.Conv2d(conf.embedding_depth+conf.global_dense_embedding_size, conf.embedding_depth+conf.global_dense_embedding_size, 3, stride=1, padding=3-1, padding_mode=c), t.ReLU())
+        self.conv2 = s(t.Conv2d(conf.embedding_depth+conf.global_dense_embedding_size, conf.embedding_depth, 3, stride=1, padding=3-1, padding_mode=c), t.ReLU())
+        conv_shape = conf.embedding_shape[:-1] + (conf.embedding_depth + conf.global_dense_embedding_size,)
 
-        self.reward = [t.Linear(np.product(conf.embedding_shape),128),
-                       t.ReLU(),
-                       t.Linear(128, 1)]
+        self.reward = s(
+            t.Linear(np.product(conv_shape),128),
+            t.ReLU(),
+            t.Linear(128, 1))
 
 
     def forward(self, x, action):
         # TODO ensure that action is 1-hot
-        import ipdb
-        ipdb.set_trace()
         global_inp = torch.cat((x.flatten(start_dim=1), action), dim=1)
         global_view = self.linear_inp(global_inp)
         global_view = global_view[..., np.newaxis, np.newaxis]

@@ -1,5 +1,4 @@
 from muzero.games import safelife as sl
-import ipdb
 import numpy as np
 import torch
 
