@@ -1,6 +1,6 @@
 import os
 import gym
-import numpy
+import numpy as np
 # import tensorflow as tf
 import torch
 
@@ -9,44 +9,69 @@ from safelife.safelife_game import CellTypes
 from safelife.file_finder import SafeLifeLevelIterator
 from safelife import env_wrappers
 
+t = torch.nn
+s = t.Sequential
 
+c = 'circular' # https://github.com/pytorch/pytorch/pull/17240
+               # note that padding must be kernel size - 1
 
-class SafelifeConvNetork(torch.nn.Module):
-    "This is hardcoded due to artistic disagreements with this codebase's layout :)"
+class EmbeddingNetwork(t.Module):
     def __init__(self, conf):
-
-        m = lambda l: torch.nn.ModuleList(l)
-        s = torch.nn.Sequential
-        c = 'circular' # https://github.com/pytorch/pytorch/pull/17240
-
-        self.embedding = s([torch.nn.Conv2d(10, 32, 5, stride=2, padding_mode=c), torch.nn.ReLU(),
-                            torch.nn.Conv2d(32, 64, 3, stride=2, padding_mode=c), torch.nn.ReLU(),
-                            torch.nn.Linear])
-
-        self.dynamics = ([torch.nn.Conv2d(64, 64, 3, stride=1, padding=1, padding_mode=c), torch.nn.ReLU(),
-                          torch.nn.Linear(conf.hidden_size)              , torch.nn.ReLU(),
-                          torch.nn.Conv2d(64, 64, 3, stride=1, padding=1, padding_mode=c), torch.nn.ReLU()]
-
-        self.dynamics_reward = m(dynamics + [torch.nn.Linear(conf.hidden_size), torch.nn.ReLU(),
-                                             torch.nn.Linear(conf.hidden_size, 1)])
-
-        self.dynamics = m(self.dynamics)
-
-        # todo: figure out how much layer reuse we really want here
-        self.policy_value = [torch.nn.Conv2d(64, 64, 3, stride=1), torch.nn.ReLU(),
-                             torch.nn.Linear(conf.hidden_size)   , torch.nn.ReLU(),
-                             torch.nn.Linear(conf.hidden_size, 1)]
-
-        self.policy = policy_value[0:4] + [
-            # torch.nn.Linear(conf.hidden_size), torch.nn.ReLU(),
-            torch.nn.Softmax(len(conf.action_space))
-        ]
-
-        self.policy_value = m(self.policy_value)
-
+        super().__init__()
+        self.embedding = s(t.Conv2d(10, 32, 5, stride=1, padding=5-1, padding_mode=c), t.ReLU(),
+                           t.Conv2d(32, conf.embedding_depth, 3, stride=1, padding=3-1, padding_mode=c), t.ReLU())
 
     def forward(self, x):
-        pass
+        x = x.transpose(-1, -3) # convert from SafeLife observation to torch
+        return self.embedding(x)
+
+class PoliycyNetwork(t.Module):
+    def __init__(self, conf):
+        # todo: figure out how much layer reuse we really want here
+        self.policy_value = [t.Conv2d(conf.embedding_depth, conf.embedding_depth, 3, stride=1), t.ReLU(),
+                             t.Linear(conf.hidden_size)   , t.ReLU(),
+                             t.Linear(conf.hidden_size, 1)]
+
+        self.policy = self.policy_value[0:4] + [
+            # t.Linear(conf.hidden_size), t.ReLU(),
+            t.Softmax(len(conf.action_space))
+        ]
+
+        self.policy_value = s(self.policy_value)
+
+class DynamicsNetwork(t.Module):
+    "This is hardcoded due to artistic disagreements with this codebase's layout :)"
+    def __init__(self, conf):
+        super().__init__()
+        self.linear_inp = t.Linear(np.product(conf.embedding_shape) + len(conf.action_space), 
+                                   conf.global_dense_embedding_size)
+        self.conv1 = s(t.Conv2d(conf.embedding_depth+conf.global_dense_embedding_size, conf.embedding_depth+conf.global_dense_embedding_size, 3, stride=1, padding=2-1, padding_mode=c), t.ReLU())
+        self.conv2 = s(t.Conv2d(conf.embedding_depth+conf.global_dense_embedding_size, conf.embedding_depth, 3, stride=1, padding=2-1, padding_mode=c), t.ReLU())
+
+        self.reward = [t.Linear(np.product(conf.embedding_shape),128),
+                       t.ReLU(),
+                       t.Linear(128, 1)]
+
+
+    def forward(self, x, action):
+        # TODO ensure that action is 1-hot
+        import ipdb
+        ipdb.set_trace()
+        global_inp = torch.cat((x.flatten(start_dim=1), action), dim=1)
+        global_view = self.linear_inp(global_inp)
+        global_view = global_view[..., np.newaxis, np.newaxis]
+        global_view = global_view.expand(x.shape[0], global_view.shape[1], x.shape[2], x.shape[3])
+        amended_state = torch.cat((x, global_view), dim=1)
+
+        x = self.conv1(amended_state)
+        reward = self.reward(x.flatten(start_dim=1))
+        x = self.conv2(x)
+
+        return x, reward
+
+
+
+
 
 class MuZeroConfig:
     def __init__(self):
@@ -55,6 +80,7 @@ class MuZeroConfig:
         ### Game
         self.observation_shape = 10  # Dimensions of the game observation
         self.action_space = SafeLifeEnv.action_names  # Fixed list of all possible actions
+        self.view_shape = (26, 26)
 
 
         ### Self-Play
@@ -73,8 +99,13 @@ class MuZeroConfig:
         self.pb_c_init = 1.25
 
         ### Network
-        self.encoding_size = 64
         self.hidden_size = 512
+        self.global_dense_embedding_size = 16
+
+        # hidden representations
+        self.embedding_depth = 64
+        self.embedding_shape = self.view_shape + (self.embedding_depth,) # for SafeLife we're helping the agent by giving it an internal representation that matches the game's state space
+
 
         # Training
         self.results_path = "./pretrained"  # Path to store the model weights
@@ -113,7 +144,7 @@ class MuZeroConfig:
             return 0.25
 
 
-def Game(seed=None, logdir="./safelife-logs"):
+def Game(conf, seed=None, logdir="./safelife-logs"):
     """
     if logdir:
         video_name = os.path.join(logdir, "episode-{episode_num}-{step_num}")
@@ -136,7 +167,7 @@ def Game(seed=None, logdir="./safelife-logs"):
     levelgen = SafeLifeLevelIterator('random/append-still-easy.yaml')
     env = SafeLifeEnv(
         levelgen,
-        view_shape=(25,25),
+        view_shape=conf.view_shape,
         output_channels=(
             CellTypes.alive_bit,
             CellTypes.agent_bit,
