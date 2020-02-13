@@ -57,7 +57,7 @@ class DQN(object):
     report_freq = 256
     test_freq = 100000
 
-    compute_device = torch.device('cuda' if False else 'cpu') #!!
+    compute_device = torch.device('cuda' if USE_CUDA else 'cpu')
 
     training_envs = None
     testing_envs = None
@@ -222,7 +222,6 @@ class DQN(object):
             next_test = round_up(num_steps, self.test_freq)
 
             self.collect_data()
-            #debug_gpu()
 
             num_steps = self.num_steps
 
@@ -244,16 +243,3 @@ class DQN(object):
 
             if num_steps >= next_test:
                 self.run_test_envs()
-
-
-def debug_gpu():
-    # Debug out of memory bugs.
-    import gc
-    tensor_list = []
-    for obj in gc.get_objects():
-        try:
-            if torch.is_tensor(obj) or (hasattr(obj, 'data') and torch.is_tensor(obj.data)):
-                tensor_list.append(obj)
-        except Exception:
-            pass
-    print('Count of tensors =', len(tensor_list))
