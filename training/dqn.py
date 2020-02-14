@@ -62,6 +62,8 @@ class DQN(object):
     training_envs = None
     testing_envs = None
 
+    epsilon = 0  # because we use exploration
+
     def __init__(self, training_model, target_model, **kwargs):
         load_kwargs(self, kwargs)
         assert self.training_envs is not None
@@ -75,7 +77,7 @@ class DQN(object):
         self.load_checkpoint()
 
     @property
-    def epsilon(self):
+    def epsilon_old(self):
         # hardcode this for now
         t1 = 1e5
         t2 = 1e6
