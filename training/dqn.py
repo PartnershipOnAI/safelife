@@ -213,7 +213,7 @@ class DQN(object):
     def train(self, steps):
         needs_report = True
 
-        for _ in range(int(steps)):
+        for _ in range(int(steps / len(self.training_envs))):
             num_steps = self.num_steps
             next_opt = round_up(num_steps, self.optimize_freq)
             next_update = round_up(num_steps, self.target_update_freq)
