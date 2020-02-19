@@ -107,13 +107,13 @@ class SafeLifeQNetwork(nn.Module):
         self.advantages = nn.Sequential(
             Linear(num_features, 256),
             nn.ReLU(),
-            Linear(256, num_actions)
+            nn.Linear(256, num_actions)
         )
 
         self.value_func = nn.Sequential(
             Linear(num_features, 256),
             nn.ReLU(),
-            Linear(256, 1)
+            nn.Linear(256, 1)
         )
 
     def forward(self, obs):

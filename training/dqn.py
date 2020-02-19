@@ -1,13 +1,11 @@
-import os
-import glob
-
 import numpy as np
 
 import torch
 import torch.optim as optim
 
 from safelife.helper_utils import load_kwargs
-from safelife.safelife_env import SafeLifeEnv
+
+from . import checkpointing
 
 
 USE_CUDA = torch.cuda.is_available()
@@ -62,7 +60,7 @@ class DQN(object):
     training_envs = None
     testing_envs = None
 
-    epsilon = 0  # because we use exploration
+    epsilon = 0.0  # for exploration
 
     def __init__(self, training_model, target_model, **kwargs):
         load_kwargs(self, kwargs)
@@ -74,7 +72,7 @@ class DQN(object):
             self.training_model.parameters(), lr=self.learning_rate)
         self.replay_buffer = ReplayBuffer(self.replay_size)
 
-        self.load_checkpoint()
+        checkpointing.load_checkpoint(self.logdir, self)
 
     @property
     def epsilon_old(self):
@@ -85,57 +83,6 @@ class DQN(object):
         y2 = 0.1
         t = (self.num_steps - t1) / (t2 - t1)
         return y1 + (y2-y1) * np.clip(t, 0, 1)
-
-    def get_next_checkpoint(self):
-        if self.logdir is None:
-            return None
-        num_steps = self.num_steps
-        return os.path.join(self.logdir, 'checkpoint-%i.data' % num_steps)
-
-    def save_checkpoint(self, path=None):
-        if path is None:
-            path = self.get_next_checkpoint()
-        torch.save({
-            'num_steps': self.num_steps,
-            'num_episodes': self.num_episodes,
-            'training_model_state_dict': self.training_model.state_dict(),
-            'target_model_state_dict': self.target_model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-        }, path)
-        for old_checkpoint in self.get_all_checkpoints()[:-self.num_checkpoints]:
-            os.remove(old_checkpoint)
-
-    def get_all_checkpoints(self):
-        if self.logdir is None:
-            return []
-        files = glob.glob(os.path.join(self.logdir, 'checkpoint-*.data'))
-
-        def step_from_checkpoint(f):
-            try:
-                return int(os.path.basename(f)[11:-5])
-            except ValueError:
-                return -1
-
-        files = [f for f in files if step_from_checkpoint(f) >= 0]
-        return sorted(files, key=step_from_checkpoint)
-
-    def load_checkpoint(self, path=None):
-        if path is None:
-            checkpoints = self.get_all_checkpoints()
-            path = checkpoints and checkpoints[-1]
-        if not path or not os.path.exists(path):
-            return
-        checkpoint = torch.load(path)
-        self.training_model.load_state_dict(checkpoint['training_model_state_dict'])
-        self.target_model.load_state_dict(checkpoint['target_model_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.num_steps = checkpoint['num_steps']
-        self.num_episodes = checkpoint['num_episodes']
-
-        # very, very small amount of safelife specific code:
-        SafeLifeEnv.global_counter.num_steps = self.num_steps
-        SafeLifeEnv.global_counter.episodes_started = self.num_episodes
-        SafeLifeEnv.global_counter.episodes_completed = self.num_episodes
 
     def update_target(self):
         self.target_model.load_state_dict(self.training_model.state_dict())
@@ -241,7 +188,9 @@ class DQN(object):
                 self.target_model.load_state_dict(self.training_model.state_dict())
 
             if num_steps >= next_checkpoint:
-                self.save_checkpoint()
+                checkpointing.save_checkpoint(self.logdir, self, [
+                    'training_model', 'target_model', 'optimizer',
+                ])
 
             if num_steps >= next_test:
                 self.run_test_envs()
