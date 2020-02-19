@@ -197,7 +197,7 @@ try:
         os.makedirs(subdir, exist_ok=True)
 
         if args.algo == 'ppo':
-            from training.ppo import SummaryWriter
+            from training.tf_ppo import SummaryWriter
         else:
             from tensorboardX import SummaryWriter
 
@@ -249,7 +249,7 @@ try:
 
         if args.algo == 'ppo':
             import tensorflow as tf
-            from training.safelife_ppo import SafeLifePPO
+            from training.tf_safelife_ppo import SafeLifePPO
             tf.reset_default_graph()
 
             algo = SafeLifePPO(
