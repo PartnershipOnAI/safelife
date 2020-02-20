@@ -16,6 +16,9 @@ c = 'circular'  # https://github.com/pytorch/pytorch/pull/17240
                 # note that padding must be kernel size - 1
 
 class EmbeddingNetwork(t.Module):
+    """
+    Maps an observation of the environment to an embedded hidden state representation.
+    """
 
     def __init__(self, conf):
         super().__init__()
@@ -32,15 +35,19 @@ class EmbeddingNetwork(t.Module):
 
 
 class PolicyNetwork(t.Module):
+    """
+    Maps an embedded state representation to a policy action and an expected value of the state.
+    """
 
     def __init__(self, conf):
         # todo: figure out how much layer reuse we really want here
+        super().__init__()
         ksize = conf.conv2kernel
         chans = conf.embedding_depth
         self.policy_value = [
              t.Conv2d(chans, chans, ksize, padding=ksize-1, stride=1, padding_mode=c),
              t.ReLU(),
-             t.Linear(conf.hidden_size),
+             t.Linear(conf.hidden_size, conf.hidden_size),
              t.ReLU(),
              t.Linear(conf.hidden_size, 1)]
 
@@ -49,7 +56,11 @@ class PolicyNetwork(t.Module):
             t.Softmax(len(conf.action_space))
         ]
 
-        self.policy_value = s(self.policy_value)
+        self.policy_value = s(*self.policy_value)
+        self.policy = s(*self.policy)
+
+    def forward(self, embedded_state):
+        return self.policy(embedded_state), self.policy_value(embedded_state)
 
 
 class DynamicsNetwork(t.Module):

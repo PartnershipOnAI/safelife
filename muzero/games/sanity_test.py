@@ -7,6 +7,7 @@ env = sl.Game(conf)
 
 e = sl.EmbeddingNetwork(conf)
 d = sl.DynamicsNetwork(conf)
+p = sl.PolicyNetwork(conf)
 
 s1 = env.reset()
 s1 = torch.tensor(s1.astype(np.float32))
@@ -16,3 +17,5 @@ print(embedded.shape)
 nxt, val = d(embedded, torch.zeros(1, 9))
 
 print(nxt.shape)
+
+
