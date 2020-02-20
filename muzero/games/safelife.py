@@ -53,8 +53,7 @@ class PolicyNetwork(t.Module):
 
         self.policy = self.policy_value[0:4] + [
             # t.Linear(conf.hidden_size), t.ReLU(),
-            t.Softmax(len(conf.action_space))
-        ]
+            t.Softmax(len(conf.action_space))]
 
         self.policy_value = s(*self.policy_value)
         self.policy = s(*self.policy)
@@ -129,7 +128,6 @@ class MuZeroConfig:
         self.pb_c_init = 1.25
 
         ### Network
-        self.hidden_size = 512
         self.global_dense_embedding_size = 16
         self.conv1kernel = 5
         self.conv2kernel = 3
@@ -138,6 +136,7 @@ class MuZeroConfig:
         self.embedding_depth = 64
         self.embedding_shape = self.view_shape + (self.embedding_depth,) # for SafeLife we're helping the agent by giving it an internal representation that matches the game's state space
 
+        self.hidden_size = np.product(self.embedding_shape)
 
         # Training
         self.results_path = "./pretrained"  # Path to store the model weights
