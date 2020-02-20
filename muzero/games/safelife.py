@@ -12,25 +12,37 @@ from safelife import env_wrappers
 t = torch.nn
 s = t.Sequential
 
-c = 'circular' # https://github.com/pytorch/pytorch/pull/17240
-               # note that padding must be kernel size - 1
+c = 'circular'  # https://github.com/pytorch/pytorch/pull/17240
+                # note that padding must be kernel size - 1
 
 class EmbeddingNetwork(t.Module):
+
     def __init__(self, conf):
         super().__init__()
-        self.embedding = s(t.Conv2d(10, 32, 5, stride=1, padding=5-1, padding_mode=c), t.ReLU(),
-                           t.Conv2d(32, conf.embedding_depth, 3, stride=1, padding=3-1, padding_mode=c), t.ReLU())
+        ksize = conf.conv1kernel
+        self.embedding = s(
+            t.Conv2d(10, 32, ksize, stride=1, padding=ksize-1, padding_mode=c),
+            t.ReLU(),
+            t.Conv2d(32, conf.embedding_depth, ksize, stride=1, padding=ksize-1, padding_mode=c),
+            t.ReLU())
 
     def forward(self, x):
         x = x.transpose(-1, -3) # convert from SafeLife observation to torch
         return self.embedding(x)
 
-class PoliycyNetwork(t.Module):
+
+class PolicyNetwork(t.Module):
+
     def __init__(self, conf):
         # todo: figure out how much layer reuse we really want here
-        self.policy_value = [t.Conv2d(conf.embedding_depth, conf.embedding_depth, 3, stride=1), t.ReLU(),
-                             t.Linear(conf.hidden_size)   , t.ReLU(),
-                             t.Linear(conf.hidden_size, 1)]
+        ksize = conf.conv2kernel
+        chans = conf.embedding_depth
+        self.policy_value = [
+             t.Conv2d(chans, chans, ksize, padding=ksize-1, stride=1, padding_mode=c),
+             t.ReLU(),
+             t.Linear(conf.hidden_size),
+             t.ReLU(),
+             t.Linear(conf.hidden_size, 1)]
 
         self.policy = self.policy_value[0:4] + [
             # t.Linear(conf.hidden_size), t.ReLU(),
@@ -39,21 +51,31 @@ class PoliycyNetwork(t.Module):
 
         self.policy_value = s(self.policy_value)
 
+
 class DynamicsNetwork(t.Module):
     "This is hardcoded due to artistic disagreements with this codebase's layout :)"
     def __init__(self, conf):
         super().__init__()
         self.linear_inp = t.Linear(np.product(conf.embedding_shape) + len(conf.action_space),
                                    conf.global_dense_embedding_size)
-        self.conv1 = s(t.Conv2d(conf.embedding_depth+conf.global_dense_embedding_size, conf.embedding_depth+conf.global_dense_embedding_size, 3, stride=1, padding=3-1, padding_mode=c), t.ReLU())
-        self.conv2 = s(t.Conv2d(conf.embedding_depth+conf.global_dense_embedding_size, conf.embedding_depth, 3, stride=1, padding=3-1, padding_mode=c), t.ReLU())
-        conv_shape = conf.embedding_shape[:-1] + (conf.embedding_depth + conf.global_dense_embedding_size,)
+
+        # channels is the embedding size plus the amount of global state (like
+        # "move left") we are feeding to the conv layers
+
+        ksize = conf.conv2kernel
+        chans = conf.embedding_depth + conf.global_dense_embedding_size
+        self.conv1 =s(
+              t.Conv2d(chans, chans, ksize, stride=1, padding=ksize-1, padding_mode=c),
+              t.ReLU())
+        self.conv2 = s(
+              t.Conv2d(chans, conf.embedding_depth, ksize, stride=1, padding=ksize-1, padding_mode=c),
+              t.ReLU())
+        conv_shape = conf.embedding_shape[:-1] + (chans,)
 
         self.reward = s(
             t.Linear(np.product(conv_shape),128),
             t.ReLU(),
             t.Linear(128, 1))
-
 
     def forward(self, x, action):
         # TODO ensure that action is 1-hot
@@ -68,9 +90,6 @@ class DynamicsNetwork(t.Module):
         x = self.conv2(x)
 
         return x, reward
-
-
-
 
 
 class MuZeroConfig:
@@ -101,6 +120,8 @@ class MuZeroConfig:
         ### Network
         self.hidden_size = 512
         self.global_dense_embedding_size = 16
+        self.conv1kernel = 5
+        self.conv2kernel = 3
 
         # hidden representations
         self.embedding_depth = 64
@@ -183,8 +204,8 @@ def Game(conf, seed=None, logdir="./safelife-logs"):
     env.seed(seed)
     env = env_wrappers.MovementBonusWrapper(env, as_penalty=True)
     env = env_wrappers.MinPerformanceScheduler(env, min_performance=0.1)
-    #env = env_wrappers.RecordingSafeLifeWrapper(
-    #    env, video_name=video_name, tf_logger=tf_logger,
-    #    log_file=episode_log)
+    # env = env_wrappers.RecordingSafeLifeWrapper(
+    #     env, video_name=video_name, tf_logger=tf_logger,
+    #     log_file=episode_log)
     env = env_wrappers.ExtraExitBonus(env)
     return env
