@@ -211,11 +211,12 @@ class RecordingSafeLifeWrapper(BaseWrapper):
         msg = textwrap.dedent("""
         - name: {name}
           episode: {episode_num}
+          steps: {num_steps}
           length: {length}
           reward: {reward:0.3g}
           performance: [{completed}, {possible}, {cutoff:0.3g}]
         """).format(
-            name=game.title, episode_num=self.episode_num,
+            name=game.title, episode_num=self.episode_num, num_steps=num_steps,
             length=self.episode_length, reward=self.episode_reward,
             completed=completed, possible=possible, cutoff=perf_cutoff)
 
