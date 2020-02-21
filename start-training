@@ -165,7 +165,7 @@ subprocess.run([
 
 if args.port:
     tb_proc = subprocess.Popen([
-        "tensorboard", "--logdir", job_name + ':' + data_dir, '--port', str(args.port)])
+        "tensorboard", "--logdir_spec", job_name + ':' + data_dir, '--port', str(args.port)])
 
 
 # Start training!

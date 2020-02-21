@@ -165,7 +165,7 @@ class PPO(object):
         a_policy = torch.gather(policy, -1, actions[..., np.newaxis])[..., 0]
 
         prob_diff = advantages.sign() * (1 - a_policy / old_policy)
-        policy_loss = advantages * torch.clamp(prob_diff, min=-self.eps_policy)
+        policy_loss = advantages.abs() * torch.clamp(prob_diff, min=-self.eps_policy)
         policy_loss = policy_loss.mean()
 
         v_clip = old_values + torch.clamp(
@@ -180,7 +180,6 @@ class PPO(object):
         return entropy, policy_loss + value_loss * self.vf_coef + entropy_loss
 
     def train_batch(self, batch):
-        # batch = self.gen_training_batch(self.steps_per_env)
         idx = np.arange(len(batch.states))
 
         for _ in range(self.epochs_per_batch):
