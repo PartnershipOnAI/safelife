@@ -92,7 +92,7 @@ class PPO(object):
         It's assumed that the testing environments take care of their own
         logging via wrappers.
         """
-        test_envs = self.test_envs or []
+        test_envs = self.testing_envs or []
         while test_envs:
             data = self.take_one_step(test_envs)
             test_envs = [
