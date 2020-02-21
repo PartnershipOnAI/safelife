@@ -134,10 +134,10 @@ class SafeLifePolicyNetwork(nn.Module):
         num_features = np.product(cnn_out_shape)
         num_actions = 9
 
-        self.dense = nn.Sequential([
+        self.dense = nn.Sequential(
             nn.Linear(num_features, 512),
             nn.ReLU(),
-        ])
+        )
         self.logits = nn.Linear(512, num_actions)
         self.value_func = nn.Linear(512, 1)
 
@@ -147,5 +147,5 @@ class SafeLifePolicyNetwork(nn.Module):
         x = self.cnn(obs).flatten(start_dim=1)
         x = self.dense(x)
         value = self.value_func(x)[...,0]
-        advantages = F.softmax(self.logits(x), dim=-1)
-        return value, advantages
+        policy = F.softmax(self.logits(x), dim=-1)
+        return value, policy

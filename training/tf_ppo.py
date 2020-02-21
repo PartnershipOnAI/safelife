@@ -5,53 +5,14 @@ Algorithm for Proximal Policy Optimization.
 import os
 import logging
 from types import SimpleNamespace
-from collections import namedtuple
-from functools import wraps
 
 import numpy as np
 import tensorflow as tf
 
 from safelife.helper_utils import load_kwargs
+from .utils import named_output
 
 logger = logging.getLogger(__name__)
-
-
-def named_output(*names):
-    """
-    A simple decorator to transform a function's output to a named tuple.
-    """
-    def decorator(func):
-        rtype = namedtuple(func.__name__ + '_rval', names)
-
-        @wraps(func)
-        def wrapped(*args, **kwargs):
-            rval = func(*args, **kwargs)
-            if isinstance(rval, tuple):
-                rval = rtype(*rval)
-            return rval
-        return wrapped
-
-    return decorator
-
-
-def shuffle_arrays_in_place(*data):
-    """
-    This runs np.random.shuffle on multiple inputs, shuffling each in place
-    in the same order (assuming they're the same length).
-    """
-    rng_state = np.random.get_state()
-    for x in data:
-        np.random.set_state(rng_state)
-        np.random.shuffle(x)
-
-
-def shuffle_arrays(*data):
-    # Despite the nested for loops, this is actually a little bit faster
-    # than the above because it doesn't involve any copying of array elements.
-    # When the array elements are large (like environment states),
-    # that overhead can be large.
-    idx = np.random.permutation(len(data[0]))
-    return [[x[i] for i in idx] for x in data]
 
 
 def eps_relu(x, eps):
@@ -337,9 +298,7 @@ class PPO(object):
             rnn_state = [None] * len(obs)
         return policies[0], rnn_state
 
-    @named_output(
-        'states', 'actions', 'rewards', 'end_episode',
-        'rnn_states', 'info')
+    @named_output('states actions rewards end_episode rnn_states info')
     def run_agents(self, steps_per_env):
         """
         Create state/action sequences for each environment.
@@ -420,7 +379,7 @@ class PPO(object):
             np.array(infos).reshape(out_shape),
         )
 
-    @named_output('s', 'a', 'pi', 'r', 'G', 'A', 'v', 'm', 'c')
+    @named_output('s a pi r G A v m c')
     def gen_training_batch(self, steps_per_env):
         """
         Create a batch of training data, including discounted rewards and

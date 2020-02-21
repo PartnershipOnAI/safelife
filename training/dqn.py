@@ -6,13 +6,10 @@ import torch.optim as optim
 from safelife.helper_utils import load_kwargs
 
 from . import checkpointing
+from .utils import round_up
 
 
 USE_CUDA = torch.cuda.is_available()
-
-
-def round_up(x, r):
-    return x + r - x % r
 
 
 class ReplayBuffer(object):

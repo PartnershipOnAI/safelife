@@ -7,10 +7,13 @@ agnostic.
 
 import os
 import glob
+import logging
 
 import torch
 
 from safelife.safelife_env import SafeLifeEnv
+
+logger = logging.getLogger(__name__)
 
 
 def get_all_checkpoints(logdir):
@@ -44,6 +47,7 @@ def save_checkpoint(path, obj, attribs, max_checkpoints=3):
             val = val.state_dict()
         data[attrib] = val
     torch.save(data, path)
+    logger.info("Saving checkpoint: '%s'", path)
 
     for old_checkpoint in get_all_checkpoints(logdir)[:-max_checkpoints]:
         os.remove(old_checkpoint)
