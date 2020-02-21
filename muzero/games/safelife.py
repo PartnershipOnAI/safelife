@@ -23,6 +23,7 @@ class EmbeddingNetwork(t.Module):
     def __init__(self, conf):
         super().__init__()
         ksize = conf.conv1kernel
+        #  XXX accept that for SafeLife this is a board state, maybe 1 conv for it?
         self.embedding = s(
             t.Conv2d(10, 32, ksize, stride=1, padding=ksize-1, padding_mode=c),
             t.ReLU(),
@@ -44,14 +45,18 @@ class PolicyNetwork(t.Module):
         super().__init__()
         ksize = conf.conv2kernel
         chans = conf.embedding_depth
-        self.policy_value = [
-             t.Conv2d(chans, chans, ksize, padding=ksize-1, stride=1, padding_mode=c),
-             t.ReLU(),
-             t.Linear(conf.hidden_size, conf.hidden_size),
-             t.ReLU(),
-             t.Linear(conf.hidden_size, 1)]
+        #  XXX strided downsampled convolutions, along the lines of the PPO policy network
+        from safelife.training.models import safelife_cnn
 
-        self.policy = self.policy_value[0:4] + [
+        self.policy_value = safelife_cnn((26,26,10))
+        #self.policy_value = [
+        #     t.Conv2d(chans, chans, ksize, padding=ksize-1, stride=1, padding_mode=c),
+        #     t.ReLU(),
+        #     t.Linear(conf.hidden_size, conf.hidden_size//10),
+        #     t.ReLU(),
+        #     t.Linear(conf.hidden_size, 1)]
+
+        self.policy = self.policy_value[0:6] + [
             # t.Linear(conf.hidden_size), t.ReLU(),
             t.Softmax(len(conf.action_space))]
 
@@ -82,6 +87,7 @@ class DynamicsNetwork(t.Module):
               t.ReLU())
         conv_shape = conf.embedding_shape[:-1] + (chans,)
 
+        # XXX make convolutional, 2 layer, also take both states _n and _n+1 (and eventualy state 0) as inputs
         self.reward = s(
             t.Linear(np.product(conv_shape),128),
             t.ReLU(),
@@ -133,7 +139,8 @@ class MuZeroConfig:
         self.conv2kernel = 3
 
         # hidden representations
-        self.embedding_depth = 64
+        # self.embedding_depth = 64
+        self.embedding_depth = self.observation_shape
         self.embedding_shape = self.view_shape + (self.embedding_depth,) # for SafeLife we're helping the agent by giving it an internal representation that matches the game's state space
 
         self.hidden_size = np.product(self.embedding_shape)
