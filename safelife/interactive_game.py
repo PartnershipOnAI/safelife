@@ -178,14 +178,14 @@ class GameLoop(object):
         if not state.game or not self.logfile:
             return
         with open(self.logfile, 'a') as logfile:
-            p1, p2 = state.game.performance_ratio()
+            p1, p2 = state.game.points_earned(), state.game.initial_available_points
             msg = """
             - level: {level}
               score: {score}
               steps: {steps}
               undos: {undos}
               time: {time:0.1f}
-              performance: [{p1}, {p2}]
+              reward: [{p1}, {p2}]
             """.format(
                 level=state.game.title,
                 score=state.total_points - state.level_start_points,
@@ -464,9 +464,10 @@ class GameLoop(object):
         if self.print_only:
             output += "\n"
         else:
-            output += "\nScore: {bold}{}{clear}".format(state.total_points, **styles)
             output += "\nSteps: {bold}{}{clear}".format(state.total_steps, **styles)
-            output += "\nLevel progress: {} / {}".format(*game.performance_ratio(), **styles)
+            output += "\nTotal Score: {bold}{}{clear}".format(state.total_points, **styles)
+            output += "\nLevel Score: {} / {}".format(
+                game.points_earned(), game.initial_available_points, **styles)
             output += "\nPowers: {italics}{}{clear}".format(render_text.agent_powers(game), **styles)
             if state.edit_mode:
                 output += "\n{bold}*** EDIT {} ***{clear}".format(state.edit_mode, **styles)

@@ -151,6 +151,7 @@ class SafeLifeRecorder(video_recorder.VideoRecorder):
 class RecordingSafeLifeWrapper(BaseWrapper):
     """
     Handles video recording and tensorboard/terminal logging.
+
     Attributes
     ----------
     video_name : str
@@ -196,7 +197,8 @@ class RecordingSafeLifeWrapper(BaseWrapper):
             num_steps = 0
 
         game = self.game
-        completed, possible = game.performance_ratio()
+        completed = game.points_earned()
+        possible = game.initial_available_points
         perf_cutoff = max(0, game.min_performance)
         green_life = CellTypes.life | CellTypes.color_g
 

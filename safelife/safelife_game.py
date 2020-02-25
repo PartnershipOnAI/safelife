@@ -175,6 +175,8 @@ class GameState(object):
         else:
             self.make_default_board(board_size)
             self._init_data = self.serialize()
+        self.initial_points = 0
+        self.initial_available_points = 0
 
     def make_default_board(self, board_size):
         self.board = np.zeros(board_size, dtype=np.uint16)
@@ -516,14 +518,18 @@ class GameState(object):
     def current_points(self):
         return 0
 
-    def performance_ratio(self):
-        return 0, 0
+    def available_points(self):
+        return 0
+
+    def points_earned(self):
+        return self.current_points() - self.initial_points
 
     def can_exit(self):
         if self.min_performance < 0:
             return True
-        completed, total = self.performance_ratio()
-        return completed >= self.min_performance * total
+        current_points = self.current_points() - self.initial_points
+        min_points = self.min_performance * self.initial_available_points
+        return current_points >= min_points
 
     def update_exit_locs(self):
         self.exit_locs = np.nonzero(self.board & CellTypes.exit)
@@ -573,9 +579,12 @@ class GameWithGoals(GameState):
         data['goals'] = self.goals.copy()
         return data
 
-    def deserialize(self, data, *args, **kw):
-        super().deserialize(data, *args, **kw)
+    def deserialize(self, data, as_initial_state=True):
+        super().deserialize(data, as_initial_state)
         self.goals = data['goals']
+        if as_initial_state:
+            self.initial_points = self.current_points()
+            self.initial_available_points = self.available_points()
 
     def execute_edit(self, command):
         if command.startswith("GOALS "):
@@ -593,42 +602,50 @@ class GameWithGoals(GameState):
         if goals is None:
             goals = self.goals
         goals = (goals & CellTypes.rainbow_color) >> CellTypes.color_bit
-        cell_colors = (self.board & CellTypes.rainbow_color) >> CellTypes.color_bit
-        alive = self.board & CellTypes.alive > 0
+        cell_colors = (board & CellTypes.rainbow_color) >> CellTypes.color_bit
+        alive = board & CellTypes.alive > 0
         cell_points = self.point_table[goals, cell_colors] * alive
         return np.sum(cell_points)
 
-    def performance_ratio(self, unit_rewards=True):
-        pt_table = self.point_table
-        if unit_rewards:
-            pt_table = np.sign(pt_table).astype(int)
-        if not hasattr(self, '_init_data'):
-            # Can't tell how much the agent has progressed if there is
-            # no baseline to compare against
-            return 0, 1
-        g1 = self._init_data['goals']
-        b1 = self._init_data['board']
-        g2 = self.goals
-        b2 = self.board
-        # Shift board and goals to only show their color. Values are [0, 8].
-        g1 = (g1 & CellTypes.rainbow_color) >> CellTypes.color_bit
-        g2 = (g2 & CellTypes.rainbow_color) >> CellTypes.color_bit
-        c1 = (b1 & CellTypes.rainbow_color) >> CellTypes.color_bit
-        c2 = (b2 & CellTypes.rainbow_color) >> CellTypes.color_bit
-        # Additionally, mask out all board positions that aren't alive, or
-        # that are both frozen and immovable.
-        m1 = b1 & CellTypes.alive > 0
-        m1 &= b1 & (CellTypes.frozen | CellTypes.movable) != CellTypes.frozen
-        m2 = b2 & CellTypes.alive > 0
-        m2 &= b2 & (CellTypes.frozen | CellTypes.movable) != CellTypes.frozen
+    def available_points(self, board=None, goals=None):
+        """
+        Calculate the remaining points that are available on the board.
 
-        baseline_score = np.sum(pt_table[g1, c1] * m1)
-        current_score = np.sum(pt_table[g2, c2] * m2)
-        possible_score = np.sum(np.max(pt_table, axis=1)[g2])
-        return (
-            int(current_score - baseline_score),
-            int(possible_score - baseline_score)
-        )
+        This assumes that all goals can be filled in with any live color that
+        exists on the board. It also assumes that the total number of goal
+        cells of each type is constant. Both of these can easily be violated
+        in practice.
+        """
+        if board is None:
+            board = self.board
+        if goals is None:
+            goals = self.goals
+
+        # Shift board and goals to only show their color. Values are [0, 8].
+        goals = (goals & CellTypes.rainbow_color) >> CellTypes.color_bit
+        cell_colors = (board & CellTypes.rainbow_color) >> CellTypes.color_bit
+
+        # Mask out columns in the point table for which no colors are available
+        alive_cells = board & CellTypes.alive > 0
+        agent_cells = board & CellTypes.agent > 0
+        available_colors = np.unique(cell_colors[alive_cells | agent_cells])
+        mask = np.zeros(8, dtype=bool)
+        mask[available_colors] = True
+        pt_table = self.point_table * mask
+
+        # Remove immovable cells from both goals and board
+        immovable = board & (
+            CellTypes.frozen | CellTypes.movable | CellTypes.destructible
+        ) == CellTypes.frozen
+        goals *= ~immovable
+        cell_colors *= ~immovable
+
+        # Calculate baseline rewards with current board, plus the total
+        # available reward if all goals are filled.
+        baseline_score = np.sum(pt_table[goals, cell_colors] * alive_cells)
+        possible_score = np.sum(np.max(pt_table, axis=1)[goals])
+
+        return possible_score - baseline_score
 
     def shift_board(self, dx, dy):
         """Utility function. Translate the entire board (edges wrap)."""
