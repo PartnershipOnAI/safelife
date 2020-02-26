@@ -23,11 +23,9 @@ class EmbeddingNetwork(t.Module):
     def __init__(self, conf):
         super().__init__()
         ksize = conf.conv1kernel
-        #  XXX accept that for SafeLife this is a board state, maybe 1 conv for it?
+        #  accept that for SafeLife this is a board state, maybe 1 conv for it?
         self.embedding = s(
-            t.Conv2d(10, 32, ksize, stride=1, padding=ksize-1, padding_mode=c),
-            t.ReLU(),
-            t.Conv2d(32, conf.embedding_depth, ksize, stride=1, padding=ksize-1, padding_mode=c),
+            t.Conv2d(10, 10, ksize, stride=1, padding=ksize-1, padding_mode=c),
             t.ReLU())
 
     def forward(self, x):
@@ -45,26 +43,28 @@ class PolicyNetwork(t.Module):
         super().__init__()
         ksize = conf.conv2kernel
         chans = conf.embedding_depth
-        #  XXX strided downsampled convolutions, along the lines of the PPO policy network
-        from safelife.training.models import safelife_cnn
+        #  strided downsampled convolutions, along the lines of the PPO policy network
+        from training.models import safelife_cnn
 
-        self.policy_value = safelife_cnn((26,26,10))
-        #self.policy_value = [
-        #     t.Conv2d(chans, chans, ksize, padding=ksize-1, stride=1, padding_mode=c),
-        #     t.ReLU(),
-        #     t.Linear(conf.hidden_size, conf.hidden_size//10),
-        #     t.ReLU(),
-        #     t.Linear(conf.hidden_size, 1)]
+        self.cnn, shape = safelife_cnn((26,26,10))
+        self.policy_value_final = t.Linear(np.product(shape), 1)
+        self.policy_final = s(t.Linear(np.product(shape), 9),
+                              t.ReLU(),
+                              t.Softmax(dim=1))
 
-        self.policy = self.policy_value[0:6] + [
-            # t.Linear(conf.hidden_size), t.ReLU(),
-            t.Softmax(len(conf.action_space))]
-
-        self.policy_value = s(*self.policy_value)
-        self.policy = s(*self.policy)
+        self.layers = t.ModuleList(
+            list(self.cnn.modules()) + [self.policy_value_final, self.policy_final])
 
     def forward(self, embedded_state):
-        return self.policy(embedded_state), self.policy_value(embedded_state)
+        pv = self.cnn[0:6](embedded_state)
+        pv = pv.flatten(start_dim=1)
+        pv = self.policy_value_final(pv)
+
+        p = self.cnn[0:6](embedded_state)
+        p = p.flatten(start_dim=1)
+        p = self.policy_final(p)
+
+        return p, pv
 
 
 class DynamicsNetwork(t.Module):

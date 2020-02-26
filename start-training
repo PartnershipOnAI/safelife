@@ -271,6 +271,10 @@ try:
                 logdir=subdir, summary_writer=summary_writer)
             algo.train(6e6)
 
+        elif args.algo == 'muzero':
+            from muzero.games.safelife import SafeLifeMuZero
+
+
 
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
