@@ -47,7 +47,12 @@ class PolicyNetwork(t.Module):
         from training.models import safelife_cnn
 
         self.cnn, shape = safelife_cnn((26,26,10))
-        self.policy_value_final = t.Linear(np.product(shape), 1)
+        size = np.product(shape)
+
+        self.policy_value_final = s(t.Linear(size, 512),
+                                    t.ReLU(),
+                                    t.Linear(512, 1))
+
         self.policy_final = s(t.Linear(np.product(shape), 9),
                               t.ReLU(),
                               t.Softmax(dim=1))
@@ -56,13 +61,11 @@ class PolicyNetwork(t.Module):
             list(self.cnn.modules()) + [self.policy_value_final, self.policy_final])
 
     def forward(self, embedded_state):
-        pv = self.cnn[0:6](embedded_state)
-        pv = pv.flatten(start_dim=1)
-        pv = self.policy_value_final(pv)
+        conv = self.cnn(embedded_state)
+        conv = conv.flatten(start_dim=1)
 
-        p = self.cnn[0:6](embedded_state)
-        p = p.flatten(start_dim=1)
-        p = self.policy_final(p)
+        pv = self.policy_value_final(conv)
+        p = self.policy_final(conv)
 
         return p, pv
 
