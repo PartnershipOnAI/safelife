@@ -4,35 +4,30 @@ import numpy
 import ray
 import torch
 
-from . import models
+import models
 
 
-@ray.remote(num_gpus=1)
+@ray.remote
 class Trainer:
     """
     Class which run in a dedicated thread to train a neural network and save it
     in the shared storage.
     """
 
-    def __init__(self, initial_weights, config, device):
+    def __init__(self, initial_weights, config):
         self.config = config
         self.training_step = 0
 
         # Initialize the network
-        self.model = models.MuZeroNetwork(
-            self.config.observation_shape,
-            len(self.config.action_space),
-            self.config.encoding_size,
-            self.config.hidden_size,
-        )
+        self.model = models.MuZeroNetwork(self.config)
         self.model.set_weights(initial_weights)
-        self.model.to(torch.device(device))
+        self.model.to(torch.device(config.training_device))
         self.model.train()
 
-        self.optimizer = torch.optim.SGD(
+        self.optimizer = torch.optim.Adam(
             self.model.parameters(),
             lr=self.config.lr_init,
-            momentum=self.config.momentum,
+            # momentum=self.config.momentum,
             weight_decay=self.config.weight_decay,
         )
 
@@ -64,12 +59,7 @@ class Trainer:
         """
         Perform one training step.
         """
-        # Update learning rate
-        lr = self.config.lr_init * self.config.lr_decay_rate ** (
-            self.training_step / self.config.lr_decay_steps
-        )
-        for param_group in self.optimizer.param_groups:
-            param_group["lr"] = lr
+        self.update_lr()
 
         (
             observation_batch,
@@ -85,6 +75,9 @@ class Trainer:
         target_value = torch.tensor(target_value).float().to(device)
         target_reward = torch.tensor(target_reward).float().to(device)
         target_policy = torch.tensor(target_policy).float().to(device)
+
+        target_value = self.scalar_to_support(target_value, self.config.support_size)
+        target_reward = self.scalar_to_support(target_reward, self.config.support_size)
 
         value, reward, policy_logits, hidden_state = self.model.initial_inference(
             observation_batch
@@ -104,22 +97,22 @@ class Trainer:
                 current_value_loss,
                 current_reward_loss,
                 current_policy_loss,
-            ) = loss_function(
+            ) = self.loss_function(
                 value.squeeze(-1),
                 reward.squeeze(-1),
                 policy_logits,
                 target_value[:, i],
                 target_reward[:, i],
-                target_policy[:, i, :],
+                target_policy[:, i],
             )
             value_loss += current_value_loss
             reward_loss += current_reward_loss
             policy_loss += current_policy_loss
 
+        loss = (value_loss + reward_loss + policy_loss).mean()
+
         # Scale gradient by number of unroll steps (See paper Training appendix)
-        loss = (
-            value_loss + reward_loss + policy_loss
-        ).mean() / self.config.num_unroll_steps
+        loss.register_hook(lambda grad: grad / self.config.num_unroll_steps)
 
         # Optimize
         self.optimizer.zero_grad()
@@ -134,12 +127,49 @@ class Trainer:
             policy_loss.mean().item(),
         )
 
+    def update_lr(self):
+        """
+        Update learning rate
+        """
+        lr = self.config.lr_init * self.config.lr_decay_rate ** (
+            self.training_step / self.config.lr_decay_steps
+        )
+        for param_group in self.optimizer.param_groups:
+            param_group["lr"] = lr
 
-def loss_function(
-    value, reward, policy_logits, target_value, target_reward, target_policy
-):
-    # TODO: paper promotes cross entropy instead of MSE
-    value_loss = torch.nn.MSELoss(reduction="none")(value, target_value)
-    reward_loss = torch.nn.MSELoss(reduction="none")(reward, target_reward)
-    policy_loss = -(torch.log_softmax(policy_logits, dim=1) * target_policy).sum(1)
-    return value_loss, reward_loss, policy_loss
+    @staticmethod
+    def scalar_to_support(x, support_size):
+        """
+        Transform a scalar to a categorical representation with (2 * support_size + 1) categories
+        See paper appendix Network Architecture
+        """
+        # Reduce the scale (defined in https://arxiv.org/abs/1805.11593)
+        x = torch.sign(x) * (torch.sqrt(torch.abs(x) + 1) - 1) + 0.001 * x
+
+        # Encode on a vector
+        x = torch.clamp(x, -support_size, support_size)
+        floor = x.floor()
+        prob = x - floor
+        logits = torch.zeros(x.shape[0], x.shape[1], 2 * support_size + 1).to(x.device)
+        logits.scatter_(
+            2, (floor + support_size).long().unsqueeze(-1), (1 - prob).unsqueeze(-1)
+        )
+        indexes = floor + support_size + 1
+        prob = prob.masked_fill_(2 * support_size < indexes, 0.0)
+        indexes = indexes.masked_fill_(2 * support_size < indexes, 0.0)
+        logits.scatter_(2, indexes.long().unsqueeze(-1), prob.unsqueeze(-1))
+        return logits
+
+    @staticmethod
+    def loss_function(
+        value, reward, policy_logits, target_value, target_reward, target_policy
+    ):
+        # Cross-entropy had a better convergence than MSE
+        value_loss = (-target_value * torch.nn.LogSoftmax(dim=1)(value)).sum(1).mean()
+        reward_loss = (
+            (-target_reward * torch.nn.LogSoftmax(dim=1)(reward)).sum(1).mean()
+        )
+        policy_loss = (
+            (-target_policy * torch.nn.LogSoftmax(dim=1)(policy_logits)).sum(1).mean()
+        )
+        return value_loss, reward_loss, policy_loss
