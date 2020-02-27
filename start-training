@@ -41,7 +41,7 @@ parser.add_argument('--port', default=6006, type=int,
     help="Port on which to run tensorboard.")
 parser.add_argument('--impact-penalty', default=0.0, type=float)
 parser.add_argument('--env-type', choices=env_types)
-parser.add_argument('--algo', choices=('ppo', 'dqn'))
+parser.add_argument('--algo', choices=('ppo', 'dqn', 'ppo-tf'))
 args = parser.parse_args()
 
 # Setup the directories
@@ -165,7 +165,7 @@ subprocess.run([
 
 if args.port:
     tb_proc = subprocess.Popen([
-        "tensorboard", "--logdir", job_name + ':' + data_dir, '--port', str(args.port)])
+        "tensorboard", "--logdir_spec", job_name + ':' + data_dir, '--port', str(args.port)])
 
 
 # Start training!
@@ -196,8 +196,8 @@ try:
         subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
         os.makedirs(subdir, exist_ok=True)
 
-        if args.algo == 'ppo':
-            from training.ppo import SummaryWriter
+        if args.algo == 'ppo-tf':
+            from training.tf_ppo import SummaryWriter
         else:
             from tensorboardX import SummaryWriter
 
@@ -247,13 +247,26 @@ try:
                 test_levels, distinct_levels=5, total_levels=-1)
         )
 
-        if args.algo == 'ppo':
+        if args.algo == 'ppo-tf':
             import tensorflow as tf
-            from training.safelife_ppo import SafeLifePPO
+            from training.tf_safelife_ppo import SafeLifePPO
             tf.reset_default_graph()
 
             algo = SafeLifePPO(
                 envs=training_envs,
+                logdir=subdir, summary_writer=summary_writer)
+            algo.train(6e6)
+
+        elif args.algo == 'ppo':
+            from training.models import SafeLifePolicyNetwork
+            from training.ppo import PPO
+
+            obs_shape = training_envs[0].observation_space.shape
+            model = SafeLifePolicyNetwork(obs_shape)
+            algo = PPO(
+                model,
+                training_envs=training_envs,
+                testing_envs=testing_envs,
                 logdir=subdir, summary_writer=summary_writer)
             algo.train(6e6)
 

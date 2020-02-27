@@ -101,7 +101,7 @@ class SafeLifeEnv(gym.Env):
             self.observation_space = spaces.Box(
                 low=0, high=1,
                 shape=self.view_shape + (len(self.output_channels),),
-                dtype=np.uint16,
+                dtype=np.uint8,
             )
         self.seed()
 
@@ -151,6 +151,7 @@ class SafeLifeEnv(gym.Env):
         if self.output_channels:
             shift = np.array(list(self.output_channels), dtype=np.uint16)
             board = (board[...,None] & (1 << shift)) >> shift
+            board = board.astype(np.uint8)
         return board
 
     def step(self, action):

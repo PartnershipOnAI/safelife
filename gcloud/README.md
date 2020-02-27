@@ -10,7 +10,7 @@ The first thing to do is download the [gcloud command-line tool](https://cloud.g
 
 In order to actually run any training, you will need to provision virtual machines on which to run. Instances can easily be reused. They come with persistent disks, so you can stop and start them and retain all of your training data. To provision a new virtual machine, or *instance*, run e.g.
 
-    gcloud compute instances create $INSTANCE --image-family tf-1-14-cu100 --image-project deeplearning-platform-release --boot-disk-size=200GB  --accelerator type=nvidia-tesla-k80 --maintenance-policy TERMINATE --restart-on-failure --metadata startup-script="~/current_job/src/start-training --shutdown"
+    gcloud compute instances create $INSTANCE --image-family pytorch-latest-gpu --image-project deeplearning-platform-release --boot-disk-size=200GB  --accelerator type=nvidia-tesla-p100 --machine-type=n1-standard-2 --maintenance-policy TERMINATE
 
 The startup script ensures that the instances will restart the last active job if it needs to be restarted.
 
