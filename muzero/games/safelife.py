@@ -4,18 +4,27 @@ import numpy as np
 # import tensorflow as tf
 import torch
 
+from torch import nn
+
 from safelife.safelife_env import SafeLifeEnv
 from safelife.safelife_game import CellTypes
 from safelife.file_finder import SafeLifeLevelIterator
 from safelife import env_wrappers
 
-t = torch.nn
-s = t.Sequential
+s = nn.Sequential
 
 c = 'circular'  # https://github.com/pytorch/pytorch/pull/17240
                 # note that padding must be kernel size - 1
 
-class EmbeddingNetwork(t.Module):
+class SafeLifeMuZero():
+    def __init__(self):
+        self.conf = MuZeroConfig()
+        self.embedding = EmbeddingNetwork(self.conf)
+        self.policy = PolicyNetwork(self.conf)
+        self.dynamics = DynamicsNetwork(self.conf)
+        game = Game(self.conf)
+
+class EmbeddingNetwork(nn.Module):
     """
     Maps an observation of the environment to an embedded hidden state representation.
     """
@@ -25,15 +34,15 @@ class EmbeddingNetwork(t.Module):
         ksize = conf.conv1kernel
         #  accept that for SafeLife this is a board state, maybe 1 conv for it?
         self.embedding = s(
-            t.Conv2d(10, 10, ksize, stride=1, padding=ksize-1, padding_mode=c),
-            t.ReLU())
+            nn.Conv2d(10, 10, ksize, stride=1, padding=ksize-1, padding_mode=c),
+            nn.ReLU())
 
     def forward(self, x):
         x = x.transpose(-1, -3) # convert from SafeLife observation to torch
         return self.embedding(x)
 
 
-class PolicyNetwork(t.Module):
+class PolicyNetwork(nn.Module):
     """
     Maps an embedded state representation to a policy action and an expected value of the state.
     """
@@ -49,15 +58,15 @@ class PolicyNetwork(t.Module):
         self.cnn, shape = safelife_cnn((26,26,10))
         size = np.product(shape)
 
-        self.policy_value_final = s(t.Linear(size, 512),
-                                    t.ReLU(),
-                                    t.Linear(512, 1))
+        self.policy_value_final = s(nn.Linear(size, 512),
+                                    nn.ReLU(),
+                                    nn.Linear(512, 1))
 
-        self.policy_final = s(t.Linear(np.product(shape), 9),
-                              t.ReLU(),
-                              t.Softmax(dim=1))
+        self.policy_final = s(nn.Linear(np.product(shape), 9),
+                              nn.ReLU(),
+                              nn.Softmax(dim=1))
 
-        self.layers = t.ModuleList(
+        self.layers = nn.ModuleList(
             list(self.cnn.modules()) + [self.policy_value_final, self.policy_final])
 
     def forward(self, embedded_state):
@@ -66,15 +75,14 @@ class PolicyNetwork(t.Module):
 
         pv = self.policy_value_final(conv)
         p = self.policy_final(conv)
-
         return p, pv
 
 
-class DynamicsNetwork(t.Module):
+class DynamicsNetwork(nn.Module):
     "This is hardcoded due to artistic disagreements with this codebase's layout :)"
     def __init__(self, conf):
         super().__init__()
-        self.linear_inp = t.Linear(np.product(conf.embedding_shape) + len(conf.action_space),
+        self.linear_inp = nn.Linear(np.product(conf.embedding_shape) + len(conf.action_space),
                                    conf.global_dense_embedding_size)
 
         # channels is the embedding size plus the amount of global state (like
@@ -83,18 +91,19 @@ class DynamicsNetwork(t.Module):
         ksize = conf.conv2kernel
         chans = conf.embedding_depth + conf.global_dense_embedding_size
         self.conv1 =s(
-              t.Conv2d(chans, chans, ksize, stride=1, padding=ksize-1, padding_mode=c),
-              t.ReLU())
+              nn.Conv2d(chans, chans, ksize, stride=1, padding=ksize-1, padding_mode=c),
+              nn.ReLU())
         self.conv2 = s(
-              t.Conv2d(chans, conf.embedding_depth, ksize, stride=1, padding=ksize-1, padding_mode=c),
-              t.ReLU())
+              nn.Conv2d(chans, conf.embedding_depth, ksize, stride=1, padding=ksize-1,
+                        padding_mode=c),
+              nn.ReLU())
         conv_shape = conf.embedding_shape[:-1] + (chans,)
 
         # XXX make convolutional, 2 layer, also take both states _n and _n+1 (and eventualy state 0) as inputs
         self.reward = s(
-            t.Linear(np.product(conv_shape),128),
-            t.ReLU(),
-            t.Linear(128, 1))
+            nn.Linear(np.product(conv_shape),128),
+            nn.ReLU(),
+            nn.Linear(128, 1))
 
     def forward(self, x, action):
         # TODO ensure that action is 1-hot
@@ -119,7 +128,6 @@ class MuZeroConfig:
         self.observation_shape = 10  # Dimensions of the game observation
         self.action_space = SafeLifeEnv.action_names  # Fixed list of all possible actions
         self.view_shape = (26, 26)
-
 
         ### Self-Play
         self.num_actors = 1  # Number of simultaneous threads self-playing to feed the replay buffer
