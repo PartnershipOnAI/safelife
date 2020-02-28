@@ -516,20 +516,31 @@ class GameState(object):
             raise ValueError("Unknown condition '%s'" % (condition,))
 
     def current_points(self):
+        """
+        Current point value of the board.
+
+        This depends on the current board state only.
+        It does not depend on the initial board state or the board history.
+        """
         return 0
 
     def available_points(self):
+        """Number of points remaining to be earned."""
         return 0
 
     def points_earned(self):
+        """Number of points that have been earned."""
         return self.current_points() - self.initial_points
+
+    def required_points(self):
+        """Total number of points needed to open the level exit."""
+        req_points = self.min_performance * self.initial_available_points
+        return max(0, int(np.ceil(req_points)))
 
     def can_exit(self):
         if self.min_performance < 0:
             return True
-        current_points = self.current_points() - self.initial_points
-        min_points = self.min_performance * self.initial_available_points
-        return current_points >= min_points
+        return self.points_earned() >= self.required_points()
 
     def update_exit_locs(self):
         self.exit_locs = np.nonzero(self.board & CellTypes.exit)

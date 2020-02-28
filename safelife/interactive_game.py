@@ -467,7 +467,7 @@ class GameLoop(object):
             output += "\nSteps: {bold}{}{clear}".format(state.total_steps, **styles)
             output += "\nTotal Score: {bold}{}{clear}".format(state.total_points, **styles)
             output += "\nLevel Score: {} / {}".format(
-                game.points_earned(), game.initial_available_points, **styles)
+                game.points_earned(), game.required_points(), **styles)
             output += "\nPowers: {italics}{}{clear}".format(render_text.agent_powers(game), **styles)
             if state.edit_mode:
                 output += "\n{bold}*** EDIT {} ***{clear}".format(state.edit_mode, **styles)
