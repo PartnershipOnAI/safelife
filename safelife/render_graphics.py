@@ -6,12 +6,13 @@ import os
 import imageio
 import numpy as np
 
+from . import speedups
 from .safelife_game import CellTypes, GameState
 from .helper_utils import recenter_view
 
 
 sprite_path = os.path.join(os.path.dirname(__file__), "sprites.png")
-sprite_sheet = imageio.imread(os.path.abspath(sprite_path)) / 255
+sprite_sheet = imageio.imread(os.path.abspath(sprite_path)) / np.float32(255)
 SPRITE_SIZE = 14
 
 
@@ -65,51 +66,17 @@ background_colors = np.array([
     [0.9, 0.9, 0.9],  # white
 ])
 
-cell_array = np.array([
-    # [CellTypes.empty, (5*0 + 0) + 1],
-    [CellTypes.life, (5*1 + 0) + 1],
-    [CellTypes.alive, (5*1 + 1) + 1],
-    [CellTypes.wall, (5*2 + 2) + 1],
-    [CellTypes.crate, (5*2 + 3) + 1],
-    [CellTypes.plant, (5*1 + 3) + 1],
-    [CellTypes.tree, (5*1 + 4) + 1],
-    [CellTypes.ice_cube, (5*2 + 0) + 1],
-    [CellTypes.parasite, (5*2 + 4) + 1],
-    [CellTypes.weed, (5*1 + 2) + 1],
-    [CellTypes.spawner, (5*3 + 0) + 1],
-    [CellTypes.hard_spawner, (5*3 + 2) + 1],
-    [CellTypes.level_exit, (5*3 + 1) + 1],
-    [CellTypes.fountain, (5*2 + 1) + 1],
-])
-sprites_array = np.array([load_sprite(n // 5, n % 5) for n in range(20)])
-
 
 def render_board(board, goals, orientation, edit_loc=None, edit_color=0):
-    if edit_loc and (edit_loc[0] >= board.shape[0] or edit_loc[1] >= board.shape[1]):
-        edit_loc = None
-
-    agent_idx = ((board & CellTypes.agent) > 0) * (2 + orientation)
-    sprite_idx = -1 + np.sum(
-        ((board[...,None] & ~CellTypes.rainbow_color) == cell_array[:,0])
-        * cell_array[:,1], axis=-1)
-    sprite_idx *= board > 0
-    sprite_idx += agent_idx
-    fg_color = foreground_colors[(board & CellTypes.rainbow_color) >> 9]
-    bg_color = background_colors[(goals & CellTypes.rainbow_color) >> 9]
-    sprites = sprites_array[sprite_idx]
-    mask, sprite = sprites[...,3:], sprites[...,:3]
-    tile = (1-mask) * bg_color[...,None,None,:]
-    tile += mask * sprite * fg_color[...,None,None,:]
-    data = (255 * tile).astype(np.uint8)
+    img = speedups._render_board(board, goals, orientation, sprite_sheet)
     if edit_loc is not None:
-        # should do some error checking to make sure this is in range
-        edit_cell = data[edit_loc[1], edit_loc[0]]
-        edit_cell[[0,1,-1,-2]] = edit_color
-        edit_cell[:,[0,1,-1,-2]] = edit_color
-    data = np.moveaxis(data, -4, -3)
-    s = data.shape
-    data = data.reshape(s[:-5] + (s[-5]*s[-4], s[-3]*s[-2], s[-1]))
-    return data
+        x, y = edit_loc
+        edit_cell = img[...,
+            y*SPRITE_SIZE:(y+1)*SPRITE_SIZE,
+            x*SPRITE_SIZE:(x+1)*SPRITE_SIZE, :]
+        edit_cell[...,[0,1,-1,-2],:,:] = edit_color
+        edit_cell[...,[0,1,-1,-2],:] = edit_color
+    return img
 
 
 def render_game(game, view_size=None, edit_mode=None):
@@ -155,12 +122,22 @@ def render_game(game, view_size=None, edit_mode=None):
     return render_board(board, goals, game.orientation, edit_loc, edit_color)
 
 
-def render_file(fname, fps=30, data=None):
+def _save_movie_data(fname, data, fps, fmt):
+    if fmt == 'gif':
+        imageio.mimwrite(fname+'.gif', data,
+                         duration=1/fps, subrectangles=True)
+    else:
+        imageio.mimwrite(fname + '.' + fmt, data,
+                         fps=fps, macro_block_size=SPRITE_SIZE,
+                         ffmpeg_log_level='quiet')
+
+
+def render_file(fname, fps=30, data=None, movie_format="gif"):
     """
     Load a saved SafeLifeGame file and render it as a png or gif.
 
-    The game will be rendered as an animated gif if it contains a sequence of
-    states; otherwise it will be rendered as a png.
+    The game will be rendered as animated if it contains a
+    sequence of states; otherwise it will be rendered as a png.
 
     Parameters
     ----------
@@ -183,13 +160,12 @@ def render_file(fname, fps=30, data=None):
     if rgb_array.ndim == 3:
         imageio.imwrite(bare_fname+'.png', rgb_array)
     elif rgb_array.ndim == 4:
-        imageio.mimwrite(bare_fname+'.gif', rgb_array,
-                         duration=1/fps, subrectangles=True)
+        _save_movie_data(bare_fname, rgb_array, fps, movie_format)
     else:
         raise Exception("Unexpected dimension of rgb_array.")
 
 
-def render_mov(fname, steps, fps=30):
+def render_mov(fname, steps, fps=30, movie_format="gif"):
     """
     Load a saved SafeLifeGame state and render it as an animated gif.
 
@@ -208,8 +184,7 @@ def render_mov(fname, steps, fps=30):
     for _ in range(steps):
         frames.append(render_game(game))
         game.advance_board()
-    imageio.mimwrite(bare_fname+'.gif', frames,
-                     duration=1/fps, subrectangles=True)
+    _save_movie_data(bare_fname, frames, fps, movie_format)
 
 
 def _make_cmd_args(subparsers):
@@ -235,6 +210,10 @@ def _make_cmd_args(subparsers):
         " step for each frame.")
     parser.add_argument('--fps', default=30, type=float,
         help="Frames per second for animated outputs.")
+    parser.add_argument('--fmt', default='gif',
+        help="Format for video rendering. "
+        "Can either be 'gif' or one of the formats supported by ffmpeg "
+        "(e.g., mp4, avi, etc.).")
     parser.set_defaults(run_cmd=_run_cmd_args)
 
 
@@ -242,9 +221,9 @@ def _run_cmd_args(args):
     for fname in args.fnames:
         try:
             if args.steps == 0:
-                render_file(fname, args.fps)
+                render_file(fname, args.fps, movie_format=args.fmt)
             else:
-                render_mov(fname, args.steps, args.fps)
+                render_mov(fname, args.steps, args.fps, movie_format=args.fmt)
             print("Success:", fname)
         except Exception:
             print("Failed:", fname)

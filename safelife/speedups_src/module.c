@@ -5,6 +5,7 @@
 #include "gen_board.h"
 #include "wrapped_label.h"
 #include "random.h"
+#include "fast_render.h"
 
 #define PY_RUN_ERROR(msg) {PyErr_SetString(PyExc_RuntimeError, msg); goto error;}
 #define PY_VAL_ERROR(msg) {PyErr_SetString(PyExc_ValueError, msg); goto error;}
@@ -268,6 +269,90 @@ static PyObject *set_bit_generator_py(PyObject *self, PyObject *args) {
 }
 
 
+static PyObject *render_board_py(PyObject *self, PyObject *args) {
+    PyObject *board_obj, *goals_obj, *orientation_obj, *sprites_obj;
+    PyArrayObject
+        *board = NULL,
+        *goals = NULL,
+        *orientation = NULL,
+        *sprites = NULL,
+        *out = NULL;
+
+    if (!PyArg_ParseTuple(
+            args, "OOOO",
+            &board_obj, &goals_obj, &orientation_obj, &sprites_obj)) {
+        return NULL;
+    }
+
+    board = (PyArrayObject *)PyArray_FROM_OTF(
+        board_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
+    goals = (PyArrayObject *)PyArray_FROM_OTF(
+        goals_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
+    orientation = (PyArrayObject *)PyArray_FROM_OTF(
+        orientation_obj, NPY_UINT8, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
+    sprites = (PyArrayObject *)PyArray_FROM_OTF(
+        sprites_obj, NPY_FLOAT32, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
+
+    // bunch of error checking
+    if (!board || !goals || !orientation || !sprites) {
+        PY_VAL_ERROR("All inputs must be numpy arrays.");
+    }
+    int ndim = PyArray_NDIM(board);
+    npy_intp *dims = PyArray_SHAPE(board);
+    if (ndim < 2) {
+        PY_VAL_ERROR("Board must have at least two dimensions.");
+    }
+    int depth = PyArray_SIZE(board) / (dims[ndim-1] * dims[ndim-2]);
+    if (PyArray_SIZE(board) != PyArray_SIZE(goals)) {
+        PY_VAL_ERROR("Board and goals must have same size.");
+    }
+    if (PyArray_SIZE(orientation) != depth) {
+        PY_VAL_ERROR("Only one orientation allowed per board.");
+    }
+    if (PyArray_SIZE(sprites) != 70*70*4) {
+        PY_VAL_ERROR("Sprites should have shape (70, 70, 4).");
+    }
+
+    // Create the output array
+    npy_intp *out_dims = malloc(sizeof(npy_intp) * (ndim+1));
+    for (int k=0; k<ndim-2; k++) {
+        out_dims[k] = dims[k];
+    }
+    out_dims[ndim-2] = dims[ndim-2] * SPRITE_SIZE;
+    out_dims[ndim-1] = dims[ndim-1] * SPRITE_SIZE;
+    out_dims[ndim] = 3;
+    out = (PyArrayObject *)PyArray_SimpleNew(ndim+1, out_dims, NPY_UINT8);
+    free(out_dims);
+    if (!out) {
+        PY_VAL_ERROR("Could not allocate output array");
+    }
+
+    // render!
+    render_board(
+        (uint16_t *)PyArray_DATA(board),
+        (uint16_t *)PyArray_DATA(goals),
+        (uint8_t *)PyArray_DATA(orientation),
+        dims[ndim-1], dims[ndim-2], depth,
+        (float *)PyArray_DATA(sprites),
+        (uint8_t *)PyArray_DATA(out)
+    );
+
+    Py_DECREF((PyObject *)board);
+    Py_DECREF((PyObject *)goals);
+    Py_DECREF((PyObject *)orientation);
+    Py_DECREF((PyObject *)sprites);
+    return (PyObject *)out;
+
+    error:
+    Py_XDECREF((PyObject *)board);
+    Py_XDECREF((PyObject *)goals);
+    Py_XDECREF((PyObject *)orientation);
+    Py_XDECREF((PyObject *)sprites);
+    Py_XDECREF((PyObject *)out);
+    return NULL;
+}
+
+
 static PyMethodDef methods[] = {
     {
         "advance_board", (PyCFunction)advance_board_py, METH_VARARGS,
@@ -280,6 +365,10 @@ static PyMethodDef methods[] = {
     {
         "wrapped_label", (PyCFunction)wrapped_label_py,
         METH_VARARGS | METH_KEYWORDS, wrapped_label_doc
+    },
+    {
+        "_render_board", (PyCFunction)render_board_py,
+        METH_VARARGS | METH_KEYWORDS, NULL
     },
     {
         "seed", (PyCFunction)seed_py, METH_VARARGS,
