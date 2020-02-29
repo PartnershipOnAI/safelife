@@ -33,6 +33,7 @@ static PyObject *advance_board_py(PyObject *self, PyObject *args) {
     }
     b2 = (PyArrayObject *)PyArray_FROM_OTF(
         board_obj, NPY_UINT16, NPY_ARRAY_ENSURECOPY);
+    Py_BEGIN_ALLOW_THREADS
     advance_board(
         (uint16_t *)PyArray_DATA(b1),
         (uint16_t *)PyArray_DATA(b2),
@@ -40,6 +41,7 @@ static PyObject *advance_board_py(PyObject *self, PyObject *args) {
         PyArray_DIM(b1, 1),
         spawn_prob
     );
+    Py_END_ALLOW_THREADS
     Py_DECREF(board_obj);
     return (PyObject *)b2;
 }
@@ -77,11 +79,14 @@ static PyObject *wrapped_label_py(PyObject *self, PyObject *args) {
         Py_DECREF(data);
         return NULL;
     }
-    int num_labels = wrapped_label(
+    int num_labels;
+    Py_BEGIN_ALLOW_THREADS
+    num_labels = wrapped_label(
         (int32_t *)PyArray_DATA(arr),
         PyArray_DIM(arr, 0),
         PyArray_DIM(arr, 1)
     );
+    Py_END_ALLOW_THREADS
 
     PyObject *rval = Py_BuildValue("Oi", data, num_labels);
     Py_DECREF(data);
@@ -199,6 +204,7 @@ static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {
     };
     int layer_size = board_shape.cols * board_shape.rows;
     int board_size = board_shape.depth * layer_size;
+    int err_code;
 
     layers = malloc(sizeof(uint16_t) * board_size);
     if (!layers)  {
@@ -206,19 +212,24 @@ static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {
         goto error;
     }
     memcpy(layers, PyArray_DATA(board), sizeof(uint16_t) * layer_size);
+
     // Advance to the next timestep
+    Py_BEGIN_ALLOW_THREADS
+
     for (int n = 1; n < board_shape.depth; n++) {
         advance_board(
             layers + (n-1)*layer_size, layers + n*layer_size,
             board_shape.rows, board_shape.cols, 0.0);
     }
 
-    int err_code = gen_pattern(
+    err_code = gen_pattern(
         layers,
         (int32_t *)PyArray_DATA(mask),
         (int32_t *)PyArray_DATA(seeds),
         board_shape, max_iter, min_fill, temperature, osc_bonus, cp
     );
+
+    Py_END_ALLOW_THREADS
 
     switch (err_code) {
         case 0:
@@ -328,6 +339,7 @@ static PyObject *render_board_py(PyObject *self, PyObject *args) {
     }
 
     // render!
+    Py_BEGIN_ALLOW_THREADS
     render_board(
         (uint16_t *)PyArray_DATA(board),
         (uint16_t *)PyArray_DATA(goals),
@@ -336,6 +348,7 @@ static PyObject *render_board_py(PyObject *self, PyObject *args) {
         (float *)PyArray_DATA(sprites),
         (uint8_t *)PyArray_DATA(out)
     );
+    Py_END_ALLOW_THREADS
 
     Py_DECREF((PyObject *)board);
     Py_DECREF((PyObject *)goals);
