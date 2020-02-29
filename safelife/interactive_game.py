@@ -800,8 +800,10 @@ def _run_cmd_args(args):
         game = SafeLifeGame(board_size=(args.board_size, args.board_size))
         main_loop = GameLoop(iter([game]))
     else:
-        main_loop = GameLoop(SafeLifeLevelIterator(
-            *args.load_from, total_levels=args.num_levels, seed=seed.spawn(1)[0]))
+        iterator = SafeLifeLevelIterator(
+            *args.load_from, total_levels=args.num_levels, seed=seed.spawn(1)[0])
+        iterator.fill_queue()
+        main_loop = GameLoop(iterator)
     if args.cmd == "print":
         main_loop.print_only = True
     else:
