@@ -1,3 +1,5 @@
+import datetime
+import os
 import numpy as np
 # import tensorflow as tf
 import torch
@@ -228,7 +230,7 @@ class MuZeroConfig:
         self.hidden_size = np.product(self.embedding_shape)
 
         # Training
-        self.results_path = "./pretrained"  # Path to store the model weights
+        self.results_path = os.path.join(os.path.dirname(__file__), "../results", os.path.basename(__file__)[:-3], datetime.datetime.now().strftime("%Y-%m-%d--%H-%M-%S"))  # Path to store the model weights and TensorBoard logs
         self.training_steps = 2000  # Total number of training steps (ie weights update according to a batch)
         self.batch_size = 128  # Number of parts of games to train on at each training step
         self.num_unroll_steps = 5  # Number of game moves to keep for every batch element
@@ -325,3 +327,9 @@ class InnerGame(SafeLifeEnv):
     def legal_actions(self):
         # XXX does this need to be a list of integers?
         return self.conf.action_space
+
+    def close(self):
+        self.close()
+
+    def output_action(self, action):
+        return "{0}. {1}".format(action, SafeLifeEnv.action_names[action])
