@@ -35,7 +35,7 @@ class MuZero(object):
 
     compute_device = torch.device('cuda' if USE_CUDA else 'cpu')
 
-    def __init__(self, conf, embedding, policy, dynamics **kwargs):
+    def __init__(self, conf, embedding, policy, dynamics, game **kwargs):
         load_kwargs(self, kwargs)
         assert self.training_envs is not None
 
@@ -47,6 +47,19 @@ class MuZero(object):
         self.optimizer = optim.Adam(params, lr=self.learning_rate)
 
         self.load_checkpoint()
+        # Fix random generator seed for reproductibility
+        numpy.random.seed(conf.seed)
+        torch.manual_seed(conf.seed)
+
+        # the muzero-general implementation uses this for constructing
+        # workers;  not clear if we'll need it
+        # self.muzero_weights = dict({}, **(m.get_weights() for m in models))
+        self.weights = torch.nn.ModuleList(*models)
+
+
+    def train(self):
+        replay = replay_buffer.ReplayBuffer(self.conf)
+
 
 
 class MuZero:

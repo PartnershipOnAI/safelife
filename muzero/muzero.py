@@ -8,11 +8,11 @@ import ray
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-import models
-import replay_buffer
-import self_play
-import shared_storage
-import trainer
+from . import models
+from . import replay_buffer
+from . import self_play
+from . import shared_storage
+from . import trainer
 
 
 class MuZero:
@@ -34,7 +34,7 @@ class MuZero:
 
         # Load the game and the config from the module with the game name
         try:
-            game_module = importlib.import_module("games." + self.game_name)
+            game_module = importlib.import_module("muzero.games." + self.game_name)
             self.config = game_module.MuZeroConfig()
             self.Game = game_module.Game
         except Exception as err:
@@ -68,14 +68,14 @@ class MuZero:
         self_play_workers = [
             self_play.SelfPlay.remote(
                 copy.deepcopy(self.muzero_weights),
-                self.Game(self.config.seed + seed),
+                self.Game(self.config), # FIXME need to change seed!
                 self.config,
             )
             for seed in range(self.config.num_actors)
         ]
         test_worker = self_play.SelfPlay.remote(
             copy.deepcopy(self.muzero_weights),
-            self.Game(self.config.seed + self.config.num_actors),
+            self.Game(self.config), # FIXME need to change seed
             self.config,
         )
 
@@ -186,7 +186,7 @@ if __name__ == "__main__":
     # Let user pick a game
     games = [
         filename[:-3]
-        for filename in sorted(os.listdir("./games"))
+        for filename in sorted(os.listdir("./muzero/games"))
         if filename.endswith(".py") and not filename.endswith("__init__.py")
     ]
     for i in range(len(games)):

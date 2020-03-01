@@ -1,5 +1,5 @@
 import torch
-
+from muzero.games.safelife import SafeLifeMuZeroNetwork
 
 class MuZeroNetwork:
     def __new__(cls, config):
@@ -25,6 +25,8 @@ class MuZeroNetwork:
                 config.fc_policy_layers,
                 config.support_size,
             )
+        elif config.network == "safelife-cnn":
+            return SafeLifeMuZeroNetwork(config)
         else:
             raise ValueError(
                 'The network parameter should be "fullyconnected" or "resnet"'

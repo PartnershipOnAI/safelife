@@ -1,5 +1,3 @@
-import os
-import gym
 import numpy as np
 # import tensorflow as tf
 import torch
@@ -16,13 +14,66 @@ s = nn.Sequential
 c = 'circular'  # https://github.com/pytorch/pytorch/pull/17240
                 # note that padding must be kernel size - 1
 
-class SafeLifeMuZero():
-    def __init__(self):
-        self.conf = MuZeroConfig()
+class SafeLifeMuZeroNetwork(torch.nn.Module):
+    def __init__(self, conf=None):
+        super().__init__()
+        self.conf = conf if conf else MuZeroConfig()
         self.embedding = EmbeddingNetwork(self.conf)
         self.policy = PolicyNetwork(self.conf)
-        self.dynamics = DynamicsNetwork(self.conf)
-        game = Game(self.conf)
+        self.dynamism = DynamicsNetwork(self.conf)
+
+    def prediction(self, encoded_state):
+        return self.policy(encoded_state)
+
+    def representation(self, encoded_state):
+        return self.embedding(encoded_state)
+
+    def dynamics(self, encoded_state, action):
+        action_one_hot = (
+            torch.zeros((action.shape[0], self.action_space_size))
+            .to(action.device)
+            .float()
+        )
+        action_one_hot.scatter_(1, action.long(), 1.0)
+        x = torch.cat((encoded_state, action_one_hot), dim=1)
+
+        next_encoded_state = self.dynamics_encoded_state_network(x)
+
+        # Scale encoded state between [0, 1] (See paper appendix Training)
+        min_next_encoded_state = next_encoded_state.min(1, keepdim=True)[0]
+        max_next_encoded_state = next_encoded_state.max(1, keepdim=True)[0]
+        scale_next_encoded_state = max_next_encoded_state - min_next_encoded_state
+        scale_next_encoded_state[scale_next_encoded_state == 0] = 1
+        next_encoded_state_normalized = (
+            encoded_state - min_next_encoded_state
+        ) / scale_next_encoded_state
+
+
+        return self.dynamism(encoded_state, action)
+
+    # XXX Use inheritance to factor these out of all the networks XXX
+    def initial_inference(self, observation):
+        encoded_state = self.representation(observation)
+        policy_logit, value = self.prediction(encoded_state)
+        return (
+            value,
+            torch.zeros(len(observation), self.full_support_size).to(observation.device),
+            policy_logit,
+            encoded_state,
+        )
+
+    def recurrent_inference(self, encoded_state, action):
+        next_encoded_state, reward = self.dynamics(encoded_state, action)
+        policy_logit, value = self.prediction(next_encoded_state)
+        return value, reward, policy_logit, next_encoded_state
+
+    def get_weights(self):
+        return {key: value.cpu() for key, value in self.state_dict().items()}
+
+    def set_weights(self, weights):
+        self.load_state_dict(weights)
+    # XXX END XXX
+
 
 class EmbeddingNetwork(nn.Module):
     """
@@ -33,7 +84,7 @@ class EmbeddingNetwork(nn.Module):
         super().__init__()
         ksize = conf.conv1kernel
         #  accept that for SafeLife this is a board state, maybe 1 conv for it?
-        self.embedding = s(
+        self.embedding = nn.Sequential(
             nn.Conv2d(10, 10, ksize, stride=1, padding=ksize-1, padding_mode=c),
             nn.ReLU())
 
@@ -50,21 +101,21 @@ class PolicyNetwork(nn.Module):
     def __init__(self, conf):
         # todo: figure out how much layer reuse we really want here
         super().__init__()
-        ksize = conf.conv2kernel
-        chans = conf.embedding_depth
         #  strided downsampled convolutions, along the lines of the PPO policy network
         from training.models import safelife_cnn
 
         self.cnn, shape = safelife_cnn((26,26,10))
         size = np.product(shape)
 
-        self.policy_value_final = s(nn.Linear(size, 512),
-                                    nn.ReLU(),
-                                    nn.Linear(512, 1))
+        self.policy_value_final = nn.Sequential(
+            nn.Linear(size, 512),
+            nn.ReLU(),
+            nn.Linear(512, 1))
 
-        self.policy_final = s(nn.Linear(np.product(shape), 9),
-                              nn.ReLU(),
-                              nn.Softmax(dim=1))
+        self.policy_final = nn.Sequential(
+            nn.Linear(np.product(shape), 9),
+            nn.ReLU(),
+            nn.Softmax(dim=1))
 
         self.layers = nn.ModuleList(
             list(self.cnn.modules()) + [self.policy_value_final, self.policy_final])
@@ -83,24 +134,24 @@ class DynamicsNetwork(nn.Module):
     def __init__(self, conf):
         super().__init__()
         self.linear_inp = nn.Linear(np.product(conf.embedding_shape) + len(conf.action_space),
-                                   conf.global_dense_embedding_size)
+                                    conf.global_dense_embedding_size)
 
         # channels is the embedding size plus the amount of global state (like
         # "move left") we are feeding to the conv layers
 
         ksize = conf.conv2kernel
         chans = conf.embedding_depth + conf.global_dense_embedding_size
-        self.conv1 =s(
+        self.conv1 = nn.Sequential(
               nn.Conv2d(chans, chans, ksize, stride=1, padding=ksize-1, padding_mode=c),
               nn.ReLU())
-        self.conv2 = s(
+        self.conv2 = nn.Sequential(
               nn.Conv2d(chans, conf.embedding_depth, ksize, stride=1, padding=ksize-1,
                         padding_mode=c),
               nn.ReLU())
         conv_shape = conf.embedding_shape[:-1] + (chans,)
 
         # XXX make convolutional, 2 layer, also take both states _n and _n+1 (and eventualy state 0) as inputs
-        self.reward = s(
+        self.reward = nn.Sequential(
             nn.Linear(np.product(conv_shape),128),
             nn.ReLU(),
             nn.Linear(128, 1))
@@ -121,12 +172,32 @@ class DynamicsNetwork(nn.Module):
 
 
 class MuZeroConfig:
+    support_size = 10
+    players = [i for i in range(1)]
+    #network = "safelife-cnn"
+    network = "resnet"
+    blocks = 2
+    channels = 12
+    pooling_size = 2
     def __init__(self):
+
+        # begin resnet
+        self.fc_reward_layers = []
+        self.fc_value_layers = []  # Define the hidden layers in the value head of the prediction network
+        self.fc_policy_layers = []  # Define the hidden layers in the policy head of the prediction network
+        self.encoding_size = 8
+        self.hidden_layers = [16]
+
+        # end resnet
+
+
+        self.training_device = "cuda" if torch.cuda.is_available() else "cpu"
         self.seed = 0  # Seed for numpy, torch and the game
 
         ### Game
-        self.observation_shape = 10  # Dimensions of the game observation
-        self.action_space = SafeLifeEnv.action_names  # Fixed list of all possible actions
+        self.observation_shape = (26,26,10)  # Dimensions of the game observation
+        #self.action_space = SafeLifeEnv.action_names  # Fixed list of all possible actions
+        self.action_space = torch.arange(len(SafeLifeEnv.action_names))
         self.view_shape = (26, 26)
 
         ### Self-Play
@@ -151,7 +222,7 @@ class MuZeroConfig:
 
         # hidden representations
         # self.embedding_depth = 64
-        self.embedding_depth = self.observation_shape
+        self.embedding_depth = 10
         self.embedding_shape = self.view_shape + (self.embedding_depth,) # for SafeLife we're helping the agent by giving it an internal representation that matches the game's state space
 
         self.hidden_size = np.product(self.embedding_shape)
@@ -165,6 +236,7 @@ class MuZeroConfig:
         self.window_size = 1000  # Number of self-play games to keep in the replay buffer
         self.td_steps = 10  # Number of steps in the futur to take into account for calculating the target value
         self.training_delay = 1 # Number of seconds to wait after each training to adjust the self play / training ratio to avoid overfitting (Recommended is 13:1 see https://arxiv.org/abs/1902.04522 Appendix A)
+        self.stacked_observations = 0
 
         self.weight_decay = 1e-4  # L2 weights regularization
         self.momentum = 0.9
@@ -192,44 +264,9 @@ class MuZeroConfig:
         else:
             return 0.25
 
-
-def Game(conf, seed=None, logdir="./safelife-logs"):
-    """
-    if logdir:
-        video_name = os.path.join(logdir, "episode-{episode_num}-{step_num}")
-    else:
-        video_name = None
-
-    if logdir:
-        fname = os.path.join(logdir, "training.yaml")
-        if os.path.exists(fname):
-            episode_log = open(fname, 'a')
-        else:
-            episode_log = open(fname, 'w')
-            episode_log.write("# Training episodes\n---\n")
-    else:
-        episode_log = None
-
-    tf_logger = tf.summary.FileWriter(logdir)
-    """
-
-    levelgen = SafeLifeLevelIterator('random/append-still-easy.yaml')
-    env = SafeLifeEnv(
-        levelgen,
-        view_shape=conf.view_shape,
-        output_channels=(
-            CellTypes.alive_bit,
-            CellTypes.agent_bit,
-            CellTypes.pushable_bit,
-            CellTypes.destructible_bit,
-            CellTypes.frozen_bit,
-            CellTypes.spawning_bit,
-            CellTypes.exit_bit,
-            CellTypes.color_bit + 0,  # red
-            CellTypes.color_bit + 1,  # green
-            CellTypes.color_bit + 5,  # blue goal
-        ))
-    env.seed(seed)
+def Game(conf, **kwargs):
+    "Multiple levels of game because some things are methods and others wrappers :/"
+    env = InnerGame(conf, **kwargs)
     env = env_wrappers.MovementBonusWrapper(env, as_penalty=True)
     env = env_wrappers.MinPerformanceScheduler(env, min_performance=0.1)
     # env = env_wrappers.RecordingSafeLifeWrapper(
@@ -237,3 +274,54 @@ def Game(conf, seed=None, logdir="./safelife-logs"):
     #     log_file=episode_log)
     env = env_wrappers.ExtraExitBonus(env)
     return env
+
+
+class InnerGame(SafeLifeEnv):
+    def __init__(self, conf, seed=None, logdir="./safelife-logs"):
+        """
+        if logdir:
+            video_name = os.path.join(logdir, "episode-{episode_num}-{step_num}")
+        else:
+            video_name = None
+
+        if logdir:
+            fname = os.path.join(logdir, "training.yaml")
+            if os.path.exists(fname):
+                episode_log = open(fname, 'a')
+            else:
+                episode_log = open(fname, 'w')
+                episode_log.write("# Training episodes\n---\n")
+        else:
+            episode_log = None
+
+        tf_logger = tf.summary.FileWriter(logdir)
+        """
+
+        assert isinstance(conf, MuZeroConfig), "didn't expect conf to be {0}".format(conf)
+        self.conf = conf
+
+        levelgen = SafeLifeLevelIterator('random/append-still-easy.yaml')
+        super().__init__(
+            levelgen,
+            view_shape=conf.view_shape,
+            output_channels=(
+                CellTypes.alive_bit,
+                CellTypes.agent_bit,
+                CellTypes.pushable_bit,
+                CellTypes.destructible_bit,
+                CellTypes.frozen_bit,
+                CellTypes.spawning_bit,
+                CellTypes.exit_bit,
+                CellTypes.color_bit + 0,  # red
+                CellTypes.color_bit + 1,  # green
+                CellTypes.color_bit + 5,  # blue goal
+            ))
+        self.seed(seed)
+
+    def to_play(self):
+        "Return the curent player. Always 0 for single-player environments."
+        return 0
+
+    def legal_actions(self):
+        # XXX does this need to be a list of integers?
+        return self.conf.action_space

@@ -6,7 +6,7 @@ import numpy
 import ray
 import torch
 
-import models
+from . import models
 
 
 @ray.remote
@@ -93,7 +93,8 @@ class SelfPlay:
                     )
                     action = self.game.input_action()
 
-                observation, reward, done = self.game.step(action)
+                # throw away info if present
+                observation, reward, done = self.game.step(action)[0:3]
 
                 observation = self.stack_previous_observations(
                     observation, game_history, self.config.stacked_observations,
@@ -328,7 +329,11 @@ class Node:
         self.to_play = to_play
         self.reward = reward
         self.hidden_state = hidden_state
-        policy = {a: math.exp(policy_logits[0][a]) for a in actions}
+        try:
+            policy = {a: math.exp(policy_logits[0][a]) for a in actions}
+        except IndexError:
+            print("Actions were", actions)
+            raise
         policy_sum = sum(policy.values())
         for action, p in policy.items():
             self.children[action] = Node(p / policy_sum)
