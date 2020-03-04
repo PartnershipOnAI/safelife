@@ -4,6 +4,7 @@ from scipy import interpolate
 from safelife.safelife_env import SafeLifeEnv
 from safelife.safelife_game import CellTypes
 from safelife import env_wrappers
+from safelife.safelife_logger import SafeLifeLogWrapper
 
 
 def linear_schedule(t, y):
@@ -14,36 +15,15 @@ def linear_schedule(t, y):
 
 
 def safelife_env_factory(
-        logdir, level_iterator, *,
+        level_iterator, *,
         num_envs=1,
         min_performance=None,
-        summary_writer=None,
+        episode_logger=None,
         impact_penalty=None,
         testing=False):
     """
     Factory for creating SafeLifeEnv instances with useful wrappers.
     """
-    if testing:
-        video_name = "test-{level_title}-{step_num}"
-        tag = "episodes/testing/"
-        log_name = "testing.yaml"
-        log_header = "# Testing episodes\n---\n"
-    else:
-        video_name = "training-episode-{episode_num}-{step_num}"
-        tag = "episodes/training/"
-        log_name = "training.yaml"
-        log_header = "# Training episodes\n---\n"
-
-    logdir = os.path.abspath(logdir)
-    video_name = os.path.join(logdir, video_name)
-    log_name = os.path.join(logdir, log_name)
-
-    if os.path.exists(log_name):
-        log_file = open(log_name, 'a')
-    else:
-        log_file = open(log_name, 'w')
-        log_file.write(log_header)
-
     envs = []
     for _ in range(num_envs):
         env = SafeLifeEnv(
@@ -63,7 +43,6 @@ def safelife_env_factory(
                 CellTypes.color_bit + 1,  # green
                 CellTypes.color_bit + 5,  # blue goal
             ))
-        other_data = {}
 
         if testing:
             env.global_counter = None  # don't increment num_steps
@@ -73,19 +52,11 @@ def safelife_env_factory(
         if impact_penalty is not None:
             env = env_wrappers.SimpleSideEffectPenalty(
                 env, penalty_coef=impact_penalty)
-            if not testing:
-                other_data = {'impact_penalty': impact_penalty}
         if min_performance is not None:
             env = env_wrappers.MinPerformanceScheduler(
                 env, min_performance=min_performance)
-        env = env_wrappers.RecordingSafeLifeWrapper(
-            env, video_name=video_name, summary_writer=summary_writer,
-            log_file=log_file, other_episode_data=other_data, tag=tag,
-            video_recording_freq=1 if testing else 50,
-            exclude=('num_episodes', 'performance_cutoff') if testing else ())
-        # Ensure the recording wrapper has access to the global counter,
-        # even if it's disabled in the unwrapped environment.
-        env.global_counter = SafeLifeEnv.global_counter
+        env = SafeLifeLogWrapper(
+            env, logger=episode_logger, is_training=not testing)
         envs.append(env)
 
     return envs
