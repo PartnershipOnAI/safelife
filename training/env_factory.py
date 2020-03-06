@@ -1,4 +1,3 @@
-import os
 from scipy import interpolate
 
 from safelife.safelife_env import SafeLifeEnv
@@ -18,7 +17,7 @@ def safelife_env_factory(
         level_iterator, *,
         num_envs=1,
         min_performance=None,
-        episode_logger=None,
+        data_logger=None,
         impact_penalty=None,
         testing=False):
     """
@@ -56,7 +55,7 @@ def safelife_env_factory(
             env = env_wrappers.MinPerformanceScheduler(
                 env, min_performance=min_performance)
         env = SafeLifeLogWrapper(
-            env, logger=episode_logger, is_training=not testing)
+            env, logger=data_logger, is_training=not testing)
         envs.append(env)
 
     return envs

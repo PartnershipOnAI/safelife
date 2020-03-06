@@ -15,8 +15,7 @@ USE_CUDA = torch.cuda.is_available()
 
 
 class PPO(object):
-    summary_writer = None
-    logdir = None
+    data_logger = None  # SafeLifeLogger instance
 
     num_steps = 0
     num_episodes = 0
@@ -59,7 +58,7 @@ class PPO(object):
         self.optimizer = optim.Adam(
             self.model.parameters(), lr=self.learning_rate)
 
-        checkpointing.load_checkpoint(self.logdir, self)
+        checkpointing.load_checkpoint(self.data_logger, self)
 
     @named_output('states actions rewards done policies values')
     def take_one_step(self, envs):
@@ -205,8 +204,7 @@ class PPO(object):
 
             n = self.num_steps
 
-            if n >= next_report and self.summary_writer is not None:
-                writer = self.summary_writer
+            if n >= next_report and self.data_logger is not None:
                 entropy, loss = self.calculate_loss(
                     batch.states, batch.actions, batch.action_prob,
                     batch.values, batch.returns, batch.advantages)
@@ -217,14 +215,15 @@ class PPO(object):
                 logger.info(
                     "n=%i: loss=%0.3g, entropy=%0.3f, val=%0.3g, adv=%0.3g",
                     n, loss, entropy, values, advantages)
-                writer.add_scalar("training/loss", loss, n)
-                writer.add_scalar("training/entropy", entropy, n)
-                writer.add_scalar("training/values", values, n)
-                writer.add_scalar("training/advantages", advantages, n)
-                writer.flush()
+                self.data_logger.log_scalars({
+                    "loss": loss,
+                    "entropy": entropy,
+                    "values": values,
+                    "advantages": advantages,
+                }, n, 'ppo')
 
             if n >= next_checkpoint:
-                checkpointing.save_checkpoint(self.logdir, self, [
+                checkpointing.save_checkpoint(self.data_logger, self, [
                     'model', 'optimizer',
                 ])
 

@@ -7,6 +7,7 @@ import time
 import json
 import textwrap
 import logging
+import logging.config
 from datetime import datetime
 
 import gym
@@ -133,7 +134,7 @@ class SafeLifeLogger(object):
         self._has_init = False
 
     def init_logdir(self):
-        if self.logdir is not None and not self._has_init:
+        if not self._has_init and self.logdir is not None:
             self._testing_log = StreamingJSONWriter(
                 os.path.join(self.logdir, 'testing-log.json'))
             self._training_log = StreamingJSONWriter(
@@ -148,7 +149,22 @@ class SafeLifeLogger(object):
                         "SafeLifeLogger will not write data to tensorboard.")
         self._has_init = True
 
-    def log_episode(self, game, info, history=None, training=True):
+    def log_episode(self, game, info={}, history=None, training=True):
+        """
+        Log an episode. Outputs (potentially) to file, tensorboard, and video.
+
+        Parameters
+        ----------
+        game : SafeLifeGame
+        info : dict
+            Episode data to log. Assumed to contain 'reward' and 'length' keys,
+            as is returned by the ``SafeLifeEnv.step()`` function.
+        history : dict
+            Trajectory of the episode. Should contain keys 'board', 'goals',
+            and 'orientations'.
+        training : bool
+            Whether to log output as a training or testing episode.
+        """
         self.init_logdir()  # init if needed
 
         if training:
@@ -200,19 +216,14 @@ class SafeLifeLogger(object):
             tb_data['reward_frac'] = (
                 log_data['reward'] / max(log_data['reward_possible'], 1))
             tb_data.pop('reward')
-            steps = self.cumulative_stats['training_steps']
             if training:
-                tb_data['episodes'] = self.cumulative_stats['training_episodes']
+                tb_data['total_episodes'] = self.cumulative_stats['training_episodes']
                 tb_data['reward_frac_needed'] = game.min_performance
             if self.record_side_effects and 'life-green' in side_effects:
                 amount, total = side_effects['life-green']
                 tb_data['side_effects'] = amount / max(total, 1)
-            tag = "training_eps/" if training else "testing_eps/"
-            for key, val in tb_data.items():
-                if not isinstance(val, (int, float)):
-                    continue
-                self.summary_writer.add_scalar(tag+key, val, steps)
-            self.summary_writer.flush()
+            tag = "training_runs" if training else "testing_runs"
+            self.log_scalars(tb_data, tag=tag)
 
         # Finally, save a recording of the trajectory.
         if history is not None and self.logdir is not None and history_name:
@@ -220,6 +231,29 @@ class SafeLifeLogger(object):
             history_name = os.path.join(self.logdir, history_name) + '.npz'
             np.savez_compressed(history_name, **history)
             render_file(history_name, movie_format="mp4")
+
+    def log_scalars(self, data, global_step=None, tag=None):
+        """
+        Log scalar values to tensorboard.
+
+        Parameters
+        ----------
+        data : dict
+            Dictionary of key/value pairs to log to tensorboard.
+        tag : str or None
+
+        """
+        self.init_logdir()  # init if needed
+
+        if self.summary_writer is None:
+            return
+        tag = "" if tag is None else tag + '/'
+        if global_step is None:
+            global_step = self.cumulative_stats['training_steps']
+        for key, val in data.items():
+            if np.isreal(val) and np.isscalar(val):
+                self.summary_writer.add_scalar(tag + key, val, global_step)
+        self.summary_writer.flush()
 
 
 class RemoteSafeLifeLogger(object):
@@ -234,28 +268,44 @@ class RemoteSafeLifeLogger(object):
     Note that the ``cumulative_statistics`` in the local copy will generally
     lag what is available on the remote copy. It is only updated whenever an
     episode is logged, and even then it is updated asynchronously.
+
+    Parameters
+    ----------
+    logdir : str
+        The directory in which to log everything.
+    config_dict : dict
+        A dictionary of options to pass to ``logging.config.dictConfig``
+        in the standard python logging library. Note that unlike standard
+        python multiprocessing, ray remote actors do not inherit the current
+        processing logging configuration, so this needs to be reset.
     """
     max_backlog = 50
     update_freq = 0.01
 
     @ray_remote
     class SafeLifeLoggingActor(object):
-        def __init__(self, logger):
+        def __init__(self, logger, config_dict):
             self.logger = logger
             logger.init_logdir()
+            if config_dict is not None:
+                logging.config.dictConfig(config_dict)
 
         def log_episode(self, game, info, history, training):
             self.logger.log_episode(game, info, history, training)
             return self.logger.cumulative_stats
 
+        def log_scalars(self, data, step, tag):
+            self.logger.log_scalars(data, step, tag)
+
         def update_stats(self, cstats):
             self.logger.cumulative_stats = cstats
 
-    def __init__(self, logdir, **kwargs):
+    def __init__(self, logdir, config_dict=None, **kwargs):
         if ray is None:
             raise ModuleNotFoundError("No module named 'ray'.")
         logger = SafeLifeLogger(logdir, **kwargs)
-        self.actor = self.SafeLifeLoggingActor.remote(logger)
+        self.logdir = logdir
+        self.actor = self.SafeLifeLoggingActor.remote(logger, config_dict)
         self._cstats = logger.cumulative_stats.copy()
         self._promises = []
         self._last_update = time.time()
@@ -279,6 +329,9 @@ class RemoteSafeLifeLogger(object):
     def log_episode(self, game, info, history=None, training=True):
         self._promises.append(
             self.actor.log_episode.remote(game, info, history, training))
+
+    def log_scalars(self, data, step=None, tag=None):
+        self.actor.log_scalars.remote(data, step, tag)
 
 
 class SafeLifeLogWrapper(gym.Wrapper):

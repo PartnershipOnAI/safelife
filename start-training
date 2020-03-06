@@ -29,7 +29,7 @@ parser = argparse.ArgumentParser(description="""
     whether the existing data should be overwritten or appended. The latter
     allows for training to be restarted if interrupted.
     """)
-parser.add_argument('data_dir', nargs='?',
+parser.add_argument('data_dir',
     help="the directory in which to store this run's data")
 parser.add_argument('--install', action="store_true",
     help="Set this flag to ensure that all dependencies are installed"
@@ -41,31 +41,17 @@ parser.add_argument('--port', default=6006, type=int,
     help="Port on which to run tensorboard.")
 parser.add_argument('--impact-penalty', default=0.0, type=float)
 parser.add_argument('--env-type', choices=env_types)
-parser.add_argument('--algo', choices=('ppo', 'dqn', 'ppo-tf'))
+parser.add_argument('--algo', choices=('ppo', 'dqn', 'ppo-tf'), default='ppo')
 args = parser.parse_args()
+
 
 # Setup the directories
 
 safety_dir = os.path.realpath(os.path.join(__file__, '../'))
-active_job_file = os.path.join(safety_dir, 'active_job.txt')
+data_dir = os.path.realpath(args.data_dir)
+job_name = os.path.basename(data_dir)
 sys.path.insert(1, safety_dir)  # ensure current directory is on the path
 os.chdir(safety_dir)
-
-# If the run name isn't suppied, get it from 'active_job.txt'
-# This is basically just used to restart after crashes.
-if not args.data_dir:
-    if os.path.exists(active_job_file):
-        with open(active_job_file) as f:
-            data_dir = f.read().strip()
-        print("Setting `data_dir` from `active_job.txt`")
-    else:
-        print("No run name was supplied. Aborting.")
-        exit()
-else:
-    data_dir = os.path.realpath(args.data_dir)
-with open(active_job_file, 'w') as f:
-    f.write(data_dir)
-job_name = os.path.split(data_dir)[1]
 
 if os.path.exists(data_dir) and args.data_dir is not None:
     print("The directory '%s' already exists. "
@@ -85,6 +71,7 @@ if os.path.exists(data_dir) and args.data_dir is not None:
 os.makedirs(data_dir, exist_ok=True)
 logfile = os.path.join(data_dir, 'training.log')
 
+
 # Get the environment type from the job name if not otherwise supplied
 if args.env_type:
     env_type = args.env_type
@@ -97,11 +84,12 @@ else:
 
 assert env_type in env_types
 
+
 # Setup logging
 
 if not os.path.exists(logfile):
     open(logfile, 'w').close()  # write an empty file
-logging.config.dictConfig({
+logging_config = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
@@ -145,7 +133,9 @@ logging.config.dictConfig({
         'level': 'WARNING',
         'handlers': ['console', 'logfile'],
     }
-})
+}
+logging.config.dictConfig(logging_config)
+
 
 # Install dependencies if they aren't already there
 
@@ -231,23 +221,22 @@ try:
             level_iterator = SafeLifeLevelIterator('random/navigation.yaml')
             test_levels = 'benchmarks/v1.0/navigation.npz'
         else:
-            print("Unexpected environment type '{}'".format(env_type))
+            logging.error("Unexpected environment type '%s'", env_type)
 
         from safelife.safelife_logger import RemoteSafeLifeLogger
         import ray
         ray.init()
 
-        summary_writer = SummaryWriter(subdir + '/algo')
-        episode_logger = RemoteSafeLifeLogger(subdir)
+        data_logger = RemoteSafeLifeLogger(subdir, config_dict=logging_config)
 
         training_envs = safelife_env_factory(
-            episode_logger=episode_logger, num_envs=16,
+            data_logger=data_logger, num_envs=16,
             impact_penalty=linear_schedule(t_penalty, [0, penalty]),
             min_performance=linear_schedule(t_performance, [0.01, 0.3]),
             level_iterator=level_iterator,
         )
         testing_envs = safelife_env_factory(
-            episode_logger=episode_logger, num_envs=5, testing=True,
+            data_logger=data_logger, num_envs=5, testing=True,
             level_iterator=SafeLifeLevelIterator(
                 test_levels, distinct_levels=5, total_levels=-1)
         )
@@ -272,7 +261,7 @@ try:
                 model,
                 training_envs=training_envs,
                 testing_envs=testing_envs,
-                logdir=subdir, summary_writer=summary_writer)
+                data_logger=data_logger)
             algo.train(6e6)
 
         elif args.algo == 'dqn':
@@ -286,8 +275,10 @@ try:
                 train_model, target_model,
                 training_envs=training_envs,
                 testing_envs=testing_envs,
-                logdir=subdir, summary_writer=summary_writer)
+                data_logger=data_logger)
             algo.train(6e6)
+        else:
+            logging.error("Unexpected algorithm type '%s'", args.algo)
 
 
 except Exception:
@@ -295,11 +286,9 @@ except Exception:
 finally:
     if args.port:
         tb_proc.kill()
-    if os.path.exists(active_job_file):
-        os.remove(active_job_file)
     if args.shutdown:
         # Shutdown in 3 minutes.
         # Enough time to recover if it crashed at the start.
         subprocess.run("sudo shutdown +3".split())
-        print("Shutdown commenced. Exiting to bash.")
+        logging.critical("Shutdown commenced. Exiting to bash.")
         subprocess.run(["bash", "-il"])

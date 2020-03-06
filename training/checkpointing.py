@@ -1,8 +1,5 @@
 """
 A short set of utilities for saving pytorch models for SafeLife.
-
-These use the global counter on SafeLifeEnv, but are otherwise SafeLife
-agnostic.
 """
 
 import os
@@ -10,8 +7,6 @@ import glob
 import logging
 
 import torch
-
-from safelife.safelife_env import SafeLifeEnv
 
 logger = logging.getLogger(__name__)
 
@@ -29,18 +24,14 @@ def get_all_checkpoints(logdir):
     return sorted(files, key=step_from_checkpoint)
 
 
-def save_checkpoint(path, obj, attribs, max_checkpoints=3):
-    num_steps = SafeLifeEnv.global_counter.num_steps
-    if os.path.isdir(path):
-        logdir = path
-        path = os.path.join(path, 'checkpoint-%i.data' % num_steps)
-    else:
-        logdir = os.path.dirname(path)
+def save_checkpoint(safelife_logger, obj, attribs, max_checkpoints=3):
+    if safelife_logger is None:
+        return
+    num_steps = safelife_logger.cumulative_stats['training_steps']
+    logdir = safelife_logger.logdir
+    path = os.path.join(logdir, 'checkpoint-%i.data' % num_steps)
 
-    data = {
-        'num_steps': num_steps,
-        'num_episodes': SafeLifeEnv.global_counter.episodes_completed,
-    }
+    data = {'logger_stats': safelife_logger.cumulative_stats}
     for attrib in attribs:
         val = getattr(obj, attrib)
         if hasattr(val, 'state_dict'):
@@ -53,14 +44,20 @@ def save_checkpoint(path, obj, attribs, max_checkpoints=3):
         os.remove(old_checkpoint)
 
 
-def load_checkpoint(path, obj):
-    if os.path.isdir(path):
-        checkpoints = get_all_checkpoints(path)
+def load_checkpoint(safelife_logger, obj, checkpoint_name=None):
+    if safelife_logger is None:
+        return
+    logdir = safelife_logger.logdir
+    if checkpoint_name is not None:
+        path = os.path.join(logdir, checkpoint_name)
+    else:
+        checkpoints = get_all_checkpoints(logdir)
         path = checkpoints and checkpoints[-1]
     if not path or not os.path.exists(path):
         return
 
     checkpoint = torch.load(path)
+    safelife_logger.cumulative_stats = checkpoint['logger_stats']
 
     for key, val in checkpoint.items():
         orig_val = getattr(obj, key, None)
@@ -68,7 +65,3 @@ def load_checkpoint(path, obj):
             orig_val.load_state_dict(val)
         else:
             setattr(obj, key, val)
-
-    SafeLifeEnv.global_counter.num_steps = checkpoint['num_steps']
-    SafeLifeEnv.global_counter.episodes_started = checkpoint['num_episodes']
-    SafeLifeEnv.global_counter.episodes_completed = checkpoint['num_episodes']

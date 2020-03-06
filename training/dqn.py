@@ -32,8 +32,7 @@ class ReplayBuffer(object):
 
 
 class DQN(object):
-    summary_writer = None
-    logdir = None
+    data_logger = None
 
     num_steps = 0
     num_episodes = 0
@@ -69,7 +68,7 @@ class DQN(object):
             self.training_model.parameters(), lr=self.learning_rate)
         self.replay_buffer = ReplayBuffer(self.replay_size)
 
-        checkpointing.load_checkpoint(self.logdir, self)
+        checkpointing.load_checkpoint(self.data_logger, self)
 
     @property
     def epsilon_old(self):
@@ -145,16 +144,15 @@ class DQN(object):
         loss.backward()
         self.optimizer.step()
 
-        writer = self.summary_writer
-        n = self.num_steps
-        if report and self.summary_writer is not None:
-            writer.add_scalar("loss", loss.item(), n)
-            writer.add_scalar("epsilon", self.epsilon, n)
-            writer.add_scalar("qvals/model_mean", q_values.mean().item(), n)
-            writer.add_scalar("qvals/model_max", q_values.max(1)[0].mean().item(), n)
-            writer.add_scalar("qvals/target_mean", next_q_values.mean().item(), n)
-            writer.add_scalar("qvals/target_max", next_q_value.mean().item(), n)
-            writer.flush()
+        if report and self.data_logger is not None:
+            self.data_logger.log_scalars({
+                "loss": loss,
+                "epsilon": self.epsilon,
+                "qvals/model_mean": q_values.mean().item(),
+                "qvals/model_max": q_values.max(1)[0].mean().item(),
+                "qvals/target_mean": next_q_values.mean().item(),
+                "qvals/target_max": next_q_value.mean().item(),
+            }, self.num_steps, 'dqn')
 
     def train(self, steps):
         needs_report = True
@@ -185,7 +183,7 @@ class DQN(object):
                 self.target_model.load_state_dict(self.training_model.state_dict())
 
             if num_steps >= next_checkpoint:
-                checkpointing.save_checkpoint(self.logdir, self, [
+                checkpointing.save_checkpoint(self.data_logger, self, [
                     'training_model', 'target_model', 'optimizer',
                 ])
 
