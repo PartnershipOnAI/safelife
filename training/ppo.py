@@ -7,18 +7,17 @@ import torch.optim as optim
 from safelife.helper_utils import load_kwargs
 
 from .utils import named_output, round_up
-from . import checkpointing
+from .base_algo import BaseAlgo
 
 
 logger = logging.getLogger(__name__)
 USE_CUDA = torch.cuda.is_available()
 
 
-class PPO(object):
+class PPO(BaseAlgo):
     data_logger = None  # SafeLifeLogger instance
 
     num_steps = 0
-    num_episodes = 0
 
     steps_per_env = 20
     num_minibatches = 4
@@ -38,8 +37,6 @@ class PPO(object):
     reward_clip = 0.0
     policy_rectifier = 'relu'  # or 'elu' or ...more to come
 
-    checkpoint_freq = 100000
-    num_checkpoints = 3
     report_freq = 960
     test_freq = 100000
 
@@ -48,7 +45,7 @@ class PPO(object):
     training_envs = None
     testing_envs = None
 
-    epsilon = 0.0  # for exploration
+    checkpoint_attribs = ('model', 'optimizer')
 
     def __init__(self, model, **kwargs):
         load_kwargs(self, kwargs)
@@ -58,7 +55,7 @@ class PPO(object):
         self.optimizer = optim.Adam(
             self.model.parameters(), lr=self.learning_rate)
 
-        checkpointing.load_checkpoint(self.data_logger, self)
+        self.load_checkpoint()
 
     @named_output('states actions rewards done policies values')
     def take_one_step(self, envs):
@@ -148,7 +145,6 @@ class PPO(object):
             return torch.tensor(x, device=self.compute_device, dtype=dtype)
 
         self.num_steps += actions.size
-        self.num_episodes += np.sum(done)
 
         return (
             t([s.states for s in steps]), t(actions, torch.int64),
@@ -195,12 +191,13 @@ class PPO(object):
         max_steps = self.num_steps + steps
 
         while self.num_steps < max_steps:
-            next_checkpoint = round_up(self.num_steps, self.checkpoint_freq)
             next_report = round_up(self.num_steps, self.report_freq)
             next_test = round_up(self.num_steps, self.test_freq)
 
             batch = self.gen_training_batch(self.steps_per_env)
             self.train_batch(batch)
+
+            self.save_checkpoint()
 
             n = self.num_steps
 
@@ -221,11 +218,6 @@ class PPO(object):
                     "values": values,
                     "advantages": advantages,
                 }, n, 'ppo')
-
-            if n >= next_checkpoint:
-                checkpointing.save_checkpoint(self.data_logger, self, [
-                    'model', 'optimizer',
-                ])
 
             if n >= next_test:
                 self.run_test_envs()

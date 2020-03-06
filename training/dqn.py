@@ -5,14 +5,14 @@ import torch.optim as optim
 
 from safelife.helper_utils import load_kwargs
 
-from . import checkpointing
+from .base_algo import BaseAlgo
 from .utils import round_up
 
 
 USE_CUDA = torch.cuda.is_available()
 
 
-class ReplayBuffer(object):
+class ReplayBuffer(BaseAlgo):
     def __init__(self, capacity):
         self.capacity = capacity
         self.idx = 0
@@ -35,19 +35,17 @@ class DQN(object):
     data_logger = None
 
     num_steps = 0
-    num_episodes = 0
 
     gamma = 0.97
     training_batch_size = 64
     optimize_freq = 16
     learning_rate = 3e-4
+    epsilon = 0.0  # for exploration
 
     replay_initial = 40000
     replay_size = 100000
     target_update_freq = 10000
 
-    checkpoint_freq = 100000
-    num_checkpoints = 3
     report_freq = 256
     test_freq = 100000
 
@@ -56,7 +54,7 @@ class DQN(object):
     training_envs = None
     testing_envs = None
 
-    epsilon = 0.0  # for exploration
+    checkpoint_attribs = ('training_model', 'target_model', 'optimizer')
 
     def __init__(self, training_model, target_model, **kwargs):
         load_kwargs(self, kwargs)
@@ -68,17 +66,7 @@ class DQN(object):
             self.training_model.parameters(), lr=self.learning_rate)
         self.replay_buffer = ReplayBuffer(self.replay_size)
 
-        checkpointing.load_checkpoint(self.data_logger, self)
-
-    @property
-    def epsilon_old(self):
-        # hardcode this for now
-        t1 = 1e5
-        t2 = 1e6
-        y1 = 1.0
-        y2 = 0.1
-        t = (self.num_steps - t1) / (t2 - t1)
-        return y1 + (y2-y1) * np.clip(t, 0, 1)
+        self.load_checkpoint()
 
     def update_target(self):
         self.target_model.load_state_dict(self.training_model.state_dict())
@@ -112,7 +100,6 @@ class DQN(object):
             next_state, reward, done, info = env.step(action)
             if done:
                 next_state = env.reset()
-                self.num_episodes += 1
             env.last_state = next_state
             self.replay_buffer.push(state, action, reward, next_state, done)
 
@@ -161,7 +148,6 @@ class DQN(object):
             num_steps = self.num_steps
             next_opt = round_up(num_steps, self.optimize_freq)
             next_update = round_up(num_steps, self.target_update_freq)
-            next_checkpoint = round_up(num_steps, self.checkpoint_freq)
             next_report = round_up(num_steps, self.report_freq)
             next_test = round_up(num_steps, self.test_freq)
 
@@ -182,10 +168,7 @@ class DQN(object):
             if num_steps >= next_update:
                 self.target_model.load_state_dict(self.training_model.state_dict())
 
-            if num_steps >= next_checkpoint:
-                checkpointing.save_checkpoint(self.data_logger, self, [
-                    'training_model', 'target_model', 'optimizer',
-                ])
+            self.save_checkpoint()
 
             if num_steps >= next_test:
                 self.run_test_envs()
