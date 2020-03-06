@@ -37,8 +37,8 @@ class PPO(BaseAlgo):
     reward_clip = 0.0
     policy_rectifier = 'relu'  # or 'elu' or ...more to come
 
-    report_freq = 960
-    test_freq = 100000
+    report_interval = 960
+    test_interval = 100000
 
     compute_device = torch.device('cuda' if USE_CUDA else 'cpu')
 
@@ -191,8 +191,8 @@ class PPO(BaseAlgo):
         max_steps = self.num_steps + steps
 
         while self.num_steps < max_steps:
-            next_report = round_up(self.num_steps, self.report_freq)
-            next_test = round_up(self.num_steps, self.test_freq)
+            next_report = round_up(self.num_steps, self.report_interval)
+            next_test = round_up(self.num_steps, self.test_interval)
 
             batch = self.gen_training_batch(self.steps_per_env)
             self.train_batch(batch)

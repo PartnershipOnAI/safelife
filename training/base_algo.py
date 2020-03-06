@@ -34,7 +34,7 @@ class BaseAlgo(object):
     num_steps = 0
 
     checkpoint_interval = 100000
-    num_checkpoints = 3
+    max_checkpoints = 3
     checkpoint_attribs = []
 
     _last_checkpoint = -1
@@ -83,6 +83,8 @@ class BaseAlgo(object):
         for old_checkpoint in old_checkpoints[:-self.max_checkpoints]:
             os.remove(old_checkpoint)
 
+        self._last_checkpoint = self.num_steps
+
     def load_checkpoint(self, checkpoint_name=None):
         if self.data_logger is None:
             return
@@ -105,3 +107,5 @@ class BaseAlgo(object):
                 orig_val.load_state_dict(val)
             else:
                 setattr(self, key, val)
+
+        self._last_checkpoint = self.num_steps

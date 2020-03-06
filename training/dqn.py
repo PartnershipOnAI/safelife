@@ -38,16 +38,16 @@ class DQN(object):
 
     gamma = 0.97
     training_batch_size = 64
-    optimize_freq = 16
+    optimize_interval = 16
     learning_rate = 3e-4
     epsilon = 0.0  # for exploration
 
     replay_initial = 40000
     replay_size = 100000
-    target_update_freq = 10000
+    target_update_interval = 10000
 
-    report_freq = 256
-    test_freq = 100000
+    report_interval = 256
+    test_interval = 100000
 
     compute_device = torch.device('cuda' if USE_CUDA else 'cpu')
 
@@ -146,10 +146,10 @@ class DQN(object):
 
         for _ in range(int(steps / len(self.training_envs))):
             num_steps = self.num_steps
-            next_opt = round_up(num_steps, self.optimize_freq)
-            next_update = round_up(num_steps, self.target_update_freq)
-            next_report = round_up(num_steps, self.report_freq)
-            next_test = round_up(num_steps, self.test_freq)
+            next_opt = round_up(num_steps, self.optimize_interval)
+            next_update = round_up(num_steps, self.target_update_interval)
+            next_report = round_up(num_steps, self.report_interval)
+            next_test = round_up(num_steps, self.test_interval)
 
             self.collect_data()
 

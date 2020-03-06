@@ -78,11 +78,10 @@ class SafeLifeLogger(object):
         Format string for the training video files.
     testing_video_name : str
         Format string for the testing video files.
-    training_video_freq : int
-        Frequency (really inverse frequency) at which to save training videos.
-        If 1, every episode is saved.
-    testing_video_freq : int
-        Frequency at which to save testing videos.
+    training_video_interval : int
+        Interval at which to save training videos. If 1, every episode is saved.
+    testing_video_interval : int
+        Interval at which to save testing videos.
     record_side_effects : bool
         If true (default), side effects are calculated at the end of each
         episode.
@@ -97,8 +96,8 @@ class SafeLifeLogger(object):
 
     training_video_name = "training-e{training_episodes}-s{training_steps}"
     testing_video_name = "testing-s{training_steps}-{level_name}"
-    training_video_freq = 100
-    testing_video_freq = 1
+    training_video_interval = 100
+    testing_video_interval = 1
 
     record_side_effects = True
 
@@ -172,8 +171,8 @@ class SafeLifeLogger(object):
             self.cumulative_stats['training_steps'] += info.get('length', 0)
             num_episodes = self.cumulative_stats['training_episodes']
             history_name = (
-                self.training_video_freq > 0 and
-                (num_episodes - 1) % self.training_video_freq == 0 and
+                self.training_video_interval > 0 and
+                (num_episodes - 1) % self.training_video_interval == 0 and
                 self.training_video_name
             )
             console_msg = self.console_training_msg
@@ -181,8 +180,8 @@ class SafeLifeLogger(object):
             self.cumulative_stats['testing_episodes'] += 1
             num_episodes = self.cumulative_stats['testing_episodes']
             history_name = (
-                self.testing_video_freq > 0 and
-                (num_episodes - 1) % self.testing_video_freq == 0 and
+                self.testing_video_interval > 0 and
+                (num_episodes - 1) % self.testing_video_interval == 0 and
                 self.training_video_name
             )
             console_msg = self.console_testing_msg
@@ -280,7 +279,7 @@ class RemoteSafeLifeLogger(object):
         processing logging configuration, so this needs to be reset.
     """
     max_backlog = 50
-    update_freq = 0.01
+    update_interval = 0.01
 
     @ray_remote
     class SafeLifeLoggingActor(object):
@@ -312,7 +311,8 @@ class RemoteSafeLifeLogger(object):
 
     @property
     def cumulative_stats(self):
-        if self._promises and time.time() > self._last_update + self.update_freq:
+        next_update = self._last_update + self.update_interval
+        if self._promises and time.time() > next_update:
             timeout = 0 if len(self._promises) < self.max_backlog else None
             ready, self._promises = ray.wait(
                 self._promises, len(self._promises), timeout=timeout)
