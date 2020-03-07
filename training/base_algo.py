@@ -14,9 +14,11 @@ class BaseAlgo(object):
     Attributes
     ----------
     data_logger : SafeLifeLogger
-        The data logger points to the logging directory and contains a
-        dictionary of ``cumulative_stats`` that should be saved along with
-        any model attributes.
+        The data logger contains a dictionary of ``cumulative_stats`` that
+        should be saved along with any model attributes.
+    checkpoint_directory : str
+        The directory where checkpoints are stored. If not set, the checkpoint
+        directory will be taken from ``self.data_logger.logdir``.
     num_steps : int
         Total number of training steps. It's assumed that subclasses will
         increment this in their training loops.
@@ -32,6 +34,7 @@ class BaseAlgo(object):
     testing_envs : list
     """
     data_logger = None
+    checkpoint_directory = None
 
     num_steps = 0
 
@@ -45,10 +48,12 @@ class BaseAlgo(object):
         """
         Return a sorted list of all checkpoints in the log directory.
         """
-        logdir = self.data_logger and self.data_logger.logdir
-        if not logdir:
+        chkpt_dir = (
+            self.checkpoint_directory or
+            self.data_logger and self.data_logger.logdir)
+        if not chkpt_dir:
             return []
-        files = glob.glob(os.path.join(logdir, 'checkpoint-*.data'))
+        files = glob.glob(os.path.join(chkpt_dir, 'checkpoint-*.data'))
 
         def step_from_checkpoint(f):
             try:
@@ -60,17 +65,22 @@ class BaseAlgo(object):
         return sorted(files, key=step_from_checkpoint)
 
     def save_checkpoint(self):
-        if self.data_logger is None:
+        chkpt_dir = (
+            self.checkpoint_directory or
+            self.data_logger and self.data_logger.logdir)
+        if not chkpt_dir:
             return
         if (self._last_checkpoint >= 0 and
                 self.num_steps < self._last_checkpoint + self.checkpoint_interval):
             # Already have a recent checkpoint.
             return
 
-        logdir = self.data_logger.logdir
-        path = os.path.join(logdir, 'checkpoint-%i.data' % self.num_steps)
+        path = os.path.join(chkpt_dir, 'checkpoint-%i.data' % self.num_steps)
 
-        data = {'logger_stats': self.data_logger.cumulative_stats}
+        if self.data_logger:
+            data = {'logger_stats': self.data_logger.cumulative_stats}
+        else:
+            data = {'logger_stats': {}}
         data['logger_stats']['training_steps'] = self.num_steps
 
         for attrib in self.checkpoint_attribs:
@@ -88,11 +98,15 @@ class BaseAlgo(object):
         self._last_checkpoint = self.num_steps
 
     def load_checkpoint(self, checkpoint_name=None):
-        if self.data_logger is None:
-            return
-        logdir = self.data_logger.logdir
-        if checkpoint_name is not None:
-            path = os.path.join(logdir, checkpoint_name)
+        chkpt_dir = (
+            self.checkpoint_directory or
+            self.data_logger and self.data_logger.logdir)
+        if checkpoint_name and os.path.dirname(checkpoint_name):
+            # Path includes a directory.
+            # Treat it as a complete path name and ignore chkpt_dir
+            path = checkpoint_name
+        elif chkpt_dir and checkpoint_name:
+            path = os.path.join(chkpt_dir, checkpoint_name)
         else:
             checkpoints = self.get_all_checkpoints()
             path = checkpoints and checkpoints[-1]
@@ -100,7 +114,8 @@ class BaseAlgo(object):
             return
 
         checkpoint = torch.load(path)
-        self.data_logger.cumulative_stats = checkpoint['logger_stats']
+        if self.data_logger:
+            self.data_logger.cumulative_stats = checkpoint['logger_stats']
         self.num_steps = checkpoint['logger_stats']['training_steps']
 
         for key, val in checkpoint.items():
@@ -111,6 +126,20 @@ class BaseAlgo(object):
                 setattr(self, key, val)
 
         self._last_checkpoint = self.num_steps
+
+    def take_one_step(self, envs):
+        """
+        Take one step in each of the environments.
+
+        Returns
+        -------
+        states : list
+        actions : list
+        rewards : list
+        done : list
+            Whether or not each environment reached its end this step.
+        """
+        raise NotImplementedError
 
     def run_test_envs(self, num_episodes=None):
         """
