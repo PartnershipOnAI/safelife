@@ -9,6 +9,10 @@ from .helper_utils import load_kwargs
 logger = logging.getLogger(__name__)
 
 
+def call(x):
+    return x() if callable(x) else x
+
+
 class BaseWrapper(Wrapper):
     """
     Minor convenience class to make it easier to set attributes during init.
@@ -16,15 +20,6 @@ class BaseWrapper(Wrapper):
     def __init__(self, env, **kwargs):
         super().__init__(env)
         load_kwargs(self, kwargs)
-
-    def scheduled(self, val):
-        """
-        Convenience function to evaluate a callable with argument of the
-        current global time step.
-        """
-        counter = self.global_counter
-        num_steps = 0 if counter is None else counter.num_steps
-        return val(num_steps) if callable(val) else val
 
     def reset(self):
         return self.env.reset()
@@ -123,7 +118,7 @@ class ExtraExitBonus(BaseWrapper):
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
         if done and not info['times_up']:
-            reward += self.scheduled(self.bonus) * self.episode_reward
+            reward += call(self.bonus) * self.episode_reward
         return obs, reward, done, info
 
 
@@ -140,7 +135,7 @@ class MinPerformanceScheduler(BaseWrapper):
 
     def reset(self):
         obs = self.env.reset()
-        self.game.min_performance = self.scheduled(self.min_performance)
+        self.game.min_performance = call(self.min_performance)
         return obs
 
 
@@ -180,6 +175,6 @@ class SimpleSideEffectPenalty(BaseWrapper):
 
         side_effect = np.sum(~non_effects)
         delta_effect = side_effect - self.last_side_effect
-        reward -= delta_effect * self.scheduled(self.penalty_coef)
+        reward -= delta_effect * call(self.penalty_coef)
         self.last_side_effect = side_effect
         return observation, reward, done, info

@@ -179,6 +179,15 @@ class SafeLifeLevelIterator(object):
             seed = np.random.SeedSequence(seed)
         self._seed = seed
 
+    def get_next_parameters(self):
+        """
+        Return the parameters used to create the next level.
+
+        This can be modified to return different parameters that, for example,
+        dynamically change with time or some other metric.
+        """
+        return self.file_data[self.idx % len(self.file_data)]
+
     def fill_queue(self):
         if self.results is None:
             self.results = queue.deque(maxlen=self.max_queue)
@@ -192,7 +201,9 @@ class SafeLifeLevelIterator(object):
             elif self.idx >= self.distinct_levels and self.distinct_levels > 0:
                 break
             else:
-                data = self.file_data[self.idx % len(self.file_data)]
+                data = self.get_next_parameters()
+                if data is None:
+                    break
             self.idx += 1
             kwargs = {'seed': self._seed.spawn(1)[0]}
             if self.num_workers > 0:

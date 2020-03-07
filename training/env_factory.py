@@ -4,13 +4,46 @@ from safelife.safelife_env import SafeLifeEnv
 from safelife.safelife_game import CellTypes
 from safelife import env_wrappers
 from safelife.safelife_logger import SafeLifeLogWrapper
+from safelife.file_finder import SafeLifeLevelIterator
 
 
-def linear_schedule(t, y):
+class LinearSchedule(object):
     """
-    Piecewise linear function y(t)
+    Piecewise linear schedule based on total number of training steps.
+
+    This is useful to vary training parameters over the course of training.
+
+    Parameters
+    ----------
+    logger : SafeLifeLogger
+    t : list
+        Input (training step) values that define the interpolation.
+    y : list
+        Output interpolation values.
     """
-    return interpolate.UnivariateSpline(t, y, s=0, k=1, ext='const')
+    def __init__(self, logger, t, y):
+        self.logger = logger
+        self.func = interpolate.UnivariateSpline(t, y, s=0, k=1, ext='const')
+
+    def __call__(self):
+        return self.func(self.logger.cumulative_stats['training_steps'])
+
+
+class SwitchingLevelIterator(SafeLifeLevelIterator):
+    """
+    Switch safelife level types after a certain number of training steps.
+    """
+    def __init__(self, level1, level2, t_switch, logger, **kwargs):
+        super().__init__(level1, level2, **kwargs)
+        self.t_switch = t_switch
+        self.logger = logger
+
+    def get_next_parameters(self):
+        t = self.logger.cumulative_stats['training_steps']
+        if t < self.t_switch:
+            return self.file_data[0]
+        else:
+            return self.file_data[1]
 
 
 def safelife_env_factory(
@@ -43,9 +76,7 @@ def safelife_env_factory(
                 CellTypes.color_bit + 5,  # blue goal
             ))
 
-        if testing:
-            env.global_counter = None  # don't increment num_steps
-        else:
+        if not testing:
             env = env_wrappers.MovementBonusWrapper(env, as_penalty=True)
             env = env_wrappers.ExtraExitBonus(env)
         if impact_penalty is not None:

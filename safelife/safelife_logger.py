@@ -61,7 +61,26 @@ class StreamingJSONWriter(object):
         self.file.close()
 
 
-class SafeLifeLogger(object):
+class BaseLogger(object):
+    """
+    Defines the interface for SafeLife loggers, both local and remote.
+    """
+    def __init__(self, logdir):
+        self.logdir = logdir
+        self.cumulative_stats = {
+            'training_episodes': 0,
+            'training_steps': 0,
+            'test_episodes': 0,
+        }
+
+    def log_episode(self, game, info={}, history=None, training=True):
+        raise NotImplementedError
+
+    def log_scalars(self, data, global_step=None, tag=None):
+        raise NotImplementedError
+
+
+class SafeLifeLogger(BaseLogger):
     """
     Logs episode statistics for SafeLife.
 
@@ -99,6 +118,9 @@ class SafeLifeLogger(object):
     training_video_interval = 100
     testing_video_interval = 1
 
+    training_log_name = "training-log.json"
+    testing_log_name = "testing-log.json"
+
     record_side_effects = True
 
     _testing_log = None
@@ -135,9 +157,9 @@ class SafeLifeLogger(object):
     def init_logdir(self):
         if not self._has_init and self.logdir is not None:
             self._testing_log = StreamingJSONWriter(
-                os.path.join(self.logdir, 'testing-log.json'))
+                os.path.join(self.logdir, self.testing_log_name))
             self._training_log = StreamingJSONWriter(
-                os.path.join(self.logdir, 'training-log.json'))
+                os.path.join(self.logdir, self.training_log_name))
             if self.summary_writer is None:
                 try:
                     from tensorboardX import SummaryWriter
@@ -255,7 +277,7 @@ class SafeLifeLogger(object):
         self.summary_writer.flush()
 
 
-class RemoteSafeLifeLogger(object):
+class RemoteSafeLifeLogger(BaseLogger):
     """
     Maintains a local interface to a remote logging object using ray.
 
