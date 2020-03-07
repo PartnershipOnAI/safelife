@@ -31,7 +31,7 @@ class ReplayBuffer(BaseAlgo):
         return min(self.idx, self.capacity)
 
 
-class DQN(object):
+class DQN(BaseAlgo):
     data_logger = None
 
     num_steps = 0
@@ -136,7 +136,7 @@ class DQN(object):
 
         if report and self.data_logger is not None:
             self.data_logger.log_scalars({
-                "loss": loss,
+                "loss": loss.item(),
                 "epsilon": self.epsilon,
                 "qvals/model_mean": q_values.mean().item(),
                 "qvals/model_max": q_values.max(1)[0].mean().item(),
