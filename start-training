@@ -39,9 +39,11 @@ parser.add_argument('--shutdown', action="store_true",
     "(helpful for running remotely).")
 parser.add_argument('--port', default=6006, type=int,
     help="Port on which to run tensorboard.")
+parser.add_argument('--run-benchmarks', action="store_true",
+    help="Don't do training; just run benchmarks on all benchmark levels.")
 parser.add_argument('--impact-penalty', default=0.0, type=float)
 parser.add_argument('--env-type', choices=env_types)
-parser.add_argument('--algo', choices=('ppo', 'dqn', 'ppo-tf'), default='ppo')
+parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
 args = parser.parse_args()
 
 
@@ -173,7 +175,15 @@ try:
         subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
         os.makedirs(subdir, exist_ok=True)
 
-        data_logger = SafeLifeLogger(subdir)
+        if args.run_benchmarks:
+            data_logger = SafeLifeLogger(
+                subdir,
+                summary_writer=False,
+                training_log=False,
+                testing_video_name="benchmark-{level_name}",
+                testing_log="benchmark-data.json")
+        else:
+            data_logger = SafeLifeLogger(subdir)
 
         if env_type == 'append-still':
             t_penalty = [1.0e6, 2.0e6]
@@ -227,11 +237,18 @@ try:
             min_performance=LinearSchedule(data_logger, t_performance, [0.01, 0.5]),
             level_iterator=level_iterator,
         )
-        testing_envs = safelife_env_factory(
-            data_logger=data_logger, num_envs=5, testing=True,
-            level_iterator=SafeLifeLevelIterator(
-                test_levels, distinct_levels=5, total_levels=-1)
-        )
+        if args.run_benchmarks:
+            testing_envs = safelife_env_factory(
+                data_logger=data_logger, num_envs=20, testing=True,
+                level_iterator=SafeLifeLevelIterator(
+                    test_levels, total_levels=-1)
+            )
+        else:
+            testing_envs = safelife_env_factory(
+                data_logger=data_logger, num_envs=5, testing=True,
+                level_iterator=SafeLifeLevelIterator(
+                    test_levels, distinct_levels=5, total_levels=-1)
+            )
 
         if args.algo == 'ppo':
             from training.models import SafeLifePolicyNetwork
@@ -244,7 +261,6 @@ try:
                 training_envs=training_envs,
                 testing_envs=testing_envs,
                 data_logger=data_logger)
-            algo.train(6e6)
 
         elif args.algo == 'dqn':
             from training.models import SafeLifeQNetwork
@@ -258,10 +274,14 @@ try:
                 training_envs=training_envs,
                 testing_envs=testing_envs,
                 data_logger=data_logger)
-            algo.train(6e6)
         else:
             logging.error("Unexpected algorithm type '%s'", args.algo)
+            raise ValueError("unexpected algorithm type")
 
+        if args.run_benchmarks:
+            algo.run_test_envs(num_episodes=1000)
+        else:
+            algo.train(6e6)
 
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")

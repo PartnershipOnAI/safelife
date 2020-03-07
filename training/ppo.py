@@ -81,20 +81,6 @@ class PPO(BaseAlgo):
             dones.append(done)
         return states, actions, rewards, dones, policies, values
 
-    def run_test_envs(self):
-        """
-        Run each testing environment until completion.
-
-        It's assumed that the testing environments take care of their own
-        logging via wrappers.
-        """
-        test_envs = self.testing_envs or []
-        while test_envs:
-            data = self.take_one_step(test_envs)
-            test_envs = [
-                env for env, done in zip(test_envs, data.done) if not done
-            ]
-
     @named_output('states actions action_prob returns advantages values')
     def gen_training_batch(self, steps_per_env, flat=True):
         """

@@ -6,7 +6,7 @@ import torch.optim as optim
 from safelife.helper_utils import load_kwargs
 
 from .base_algo import BaseAlgo
-from .utils import round_up
+from .utils import named_output, round_up
 
 
 USE_CUDA = torch.cuda.is_available()
@@ -41,6 +41,7 @@ class DQN(object):
     optimize_interval = 16
     learning_rate = 3e-4
     epsilon = 0.0  # for exploration
+    epsilon_testing = 0.01
 
     replay_initial = 40000
     replay_size = 100000
@@ -71,18 +72,14 @@ class DQN(object):
     def update_target(self):
         self.target_model.load_state_dict(self.training_model.state_dict())
 
-    def run_test_envs(self):
-        # Just run one episode of each test environment.
-        # Assumes that the environments themselves handle logging.
-        for env in self.testing_envs:
-            state = env.reset()
-            done = False
-            while not done:
-                state = torch.tensor([state], device=self.compute_device, dtype=torch.float32)
-                qvals = self.training_model(state).detach().cpu().numpy().ravel()
-                state, reward, done, info = env.step(np.argmax(qvals))
+    def run_test_envs(self, num_episodes=None):
+        old_eps = self.epsilon
+        self.epsilon = self.epsilon_testing
+        super().run_test_envs(num_episodes)
+        self.epsilon = old_eps
 
-    def collect_data(self):
+    @named_output('states actions rewards done qvals')
+    def take_one_step(self, envs, add_to_replay=False):
         states = [
             e.last_state if hasattr(e, 'last_state') else e.reset()
             for e in self.training_envs
@@ -95,15 +92,21 @@ class DQN(object):
         random_actions = np.random.randint(num_actions, size=num_states)
         use_random = np.random.random(num_states) < self.epsilon
         actions = np.choose(use_random, [actions, random_actions])
+        rewards = []
+        dones = []
 
         for env, state, action in zip(self.training_envs, states, actions):
             next_state, reward, done, info = env.step(action)
             if done:
                 next_state = env.reset()
             env.last_state = next_state
-            self.replay_buffer.push(state, action, reward, next_state, done)
+            if add_to_replay:
+                self.replay_buffer.push(state, action, reward, next_state, done)
+                self.num_steps += 1
+            rewards.append(reward)
+            dones.append(done)
 
-        self.num_steps += len(states)
+        return states, actions, rewards, dones, qvals
 
     def optimize(self, report=False):
         if len(self.replay_buffer) < self.replay_initial:
@@ -143,15 +146,16 @@ class DQN(object):
 
     def train(self, steps):
         needs_report = True
+        max_steps = self.num_steps + steps
 
-        for _ in range(int(steps / len(self.training_envs))):
+        while self.num_steps < max_steps:
             num_steps = self.num_steps
             next_opt = round_up(num_steps, self.optimize_interval)
             next_update = round_up(num_steps, self.target_update_interval)
             next_report = round_up(num_steps, self.report_interval)
             next_test = round_up(num_steps, self.test_interval)
 
-            self.collect_data()
+            self.take_one_step(self.training_envs, add_to_replay=True)
 
             num_steps = self.num_steps
 

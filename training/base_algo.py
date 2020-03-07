@@ -28,6 +28,8 @@ class BaseAlgo(object):
     checkpoint_attribs : list
         List of attributes on the algorithm that ought to be saved at each
         checkpoint. This should be overridden by subclasses.
+    training_envs : list
+    testing_envs : list
     """
     data_logger = None
 
@@ -109,3 +111,28 @@ class BaseAlgo(object):
                 setattr(self, key, val)
 
         self._last_checkpoint = self.num_steps
+
+    def run_test_envs(self, num_episodes=None):
+        """
+        Run each testing environment until completion.
+
+        It's assumed that the testing environments take care of their own
+        logging via wrappers.
+        """
+        if num_episodes is None:
+            num_episodes = len(self.testing_envs)
+        test_envs = self.testing_envs or []
+        num_completed = 0
+
+        while num_completed < num_episodes:
+            data = self.take_one_step(test_envs)
+            num_in_progress = len(test_envs)
+            new_test_envs = []
+            for env, done in zip(test_envs, data.done):
+                if done:
+                    num_completed += 1
+                if done and num_in_progress + num_completed > num_episodes:
+                    num_in_progress -= 1
+                else:
+                    new_test_envs.append(env)
+            test_envs = new_test_envs

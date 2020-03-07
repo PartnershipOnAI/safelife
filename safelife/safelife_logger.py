@@ -70,7 +70,7 @@ class BaseLogger(object):
         self.cumulative_stats = {
             'training_episodes': 0,
             'training_steps': 0,
-            'test_episodes': 0,
+            'testing_episodes': 0,
         }
 
     def log_episode(self, game, info={}, history=None, training=True):
@@ -118,8 +118,8 @@ class SafeLifeLogger(BaseLogger):
     training_video_interval = 100
     testing_video_interval = 1
 
-    training_log_name = "training-log.json"
-    testing_log_name = "testing-log.json"
+    training_log = "training-log.json"
+    testing_log = "testing-log.json"
 
     record_side_effects = True
 
@@ -150,16 +150,18 @@ class SafeLifeLogger(BaseLogger):
         self.cumulative_stats = {
             'training_episodes': 0,
             'training_steps': 0,
-            'test_episodes': 0,
+            'testing_episodes': 0,
         }
         self._has_init = False
 
     def init_logdir(self):
-        if not self._has_init and self.logdir is not None:
-            self._testing_log = StreamingJSONWriter(
-                os.path.join(self.logdir, self.testing_log_name))
-            self._training_log = StreamingJSONWriter(
-                os.path.join(self.logdir, self.training_log_name))
+        if not self._has_init and self.logdir:
+            if self.testing_log:
+                self._testing_log = StreamingJSONWriter(
+                    os.path.join(self.logdir, self.testing_log))
+            if self.training_log:
+                self._training_log = StreamingJSONWriter(
+                    os.path.join(self.logdir, self.training_log))
             if self.summary_writer is None:
                 try:
                     from tensorboardX import SummaryWriter
@@ -204,7 +206,7 @@ class SafeLifeLogger(BaseLogger):
             history_name = (
                 self.testing_video_interval > 0 and
                 (num_episodes - 1) % self.testing_video_interval == 0 and
-                self.training_video_name
+                self.testing_video_name
             )
             console_msg = self.console_testing_msg
 
@@ -231,7 +233,7 @@ class SafeLifeLogger(BaseLogger):
             self._testing_log.dump(log_data)
 
         # Log to tensorboard.
-        if self.summary_writer is not None:
+        if not self.summary_writer:
             tb_data = info.copy()
             # Use a normalized reward
             tb_data['reward_frac'] = (
@@ -250,8 +252,9 @@ class SafeLifeLogger(BaseLogger):
         if history is not None and self.logdir is not None and history_name:
             history_name = history_name.format(**log_data, **self.cumulative_stats)
             history_name = os.path.join(self.logdir, history_name) + '.npz'
-            np.savez_compressed(history_name, **history)
-            render_file(history_name, movie_format="mp4")
+            if not os.path.exists(history_name):
+                np.savez_compressed(history_name, **history)
+                render_file(history_name, movie_format="mp4")
 
     def log_scalars(self, data, global_step=None, tag=None):
         """
@@ -266,7 +269,7 @@ class SafeLifeLogger(BaseLogger):
         """
         self.init_logdir()  # init if needed
 
-        if self.summary_writer is None:
+        if not self.summary_writer:
             return
         tag = "" if tag is None else tag + '/'
         if global_step is None:
