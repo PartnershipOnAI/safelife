@@ -72,12 +72,6 @@ class DQN(BaseAlgo):
     def update_target(self):
         self.target_model.load_state_dict(self.training_model.state_dict())
 
-    def run_test_envs(self, num_episodes=None):
-        old_eps = self.epsilon
-        self.epsilon = self.epsilon_testing
-        super().run_test_envs(num_episodes)
-        self.epsilon = old_eps
-
     @named_output('states actions rewards done qvals')
     def take_one_step(self, envs, add_to_replay=False):
         states = [
@@ -174,5 +168,8 @@ class DQN(BaseAlgo):
 
             self.save_checkpoint()
 
-            if num_steps >= next_test:
-                self.run_test_envs()
+            if self.testing_envs and num_steps >= next_test:
+                old_eps = self.epsilon
+                self.epsilon = self.epsilon_testing
+                self.run_episodes(self.testing_envs)
+                self.epsilon = old_eps

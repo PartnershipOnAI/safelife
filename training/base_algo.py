@@ -30,8 +30,6 @@ class BaseAlgo(object):
     checkpoint_attribs : list
         List of attributes on the algorithm that ought to be saved at each
         checkpoint. This should be overridden by subclasses.
-    training_envs : list
-    testing_envs : list
     """
     data_logger = None
     checkpoint_directory = None
@@ -141,27 +139,34 @@ class BaseAlgo(object):
         """
         raise NotImplementedError
 
-    def run_test_envs(self, num_episodes=None):
+    def run_episodes(self, envs, num_episodes=None):
         """
-        Run each testing environment until completion.
+        Run each environment to completion.
 
-        It's assumed that the testing environments take care of their own
-        logging via wrappers.
+        Note that no data is logged in the method. It's instead assumed
+        that each environment has a wrapper which takes care of the logging.
+
+        Parameters
+        ----------
+        envs : list
+            List of environments to run in parallel.
+        num_episodes : int
+            Total number of episodes to run. Defaults to the same as number
+            of environments.
         """
         if num_episodes is None:
-            num_episodes = len(self.testing_envs)
-        test_envs = self.testing_envs or []
+            num_episodes = len(envs)
         num_completed = 0
 
         while num_completed < num_episodes:
-            data = self.take_one_step(test_envs)
-            num_in_progress = len(test_envs)
-            new_test_envs = []
-            for env, done in zip(test_envs, data.done):
+            data = self.take_one_step(envs)
+            num_in_progress = len(envs)
+            new_envs = []
+            for env, done in zip(envs, data.done):
                 if done:
                     num_completed += 1
                 if done and num_in_progress + num_completed > num_episodes:
                     num_in_progress -= 1
                 else:
-                    new_test_envs.append(env)
-            test_envs = new_test_envs
+                    new_envs.append(env)
+            envs = new_envs

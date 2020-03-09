@@ -205,5 +205,5 @@ class PPO(BaseAlgo):
                     "advantages": advantages,
                 }, n, 'ppo')
 
-            if n >= next_test:
-                self.run_test_envs()
+            if self.testing_envs and n >= next_test:
+                self.run_episodes(self.testing_envs)
