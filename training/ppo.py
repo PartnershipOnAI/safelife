@@ -45,7 +45,7 @@ class PPO(BaseAlgo):
     training_envs = None
     testing_envs = None
 
-    checkpoint_attribs = ('model', 'optimizer')
+    checkpoint_attribs = ('model', 'optimizer', 'data_logger.cumulative_stats')
 
     def __init__(self, model, **kwargs):
         load_kwargs(self, kwargs)

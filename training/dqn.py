@@ -55,7 +55,10 @@ class DQN(BaseAlgo):
     training_envs = None
     testing_envs = None
 
-    checkpoint_attribs = ('training_model', 'target_model', 'optimizer')
+    checkpoint_attribs = (
+        'training_model', 'target_model', 'optimizer',
+        'data_logger.cumulative_stats',
+    )
 
     def __init__(self, training_model, target_model, **kwargs):
         load_kwargs(self, kwargs)

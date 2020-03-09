@@ -3,6 +3,8 @@ from functools import wraps
 
 import numpy as np
 
+_no_default = object()
+
 
 def named_output(names):
     """
@@ -58,3 +60,23 @@ def shuffle_arrays(*data):
     # that overhead can be large.
     idx = np.random.permutation(len(data[0]))
     return [[x[i] for i in idx] for x in data]
+
+
+def nested_getattr(obj, key, default=_no_default):
+    obj2 = obj
+    for subkey in key.split('.'):
+        obj2 = getattr(obj2, subkey, _no_default)
+    if obj2 is _no_default:
+        if default is _no_default:
+            raise AttributeError(
+                "'%s' object has no attribute '%s'" % (obj, key))
+        else:
+            obj2 = default
+    return obj2
+
+
+def nested_setattr(obj, key, val):
+    obj_key, _, set_key = key.rpartition('.')
+    if obj_key:
+        obj = nested_getattr(obj, obj_key)
+    setattr(obj, set_key, val)

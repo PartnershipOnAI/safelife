@@ -4,6 +4,8 @@ import logging
 
 import torch
 
+from .utils import nested_getattr, nested_setattr
+
 logger = logging.getLogger(__name__)
 
 
@@ -13,12 +15,10 @@ class BaseAlgo(object):
 
     Attributes
     ----------
-    data_logger : SafeLifeLogger
-        The data logger contains a dictionary of ``cumulative_stats`` that
-        should be saved along with any model attributes.
     checkpoint_directory : str
         The directory where checkpoints are stored. If not set, the checkpoint
         directory will be taken from ``self.data_logger.logdir``.
+    data_logger : object
     num_steps : int
         Total number of training steps. It's assumed that subclasses will
         increment this in their training loops.
@@ -30,9 +30,10 @@ class BaseAlgo(object):
     checkpoint_attribs : list
         List of attributes on the algorithm that ought to be saved at each
         checkpoint. This should be overridden by subclasses.
+        Note that this implicitly contains ``num_steps``.
     """
-    data_logger = None
     checkpoint_directory = None
+    data_logger = None
 
     num_steps = 0
 
@@ -41,14 +42,22 @@ class BaseAlgo(object):
     checkpoint_attribs = []
 
     _last_checkpoint = -1
+    _checkpoint_directory = None
+
+    @property
+    def checkpoint_directory(self):
+        return self._checkpoint_directory or (
+            self.data_logger and self.data_logger.logdir)
+
+    @checkpoint_directory.setter
+    def checkpoint_directory(self, value):
+        self,_checkpoint_directory = value
 
     def get_all_checkpoints(self):
         """
         Return a sorted list of all checkpoints in the log directory.
         """
-        chkpt_dir = (
-            self.checkpoint_directory or
-            self.data_logger and self.data_logger.logdir)
+        chkpt_dir = self.checkpoint_directory
         if not chkpt_dir:
             return []
         files = glob.glob(os.path.join(chkpt_dir, 'checkpoint-*.data'))
@@ -63,9 +72,7 @@ class BaseAlgo(object):
         return sorted(files, key=step_from_checkpoint)
 
     def save_checkpoint(self):
-        chkpt_dir = (
-            self.checkpoint_directory or
-            self.data_logger and self.data_logger.logdir)
+        chkpt_dir = self.checkpoint_directory
         if not chkpt_dir:
             return
         if (self._last_checkpoint >= 0 and
@@ -73,19 +80,18 @@ class BaseAlgo(object):
             # Already have a recent checkpoint.
             return
 
-        path = os.path.join(chkpt_dir, 'checkpoint-%i.data' % self.num_steps)
-
-        if self.data_logger:
-            data = {'logger_stats': self.data_logger.cumulative_stats}
-        else:
-            data = {'logger_stats': {}}
-        data['logger_stats']['training_steps'] = self.num_steps
-
+        data = {'num_steps': self.num_steps}
         for attrib in self.checkpoint_attribs:
-            val = getattr(self, attrib)
+            try:
+                val = getattr(self, attrib)
+            except AttributeError:
+                logger.error("Cannot save attribute '%s'", attrib)
+                continue
             if hasattr(val, 'state_dict'):
                 val = val.state_dict()
             data[attrib] = val
+
+        path = os.path.join(chkpt_dir, 'checkpoint-%i.data' % self.num_steps)
         torch.save(data, path)
         logger.info("Saving checkpoint: '%s'", path)
 
@@ -96,9 +102,7 @@ class BaseAlgo(object):
         self._last_checkpoint = self.num_steps
 
     def load_checkpoint(self, checkpoint_name=None):
-        chkpt_dir = (
-            self.checkpoint_directory or
-            self.data_logger and self.data_logger.logdir)
+        chkpt_dir = self.checkpoint_directory
         if checkpoint_name and os.path.dirname(checkpoint_name):
             # Path includes a directory.
             # Treat it as a complete path name and ignore chkpt_dir
@@ -112,16 +116,16 @@ class BaseAlgo(object):
             return
 
         checkpoint = torch.load(path)
-        if self.data_logger:
-            self.data_logger.cumulative_stats = checkpoint['logger_stats']
-        self.num_steps = checkpoint['logger_stats']['training_steps']
 
         for key, val in checkpoint.items():
-            orig_val = getattr(self, key, None)
+            orig_val = nested_getattr(self, key, None)
             if hasattr(orig_val, 'load_state_dict'):
                 orig_val.load_state_dict(val)
             else:
-                setattr(self, key, val)
+                try:
+                    nested_setattr(self, key, val)
+                except AttributeError:
+                    logger.error("Cannot load key '%s'", key)
 
         self._last_checkpoint = self.num_steps
 
