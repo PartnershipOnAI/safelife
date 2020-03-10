@@ -1,6 +1,5 @@
 import numpy as np
 
-import torch
 from torch import nn
 from torch.nn import functional as F
 
@@ -42,76 +41,25 @@ def safelife_cnn(input_shape):
     return cnn, (64, w, h)
 
 
-def signed_sqrt(x):
-    s = torch.sign(x)
-    return s * torch.sqrt(torch.abs(x))
-
-
-class NoisyLinear(nn.Module):
-    def __init__(self, in_features, out_features, bias=True, factorized=True):
-        super().__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.use_bias = bias
-        self.factorized = factorized
-
-        init_scale = in_features**-0.5
-        self.weight_mu = nn.Parameter(
-            2 * init_scale * (torch.rand(out_features, in_features)-0.5))
-        self.weight_sigma = nn.Parameter(
-            2 * init_scale * (torch.rand(out_features, in_features)-0.5))
-        if self.use_bias:
-            self.bias_mu = nn.Parameter(
-                2 * init_scale * (torch.rand(out_features)-0.5))
-            self.bias_sigma = nn.Parameter(
-                2 * init_scale * (torch.rand(out_features)-0.5))
-
-    def forward(self, x):
-        b = None
-        device = self.weight_mu.device
-        if self.factorized:
-            eps1 = signed_sqrt(torch.randn(self.in_features, device=device))
-            eps2 = signed_sqrt(torch.randn(self.out_features, device=device))
-            w = self.weight_mu + self.weight_sigma * eps1 * eps2[:,np.newaxis]
-
-            if self.use_bias:
-                # As with the original paper, use the signed sqrt even though
-                # we're not taking a product of noise params.
-                eps3 = signed_sqrt(torch.randn(self.out_features, device=device))
-                b = self.bias_mu + self.bias_sigma * eps3
-
-        else:
-            eps1 = torch.randn(self.out_features, self.in_features, device=device)
-            w = self.weight_mu + self.weight_sigma * eps1
-
-            if self.use_bias:
-                eps3 = torch.randn(self.out_features, device=device)
-                b = self.bias_mu + self.bias_sigma * eps3
-
-        return F.linear(x, w, b)
-
-
 class SafeLifeQNetwork(nn.Module):
     """
     Module for calculating Q functions.
     """
-    def __init__(self, input_shape, use_noisy_layers=True):
+    def __init__(self, input_shape):
         super().__init__()
 
         self.cnn, cnn_out_shape = safelife_cnn(input_shape)
         num_features = np.product(cnn_out_shape)
         num_actions = 9
 
-        Linear = NoisyLinear if use_noisy_layers else nn.Linear
-
         self.advantages = nn.Sequential(
-            Linear(num_features, 256),
+            nn.Linear(num_features, 256),
             nn.ReLU(),
             nn.Linear(256, num_actions)
         )
 
         self.value_func = nn.Sequential(
-            Linear(num_features, 256),
+            nn.Linear(num_features, 256),
             nn.ReLU(),
             nn.Linear(256, 1)
         )
