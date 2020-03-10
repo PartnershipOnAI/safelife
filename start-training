@@ -29,7 +29,7 @@ parser = argparse.ArgumentParser(description="""
     whether the existing data should be overwritten or appended. The latter
     allows for training to be restarted if interrupted.
     """)
-parser.add_argument('data_dir', nargs='?',
+parser.add_argument('data_dir',
     help="the directory in which to store this run's data")
 parser.add_argument('--install', action="store_true",
     help="Set this flag to ensure that all dependencies are installed"
@@ -39,32 +39,21 @@ parser.add_argument('--shutdown', action="store_true",
     "(helpful for running remotely).")
 parser.add_argument('--port', default=6006, type=int,
     help="Port on which to run tensorboard.")
+parser.add_argument('--run-benchmarks', action="store_true",
+    help="Don't do training; just run benchmarks on all benchmark levels.")
 parser.add_argument('--impact-penalty', default=0.0, type=float)
 parser.add_argument('--env-type', choices=env_types)
+parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
 args = parser.parse_args()
+
 
 # Setup the directories
 
 safety_dir = os.path.realpath(os.path.join(__file__, '../'))
-active_job_file = os.path.join(safety_dir, 'active_job.txt')
+data_dir = os.path.realpath(args.data_dir)
+job_name = os.path.basename(data_dir)
 sys.path.insert(1, safety_dir)  # ensure current directory is on the path
 os.chdir(safety_dir)
-
-# If the run name isn't suppied, get it from 'active_job.txt'
-# This is basically just used to restart after crashes.
-if not args.data_dir:
-    if os.path.exists(active_job_file):
-        with open(active_job_file) as f:
-            data_dir = f.read().strip()
-        print("Setting `data_dir` from `active_job.txt`")
-    else:
-        print("No run name was supplied. Aborting.")
-        exit()
-else:
-    data_dir = os.path.realpath(args.data_dir)
-with open(active_job_file, 'w') as f:
-    f.write(data_dir)
-job_name = os.path.split(data_dir)[1]
 
 if os.path.exists(data_dir) and args.data_dir is not None:
     print("The directory '%s' already exists. "
@@ -84,6 +73,7 @@ if os.path.exists(data_dir) and args.data_dir is not None:
 os.makedirs(data_dir, exist_ok=True)
 logfile = os.path.join(data_dir, 'training.log')
 
+
 # Get the environment type from the job name if not otherwise supplied
 if args.env_type:
     env_type = args.env_type
@@ -96,11 +86,12 @@ else:
 
 assert env_type in env_types
 
+
 # Setup logging
 
 if not os.path.exists(logfile):
     open(logfile, 'w').close()  # write an empty file
-logging.config.dictConfig({
+logging_config = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
@@ -144,7 +135,9 @@ logging.config.dictConfig({
         'level': 'WARNING',
         'handlers': ['console', 'logfile'],
     }
-})
+}
+logging.config.dictConfig(logging_config)
+
 
 # Install dependencies if they aren't already there
 
@@ -156,7 +149,7 @@ if args.install:
 # should just get built into the source directory.
 subprocess.run([
     "python3", os.path.join(safety_dir, "setup.py"),
-    "build", "--build-lib", safety_dir
+    "build_ext", "--build-lib", safety_dir
 ])
 
 
@@ -164,91 +157,140 @@ subprocess.run([
 
 if args.port:
     tb_proc = subprocess.Popen([
-        "tensorboard", "--logdir", job_name + ':' + data_dir, '--port', str(args.port)])
+        "tensorboard", "--logdir_spec", job_name + ':' + data_dir, '--port', str(args.port)])
 
 
 # Start training!
 
-def spawn_loader(name):
-    # When training in spawn environments, we first pre-train in the static
-    # environments for a couple million time steps. This just provides more
-    # opportunities for rewards so makes the initial training easier.
-    from safelife.file_finder import SafeLifeLevelIterator
-    from safelife.safelife_env import SafeLifeEnv
-
-    loader1 = SafeLifeLevelIterator('random/{}-still-easy'.format(name))
-    loader2 = SafeLifeLevelIterator('random/{}-spawn'.format(name))
-
-    t0 = 1.5e6 if name == 'prune' else 2.0e6
-    while True:
-        if SafeLifeEnv.global_counter.num_steps < t0:
-            yield next(loader1)
-        else:
-            yield next(loader2)
-
-
 try:
-    import tensorflow as tf
-    from training.safelife_ppo import SafeLifePPO, linear_schedule
-    from safelife.file_finder import SafeLifeLevelIterator
+    from training.env_factory import (
+        LinearSchedule,
+        SafeLifeLevelIterator,
+        SwitchingLevelIterator,
+        safelife_env_factory
+    )
+    from safelife.safelife_logger import SafeLifeLogger
 
     for penalty in [args.impact_penalty]:
-        tf.reset_default_graph()
         subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
         os.makedirs(subdir, exist_ok=True)
 
-        if env_type == 'append-still':
-            model = SafeLifePPO(
-                logdir=subdir,
-                impact_penalty=linear_schedule([1.0e6, 2.0e6], [0, penalty]),
-                min_performance=linear_schedule([1.0e6, 2.0e6], [0.01, 0.3]),
-                level_iterator=SafeLifeLevelIterator('random/append-still-easy.yaml'),
-            )
-            model.train(6e6)
-        elif env_type == 'prune-still':
-            model = SafeLifePPO(
-                logdir=subdir,
-                impact_penalty=linear_schedule([0.5e6, 1.5e6], [0, penalty]),
-                min_performance=linear_schedule([0.5e6, 1.5e6], [0.01, 0.3]),
-                level_iterator=SafeLifeLevelIterator('random/prune-still-easy.yaml'),
-            )
-            model.train(6e6)
-        elif env_type == 'append-spawn':
-            model = SafeLifePPO(
-                logdir=subdir,
-                impact_penalty=linear_schedule([2.0e6, 3.5e6], [0, penalty]),
-                min_performance=linear_schedule([1.0e6, 2.0e6], [0.01, 0.3]),
-                level_iterator=spawn_loader('append'),
-            )
-            model.train(6e6)
-        elif env_type == 'prune-spawn':
-            model = SafeLifePPO(
-                logdir=subdir,
-                impact_penalty=linear_schedule([1.5e6, 2.5e6], [0, penalty]),
-                min_performance=linear_schedule([0.5e6, 1.5e6], [0.01, 0.3]),
-                level_iterator=spawn_loader('prune'),
-            )
-            model.train(6e6)
-        elif env_type == 'navigate':
-            model = SafeLifePPO(
-                logdir=subdir,
-                impact_penalty=linear_schedule([1.0e6, 2.0e6], [0, penalty]),
-                level_iterator=SafeLifeLevelIterator('random/navigation.yaml'),
-            )
-            model.train(6e6)
+        if args.run_benchmarks:
+            data_logger = SafeLifeLogger(
+                subdir,
+                summary_writer=False,
+                training_log=False,
+                testing_video_name="benchmark-{level_name}",
+                testing_log="benchmark-data.json")
         else:
-            print("Unexpected environment type '{}'".format(env_type))
+            data_logger = SafeLifeLogger(subdir)
+
+        if env_type == 'append-still':
+            t_penalty = [1.0e6, 2.0e6]
+            t_performance = [1.0e6, 2.0e6]
+            level_iterator = SafeLifeLevelIterator('random/append-still-easy.yaml')
+            test_levels = 'benchmarks/v1.0/append-still.npz'
+
+        elif env_type == 'prune-still':
+            t_penalty = [0.5e6, 1.5e6]
+            t_performance = [0.5e6, 1.5e6]
+            level_iterator = SafeLifeLevelIterator('random/prune-still-easy.yaml')
+            test_levels = 'benchmarks/v1.0/prune-still.npz'
+
+        elif env_type == 'append-spawn':
+            # When training in spawn environments, we first pre-train in the
+            # static environments for a couple million time steps. This just
+            # provides more opportunities for rewards so makes the initial
+            # training easier.
+            t_penalty = [2.0e6, 3.5e6]
+            t_performance = [1.0e6, 2.0e6]
+            level_iterator = SwitchingLevelIterator(
+                'random/append-still-easy.yaml'
+                'random/append-spawn.yaml',
+                t_switch=1.5e6,
+                logger=data_logger
+            )
+            test_levels = 'benchmarks/v1.0/append-spawn.npz'
+
+        elif env_type == 'prune-spawn':
+            t_penalty = [1.5e6, 2.5e6]
+            t_performance = [0.5e6, 1.5e6]
+            level_iterator = SwitchingLevelIterator(
+                'random/prune-still-easy.yaml'
+                'random/prune-spawn.yaml',
+                t_switch=2.0e6,
+                logger=data_logger
+            )
+            test_levels = 'benchmarks/v1.0/append-spawn.npz'
+
+        elif env_type == 'navigate':
+            t_penalty = [1.0e6, 2.0e6]
+            t_performance = [1.0e6, 2.0e6]  # not actually relevant for navigate
+            level_iterator = SafeLifeLevelIterator('random/navigation.yaml')
+            test_levels = 'benchmarks/v1.0/navigation.npz'
+        else:
+            logging.error("Unexpected environment type '%s'", env_type)
+
+        training_envs = safelife_env_factory(
+            data_logger=data_logger, num_envs=16,
+            impact_penalty=LinearSchedule(data_logger, t_penalty, [0, penalty]),
+            min_performance=LinearSchedule(data_logger, t_performance, [0.01, 0.5]),
+            level_iterator=level_iterator,
+        )
+        if args.run_benchmarks:
+            testing_envs = safelife_env_factory(
+                data_logger=data_logger, num_envs=20, testing=True,
+                level_iterator=SafeLifeLevelIterator(
+                    test_levels, total_levels=-1)
+            )
+        else:
+            testing_envs = safelife_env_factory(
+                data_logger=data_logger, num_envs=5, testing=True,
+                level_iterator=SafeLifeLevelIterator(
+                    test_levels, distinct_levels=5, total_levels=-1)
+            )
+
+        if args.algo == 'ppo':
+            from training.models import SafeLifePolicyNetwork
+            from training.ppo import PPO
+
+            obs_shape = training_envs[0].observation_space.shape
+            model = SafeLifePolicyNetwork(obs_shape)
+            algo = PPO(
+                model,
+                training_envs=training_envs,
+                testing_envs=testing_envs,
+                data_logger=data_logger)
+
+        elif args.algo == 'dqn':
+            from training.models import SafeLifeQNetwork
+            from training.dqn import DQN
+
+            obs_shape = training_envs[0].observation_space.shape
+            train_model = SafeLifeQNetwork(obs_shape)
+            target_model = SafeLifeQNetwork(obs_shape)
+            algo = DQN(
+                train_model, target_model,
+                training_envs=training_envs,
+                testing_envs=testing_envs,
+                data_logger=data_logger)
+        else:
+            logging.error("Unexpected algorithm type '%s'", args.algo)
+            raise ValueError("unexpected algorithm type")
+
+        if args.run_benchmarks:
+            algo.run_test_envs(num_episodes=1000)
+        else:
+            algo.train(6e6)
 
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
 finally:
     if args.port:
         tb_proc.kill()
-    if os.path.exists(active_job_file):
-        os.remove(active_job_file)
     if args.shutdown:
         # Shutdown in 3 minutes.
         # Enough time to recover if it crashed at the start.
         subprocess.run("sudo shutdown +3".split())
-        print("Shutdown commenced. Exiting to bash.")
+        logging.critical("Shutdown commenced. Exiting to bash.")
         subprocess.run(["bash", "-il"])

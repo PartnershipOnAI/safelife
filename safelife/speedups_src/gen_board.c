@@ -93,7 +93,7 @@ static void wrapped_convolve(int *array, int *temp, int nrow, int ncol) {
 }
 
 
-static int calc_interior_area(uint32_t *mask, int nrow, int ncol) {
+/*static int calc_interior_area(uint32_t *mask, int nrow, int ncol) {
     // Quick loop to calculate the number of unmasked cells that do not
     // border masked cells.
     int total = 0;
@@ -110,7 +110,7 @@ static int calc_interior_area(uint32_t *mask, int nrow, int ncol) {
         }
     }
     return total;
-}
+}*/
 
 
 static int _idx(int i, int j, int k, board_shape_t s) {

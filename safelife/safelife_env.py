@@ -46,13 +46,6 @@ class SafeLifeEnv(gym.Env):
         If a tuple, each corresponding bit is given its own binary channel.
     view_shape : (int, int)
         Shape of the agent observation.
-    global_counter : object or None
-        The global counter records the total number of episodes and steps taken
-        across all environments. This can be replaced with a custom object
-        (or None) to store the counts in a different way. Counter attributes
-        include ``episodes_started``, ``episodes_completed``, and ``num_steps``.
-        Note that this is mostly for bookkeeping and logging (via wrappers),
-        and it isn't necessary for the environments themselves.
     """
 
     metadata = {
@@ -79,12 +72,6 @@ class SafeLifeEnv(gym.Env):
     view_shape = (15, 15)
     output_channels = tuple(range(15))  # default to all channels
 
-    global_counter = SimpleNamespace(
-        episodes_started=0,
-        episodes_completed=0,
-        num_steps=0
-    )
-
     def __init__(self, level_iterator, **kwargs):
         self.level_iterator = level_iterator
 
@@ -101,7 +88,7 @@ class SafeLifeEnv(gym.Env):
             self.observation_space = spaces.Box(
                 low=0, high=1,
                 shape=self.view_shape + (len(self.output_channels),),
-                dtype=np.uint16,
+                dtype=np.uint8,
             )
         self.seed()
 
@@ -151,6 +138,7 @@ class SafeLifeEnv(gym.Env):
         if self.output_channels:
             shift = np.array(list(self.output_channels), dtype=np.uint16)
             board = (board[...,None] & (1 << shift)) >> shift
+            board = board.astype(np.uint8)
         return board
 
     def step(self, action):
@@ -166,13 +154,7 @@ class SafeLifeEnv(gym.Env):
         self.episode_reward += reward
         self.game.update_exit_colors()
         times_up = self.episode_length > self.time_limit
-        already_completed = self.episode_completed
         self.episode_completed = times_up or self.game.game_over
-        if not already_completed and self.global_counter is not None:
-            # Add to the global counters, but only if we're not continuing to
-            # run the environment after done = True.
-            self.global_counter.episodes_completed += self.episode_completed
-            self.global_counter.num_steps += 1
 
         return self.get_obs(), reward, self.episode_completed, {
             'board': self.game.board,
@@ -193,8 +175,6 @@ class SafeLifeEnv(gym.Env):
         self.episode_length = 0
         self.episode_reward = 0
         self.episode_completed = False
-        if self.global_counter is not None:
-            self.global_counter.episodes_started += 1
         return self.get_obs()
 
     def render(self, mode='ansi'):

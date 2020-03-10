@@ -167,14 +167,11 @@ class SafeLifeLevelIterator(object):
         self.distinct_levels = distinct_levels
 
         self.num_workers = num_workers
-        if num_workers > 0:
-            self.max_queue = max_queue
-            self.pool = Pool(processes=num_workers)
-        else:
-            self.max_queue = 1
-            self.pool = None
-        self.results = queue.deque(maxlen=self.max_queue)
+        self.max_queue = max_queue if num_workers > 0 else 1
+        self.results = None
+        self.pool = None
         self.idx = 0
+
         self.seed(seed)
 
     def seed(self, seed):
@@ -182,11 +179,44 @@ class SafeLifeLevelIterator(object):
             seed = np.random.SeedSequence(seed)
         self._seed = seed
 
+    def get_next_parameters(self):
+        """
+        Return the parameters used to create the next level.
+
+        This can be modified to return different parameters that, for example,
+        dynamically change with time or some other metric.
+        """
+        return self.file_data[self.idx % len(self.file_data)]
+
+    def fill_queue(self):
+        if self.results is None:
+            self.results = queue.deque(maxlen=self.max_queue)
+        if self.num_workers > 0:
+            if self.pool is None:
+                self.pool = Pool(processes=self.num_workers)
+
+        while len(self.results) < self.max_queue:
+            if self.idx >= self.total_levels and self.total_levels >= 0:
+                break
+            elif self.idx >= self.distinct_levels and self.distinct_levels > 0:
+                break
+            else:
+                data = self.get_next_parameters()
+                if data is None:
+                    break
+            self.idx += 1
+            kwargs = {'seed': self._seed.spawn(1)[0]}
+            if self.num_workers > 0:
+                result = self.pool.apply_async(_game_from_data, data, kwargs)
+            else:
+                result = _game_from_data(*data, **kwargs)
+            self.results.append((data, result))
+
     def __getstate__(self):
         state = self.__dict__.copy()
-        if self.num_workers >= 1:
+        if self.num_workers > 0:
             # Don't pickle the multiprocessing pool, and wait on all queued results.
-            del state['pool']
+            state['pool'] = None
             state['results'] = queue.deque([
                 r.get() if isinstance(r, ApplyResult) else r
                 for r in self.results
@@ -196,27 +226,12 @@ class SafeLifeLevelIterator(object):
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        if self.num_workers > 0:
-            self.pool = Pool(processes=self.num_workers)
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        while len(self.results) < self.max_queue:
-            if self.idx >= self.total_levels and self.total_levels >= 0:
-                break
-            elif self.idx >= self.distinct_levels and self.distinct_levels > 0:
-                break
-            else:
-                data = self.file_data[self.idx % len(self.file_data)]
-            self.idx += 1
-            kwargs = {'seed': self._seed.spawn(1)[0]}
-            if self.num_workers < 1:
-                result = _game_from_data(*data, **kwargs)
-            else:
-                result = self.pool.apply_async(_game_from_data, data, kwargs)
-            self.results.append((data, result))
+        self.fill_queue()
 
         if not self.results:
             if self.idx < self.total_levels or self.total_levels < 0:
