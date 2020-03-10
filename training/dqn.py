@@ -5,6 +5,7 @@ import torch
 import torch.optim as optim
 
 from safelife.helper_utils import load_kwargs
+from safelife.random import get_rng
 
 from .base_algo import BaseAlgo
 from .utils import named_output, round_up
@@ -25,7 +26,7 @@ class ReplayBuffer(BaseAlgo):
 
     def sample(self, batch_size):
         sub_buffer = self.buffer[:self.idx]
-        data = np.random.choice(sub_buffer, batch_size, replace=False)
+        data = get_rng().choice(sub_buffer, batch_size, replace=False)
         return zip(*data)
 
     def __len__(self):
@@ -90,8 +91,8 @@ class DQN(BaseAlgo):
 
         num_states, num_actions = qvals.shape
         actions = np.argmax(qvals, axis=-1)
-        random_actions = np.random.randint(num_actions, size=num_states)
-        use_random = np.random.random(num_states) < self.epsilon
+        random_actions = get_rng().integers(num_actions, size=num_states)
+        use_random = get_rng().random(num_states) < self.epsilon
         actions = np.choose(use_random, [actions, random_actions])
         rewards = []
         dones = []

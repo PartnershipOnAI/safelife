@@ -4,7 +4,6 @@ Module that stores global random state for SafeLife.
 Note that this uses the new numpy 1.17 random generators.
 """
 
-from contextlib import contextmanager
 import numpy as np
 
 from . import speedups
@@ -17,17 +16,20 @@ def get_rng():
     return random_gen
 
 
-@contextmanager
-def set_rng(new_rng):
-    global random_gen
-    old_rng = random_gen
-    random_gen = new_rng
-    speedups.set_bit_generator(new_rng.bit_generator)
-    try:
-        yield
-    finally:
-        random_gen = old_rng
-        speedups.set_bit_generator(old_rng.bit_generator)
+class set_rng(object):
+    def __init__(self, new_rng):
+        global random_gen
+        self.old_rng = random_gen
+        random_gen = new_rng
+        speedups.set_bit_generator(random_gen.bit_generator)
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, *args):
+        global random_gen
+        random_gen = self.old_rng
+        speedups.set_bit_generator(random_gen.bit_generator)
 
 
 def coinflip(p, n=None):

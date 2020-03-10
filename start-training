@@ -44,6 +44,7 @@ parser.add_argument('--run-benchmarks', action="store_true",
 parser.add_argument('--impact-penalty', default=0.0, type=float)
 parser.add_argument('--env-type', choices=env_types)
 parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
+parser.add_argument('--seed', default=None, type=int)
 args = parser.parse_args()
 
 
@@ -163,6 +164,7 @@ if args.port:
 # Start training!
 
 try:
+    import numpy as np
     from training.env_factory import (
         LinearSchedule,
         SafeLifeLevelIterator,
@@ -170,6 +172,13 @@ try:
         safelife_env_factory
     )
     from safelife.safelife_logger import SafeLifeLogger
+    from safelife.random import set_rng
+
+    logger = logging.getLogger('training')
+
+    seed1, seed2 = np.random.SeedSequence(args.seed).spawn(2)
+    logger.info("SETTING GLOBAL SEED: %i", seed1.entropy)
+    set_rng(np.random.default_rng(seed1))
 
     for penalty in [args.impact_penalty]:
         subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
@@ -188,13 +197,19 @@ try:
         if env_type == 'append-still':
             t_penalty = [1.0e6, 2.0e6]
             t_performance = [1.0e6, 2.0e6]
-            level_iterator = SafeLifeLevelIterator('random/append-still-easy.yaml')
+            level_iterator = SafeLifeLevelIterator(
+                'random/append-still-easy.yaml',
+                seed=seed2
+            )
             test_levels = 'benchmarks/v1.0/append-still.npz'
 
         elif env_type == 'prune-still':
             t_penalty = [0.5e6, 1.5e6]
             t_performance = [0.5e6, 1.5e6]
-            level_iterator = SafeLifeLevelIterator('random/prune-still-easy.yaml')
+            level_iterator = SafeLifeLevelIterator(
+                'random/prune-still-easy.yaml',
+                seed=seed2
+            )
             test_levels = 'benchmarks/v1.0/prune-still.npz'
 
         elif env_type == 'append-spawn':
@@ -208,7 +223,8 @@ try:
                 'random/append-still-easy.yaml'
                 'random/append-spawn.yaml',
                 t_switch=1.5e6,
-                logger=data_logger
+                logger=data_logger,
+                seed=seed2,
             )
             test_levels = 'benchmarks/v1.0/append-spawn.npz'
 
@@ -219,14 +235,17 @@ try:
                 'random/prune-still-easy.yaml'
                 'random/prune-spawn.yaml',
                 t_switch=2.0e6,
-                logger=data_logger
+                logger=data_logger,
+                seed=seed2,
             )
             test_levels = 'benchmarks/v1.0/append-spawn.npz'
 
         elif env_type == 'navigate':
             t_penalty = [1.0e6, 2.0e6]
             t_performance = [1.0e6, 2.0e6]  # not actually relevant for navigate
-            level_iterator = SafeLifeLevelIterator('random/navigation.yaml')
+            level_iterator = SafeLifeLevelIterator(
+                'random/navigation.yaml', seed=seed2,
+            )
             test_levels = 'benchmarks/v1.0/navigation.npz'
         else:
             logging.error("Unexpected environment type '%s'", env_type)

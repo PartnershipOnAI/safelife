@@ -5,6 +5,7 @@ import torch
 import torch.optim as optim
 
 from safelife.helper_utils import load_kwargs
+from safelife.random import get_rng
 
 from .utils import named_output, round_up
 from .base_algo import BaseAlgo
@@ -71,7 +72,7 @@ class PPO(BaseAlgo):
         rewards = []
         dones = []
         for policy, env in zip(policies, envs):
-            action = np.random.choice(len(policy), p=policy)
+            action = get_rng().choice(len(policy), p=policy)
             obs, reward, done, info = env.step(action)
             if done:
                 obs = env.reset()
@@ -164,7 +165,7 @@ class PPO(BaseAlgo):
         idx = np.arange(len(batch.states))
 
         for _ in range(self.epochs_per_batch):
-            np.random.shuffle(idx)
+            get_rng().shuffle(idx)
             for k in idx.reshape(self.num_minibatches, -1):
                 entropy, loss = self.calculate_loss(
                     batch.states[k], batch.actions[k], batch.action_prob[k],
