@@ -289,8 +289,8 @@ class RemoteSafeLifeLogger(BaseLogger):
     can be copied to different processes while maintaining a link to the same
     actor, retrieving the same global state, and writing to the same open files.
 
-    Note that the ``cumulative_statistics`` in the local copy will generally
-    lag what is available on the remote copy. It is only updated whenever an
+    Note that the ``cumulative_stats`` in the local copy will generally lag
+    what is available on the remote copy. It is only updated whenever an
     episode is logged, and even then it is updated asynchronously.
 
     Parameters

@@ -22,7 +22,7 @@ with open(os.path.join(base_dir, "README.md"), "rt", encoding="utf-8") as fh:
 
 setuptools.setup(
     name='safelife',
-    version='1.0.1',
+    version='1.1rc1',
     author="Carroll L. Wainwright",
     author_email="carroll@partnershiponai.org",
     description="Safety benchmarks for reinforcement learning",
@@ -33,7 +33,7 @@ setuptools.setup(
     package_data={'safelife': data_files},
     install_requires=[
         "pyemd==0.5.1",
-        "numpy>=1.17.0",
+        "numpy>=1.18.0",
         "scipy>=1.0.0",
         "gym>=0.12.5",
         "imageio>=2.5.0",

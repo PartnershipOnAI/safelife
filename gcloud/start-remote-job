@@ -31,7 +31,7 @@ parser.add_argument('instance_name', help="name of the gcloud instance")
 parser.add_argument('job_name', help="a unique name for this training job")
 parser.add_argument('--port', default='6006',
     help="local port used to monitor tensorboard")
-parser.add_argument('--algo', choices=('ppo', 'dqn'))
+parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
 args = parser.parse_args()
 
 src_dir = '~/' + args.job_name
