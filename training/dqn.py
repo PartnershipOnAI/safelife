@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.interpolate import UnivariateSpline
 
 import torch
 import torch.optim as optim
@@ -40,7 +41,9 @@ class DQN(BaseAlgo):
     training_batch_size = 64
     optimize_interval = 16
     learning_rate = 3e-4
-    epsilon = 0.0  # for exploration
+    epsilon_schedule = UnivariateSpline(  # Piecewise linear schedule
+        [5e4, 1e6, 4e6],
+        [1, 0.1, 0.05], s=0, k=1, ext='const')
     epsilon_testing = 0.01
 
     replay_initial = 40000
@@ -71,6 +74,7 @@ class DQN(BaseAlgo):
         self.replay_buffer = ReplayBuffer(self.replay_size)
 
         self.load_checkpoint()
+        self.epsilon = self.epsilon_schedule(self.num_steps)
 
     def update_target(self):
         self.target_model.load_state_dict(self.training_model.state_dict())
@@ -152,6 +156,7 @@ class DQN(BaseAlgo):
             next_report = round_up(num_steps, self.report_interval)
             next_test = round_up(num_steps, self.test_interval)
 
+            self.epsilon = self.epsilon_schedule(self.num_steps)
             self.take_one_step(self.training_envs, add_to_replay=True)
 
             num_steps = self.num_steps
@@ -172,7 +177,5 @@ class DQN(BaseAlgo):
             self.save_checkpoint()
 
             if self.testing_envs and num_steps >= next_test:
-                old_eps = self.epsilon
                 self.epsilon = self.epsilon_testing
                 self.run_episodes(self.testing_envs)
-                self.epsilon = old_eps

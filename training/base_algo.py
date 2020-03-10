@@ -147,7 +147,7 @@ class BaseAlgo(object):
         """
         Run each environment to completion.
 
-        Note that no data is logged in the method. It's instead assumed
+        Note that no data is logged in this method. It's instead assumed
         that each environment has a wrapper which takes care of the logging.
 
         Parameters
