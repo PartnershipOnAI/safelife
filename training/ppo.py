@@ -184,7 +184,7 @@ class PPO(BaseAlgo):
             batch = self.gen_training_batch(self.steps_per_env)
             self.train_batch(batch)
 
-            self.save_checkpoint()
+            self.save_checkpoint_if_needed()
 
             n = self.num_steps
 

@@ -175,7 +175,7 @@ class DQN(BaseAlgo):
             if num_steps >= next_update:
                 self.target_model.load_state_dict(self.training_model.state_dict())
 
-            self.save_checkpoint()
+            self.save_checkpoint_if_needed()
 
             if self.testing_envs and num_steps >= next_test:
                 self.epsilon = self.epsilon_testing

@@ -71,13 +71,17 @@ class BaseAlgo(object):
         files = [f for f in files if step_from_checkpoint(f) >= 0]
         return sorted(files, key=step_from_checkpoint)
 
+    def save_checkpoint_if_needed(self):
+        if self._last_checkpoint < 0:
+            self.save_checkpoint()
+        elif self._last_checkpoint + self.checkpoint_interval < self.num_steps:
+            self.save_checkpoint()
+        else:
+            pass  # already have a recent checkpoint
+
     def save_checkpoint(self):
         chkpt_dir = self.checkpoint_directory
         if not chkpt_dir:
-            return
-        if (self._last_checkpoint >= 0 and
-                self.num_steps < self._last_checkpoint + self.checkpoint_interval):
-            # Already have a recent checkpoint.
             return
 
         data = {'num_steps': self.num_steps}
