@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 from scipy.interpolate import UnivariateSpline
 
@@ -11,10 +12,11 @@ from .base_algo import BaseAlgo
 from .utils import named_output, round_up
 
 
+logger = logging.getLogger(__name__)
 USE_CUDA = torch.cuda.is_available()
 
 
-class ReplayBuffer(BaseAlgo):
+class ReplayBuffer(object):
     def __init__(self, capacity):
         self.capacity = capacity
         self.idx = 0
@@ -33,18 +35,68 @@ class ReplayBuffer(BaseAlgo):
         return min(self.idx, self.capacity)
 
 
+class MultistepReplayBuffer(object):
+    def __init__(self, capacity, num_env, n_step, gamma):
+        self.capacity = capacity
+        self.idx = 0
+        self.states = np.zeros(capacity, dtype=object)
+        self.actions = np.zeros(capacity, dtype=np.int64)
+        self.rewards = np.zeros(capacity, dtype=np.float32)
+        self.done = np.zeros(capacity, dtype=bool)
+        self.num_env = num_env
+        self.n_step = n_step
+        self.gamma = gamma
+        self.tail_length = n_step * num_env
+
+    def push(self, state, action, reward, done):
+        idx = self.idx % self.capacity
+        self.idx += 1
+        self.states[idx] = state
+        self.actions[idx] = action
+        self.done[idx] = done
+        self.rewards[idx] = reward
+
+        # Now discount the reward and add to prior rewards
+        n = np.arange(1, self.n_step)
+        idx_prior = idx - n * self.num_env
+        prior_done = np.cumsum(self.done[idx_prior]) > 0
+        gamma = self.gamma**(n) * ~prior_done
+        self.rewards[idx_prior] += gamma * reward
+        self.done[idx_prior] = prior_done | done
+
+    @named_output("state action reward next_state done")
+    def sample(self, batch_size):
+        assert self.idx >= batch_size + self.tail_length
+
+        idx = self.idx % self.capacity
+        i1 = idx - 1 - get_rng().choice(len(self), batch_size, replace=False)
+        i0 = i1 - self.tail_length
+
+        return (
+            list(self.states[i0]),  # don't want dtype=object in output
+            self.actions[i0],
+            self.rewards[i0],
+            list(self.states[i1]),  # states n steps later
+            self.done[i0],  # whether or not the episode ended before n steps
+        )
+
+    def __len__(self):
+        return max(min(self.idx, self.capacity) - self.tail_length, 0)
+
+
 class DQN(BaseAlgo):
     data_logger = None
 
     num_steps = 0
 
     gamma = 0.97
-    training_batch_size = 64
-    optimize_interval = 16
+    multi_step_learning = 15
+    training_batch_size = 96
+    optimize_interval = 32
     learning_rate = 3e-4
     epsilon_schedule = UnivariateSpline(  # Piecewise linear schedule
-        [5e4, 1e6, 4e6],
-        [1, 0.1, 0.05], s=0, k=1, ext='const')
+        [5e4, 5e5, 4e6],
+        [1, 0.1, 0.03], s=0, k=1, ext='const')
     epsilon_testing = 0.01
 
     replay_initial = 40000
@@ -72,7 +124,9 @@ class DQN(BaseAlgo):
         self.target_model = target_model.to(self.compute_device)
         self.optimizer = optim.Adam(
             self.training_model.parameters(), lr=self.learning_rate)
-        self.replay_buffer = ReplayBuffer(self.replay_size)
+        self.replay_buffer = MultistepReplayBuffer(
+            self.replay_size, len(self.training_envs),
+            self.multi_step_learning, self.gamma)
 
         self.load_checkpoint()
         self.epsilon = self.epsilon_schedule(self.num_steps)
@@ -103,7 +157,7 @@ class DQN(BaseAlgo):
                 next_state = env.reset()
             env.last_state = next_state
             if add_to_replay:
-                self.replay_buffer.push(state, action, reward, next_state, done)
+                self.replay_buffer.push(state, action, reward, done)
                 self.num_steps += 1
             rewards.append(reward)
             dones.append(done)
@@ -128,7 +182,8 @@ class DQN(BaseAlgo):
 
         q_value = q_values.gather(1, action.unsqueeze(1)).squeeze(1)
         next_q_value, next_action = next_q_values.max(1)
-        expected_q_value = reward + self.gamma * next_q_value * (1 - done)
+        discount = self.gamma**self.multi_step_learning * (1 - done)
+        expected_q_value = reward + discount * next_q_value
 
         loss = torch.mean((q_value - expected_q_value)**2)
 
@@ -137,14 +192,18 @@ class DQN(BaseAlgo):
         self.optimizer.step()
 
         if report and self.data_logger is not None:
-            self.data_logger.log_scalars({
+            data = {
                 "loss": loss.item(),
                 "epsilon": self.epsilon,
-                "qvals/model_mean": q_values.mean().item(),
-                "qvals/model_max": q_values.max(1)[0].mean().item(),
-                "qvals/target_mean": next_q_values.mean().item(),
-                "qvals/target_max": next_q_value.mean().item(),
-            }, self.num_steps, 'dqn')
+                "q_model_mean": q_values.mean().item(),
+                "q_model_max": q_values.max(1)[0].mean().item(),
+                "q_target_mean": next_q_values.mean().item(),
+                "q_target_max": next_q_value.mean().item(),
+            }
+            logger.info(
+                "n=%i: loss=%0.3g, q_mean=%0.3g, q_max=%0.3g", self.num_steps,
+                data['loss'], data['q_model_mean'], data['q_model_max'])
+            self.data_logger.log_scalars(data, self.num_steps, 'dqn')
 
     def train(self, steps):
         needs_report = True
