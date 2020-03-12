@@ -233,20 +233,19 @@ class SafeLifeLogger(BaseLogger):
             self._testing_log.dump(log_data)
 
         # Log to tensorboard.
-        if not self.summary_writer:
-            tb_data = info.copy()
-            # Use a normalized reward
-            tb_data['reward_frac'] = (
-                log_data['reward'] / max(log_data['reward_possible'], 1))
-            tb_data.pop('reward')
-            if training:
-                tb_data['total_episodes'] = self.cumulative_stats['training_episodes']
-                tb_data['reward_frac_needed'] = game.min_performance
-            if self.record_side_effects and 'life-green' in side_effects:
-                amount, total = side_effects['life-green']
-                tb_data['side_effects'] = amount / max(total, 1)
-            tag = "training_runs" if training else "testing_runs"
-            self.log_scalars(tb_data, tag=tag)
+        tb_data = info.copy()
+        # Use a normalized reward
+        tb_data['reward_frac'] = (
+            log_data['reward'] / max(log_data['reward_possible'], 1))
+        tb_data.pop('reward')
+        if training:
+            tb_data['total_episodes'] = self.cumulative_stats['training_episodes']
+            tb_data['reward_frac_needed'] = game.min_performance
+        if self.record_side_effects and 'life-green' in side_effects:
+            amount, total = side_effects['life-green']
+            tb_data['side_effects'] = amount / max(total, 1)
+        tag = "training_runs" if training else "testing_runs"
+        self.log_scalars(tb_data, tag=tag)
 
         # Finally, save a recording of the trajectory.
         if history is not None and self.logdir is not None and history_name:
