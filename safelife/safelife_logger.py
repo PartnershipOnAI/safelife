@@ -16,7 +16,7 @@ import numpy as np
 try:
     import ray
     ray_remote = ray.remote
-except ModuleNotFoundError:
+except ImportError:
     ray = None
     def ray_remote(func): return func
 
@@ -326,7 +326,7 @@ class RemoteSafeLifeLogger(BaseLogger):
 
     def __init__(self, logdir, config_dict=None, **kwargs):
         if ray is None:
-            raise ModuleNotFoundError("No module named 'ray'.")
+            raise ImportError("No module named 'ray'.")
         logger = SafeLifeLogger(logdir, **kwargs)
         self.logdir = logdir
         self.actor = self.SafeLifeLoggingActor.remote(logger, config_dict)
