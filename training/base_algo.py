@@ -87,7 +87,7 @@ class BaseAlgo(object):
         data = {'num_steps': self.num_steps}
         for attrib in self.checkpoint_attribs:
             try:
-                val = getattr(self, attrib)
+                val = nested_getattr(self, attrib)
             except AttributeError:
                 logger.error("Cannot save attribute '%s'", attrib)
                 continue

@@ -186,9 +186,9 @@ class PPO(BaseAlgo):
 
             self.save_checkpoint_if_needed()
 
-            n = self.num_steps
+            num_steps = self.num_steps
 
-            if n >= next_report and self.data_logger is not None:
+            if num_steps >= next_report and self.data_logger is not None:
                 entropy, loss = self.calculate_loss(
                     batch.states, batch.actions, batch.action_prob,
                     batch.values, batch.returns, batch.advantages)
@@ -198,13 +198,13 @@ class PPO(BaseAlgo):
                 advantages = batch.advantages.mean().item()
                 logger.info(
                     "n=%i: loss=%0.3g, entropy=%0.3f, val=%0.3g, adv=%0.3g",
-                    n, loss, entropy, values, advantages)
+                    num_steps, loss, entropy, values, advantages)
                 self.data_logger.log_scalars({
                     "loss": loss,
                     "entropy": entropy,
                     "values": values,
                     "advantages": advantages,
-                }, n, 'ppo')
+                }, num_steps, 'ppo')
 
-            if self.testing_envs and n >= next_test:
+            if self.testing_envs and num_steps >= next_test:
                 self.run_episodes(self.testing_envs)
