@@ -216,7 +216,7 @@ class DQN(BaseAlgo):
             next_report = round_up(num_steps, self.report_interval)
             next_test = round_up(num_steps, self.test_interval)
 
-            self.epsilon = self.epsilon_schedule(self.num_steps)
+            self.epsilon = float(self.epsilon_schedule(self.num_steps))
             self.take_one_step(self.training_envs, add_to_replay=True)
 
             num_steps = self.num_steps
