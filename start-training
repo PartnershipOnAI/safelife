@@ -238,7 +238,7 @@ try:
                 logger=data_logger,
                 seed=seed2,
             )
-            test_levels = 'benchmarks/v1.0/append-spawn.npz'
+            test_levels = 'benchmarks/v1.0/prune-spawn.npz'
 
         elif env_type == 'navigate':
             t_penalty = [1.0e6, 2.0e6]
