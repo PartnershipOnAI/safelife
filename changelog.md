@@ -12,7 +12,7 @@ SafeLife v1.1 introduces many changes to make it easier to run SafeLife agents i
 
 - Removed the `global_counter` object from `SafeLifeEnv`. Previously, this object contained counts of the total number of steps taken across all environments and was used to set schedules for training hyperparameters. However, it wasn't actually used by the environments themselves, it didn't work well with distributed training, and it made disparate pieces of code unnecessarily tightly coupled. Instead, this functionality has been moved into the `SafeLifeLogger` class (see below).
 
-- The observation space for `SafeLifeEnv` now defaults `np.uint8`.
+- The observation space for `SafeLifeEnv` now defaults `np.uint8`. This makes for easier integration with PyTorch.
 
 - Improved the speed of graphics rendering.
 
@@ -36,9 +36,9 @@ SafeLife v1.1 introduces many changes to make it easier to run SafeLife agents i
 
 ## Changes to training module and auxiliary scripts
 
-- The training algorithms have been completely rewritten in PyTorch. This (hopefully) makes the algorithms much more clear and easier to modify.
+- The training algorithms have been completely rewritten in PyTorch. This (hopefully) makes the algorithms much more clear and easier to modify. We have removed our prior tensorflow implementation of PPO.
 
-- We've added an implementation of DQN. At present, DQN is _much_ slower to train the PPO.
+- We've added an implementation of DQN. At present, DQN does not perform nearly as well PPO.
 
 - Agent networks have been separated into a separate module (`training.models`) so that they can be reused for different algorithms.
 

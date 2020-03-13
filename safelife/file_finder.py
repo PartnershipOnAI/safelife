@@ -123,12 +123,16 @@ class SafeLifeLevelIterator(object):
     Parameters
     ----------
     paths : list of strings
-        The paths to the files to load. Note that this can use glob
-        expressions, or it can point to a directory of files to load.
-        Files will first be searched for in the current working directory.
-        If not found, the 'levels' directory will be searched as well.
-        If no paths are supplied, this will generate a random level using
-        default level generation parameters.
+        The paths to the files to load. Files should either ".npz" archives
+        of saved SafeLife levels, or ".yaml" files of procedural generation
+        parameters. Examples of each can be found in the "safelife/levels"
+        folder.
+
+        Note that the path names can use glob expressions or can point to a
+        directory of files to load. Files will first be searched for in the
+        current working directory. If not found, the "levels" directory will be
+        searched as well. If no paths are supplied, this will generate a
+        random level using default level generation parameters.
     distinct_levels : int
         Number of distinct levels to produce.
         If zero, levels are not cached and will be continually regenerated.
