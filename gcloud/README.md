@@ -12,10 +12,7 @@ In order to actually run any training, you will need to provision virtual machin
 
     gcloud compute instances create $INSTANCE --image-family pytorch-latest-gpu --image-project deeplearning-platform-release --boot-disk-size=200GB  --accelerator type=nvidia-tesla-p100 --machine-type=n1-standard-2 --maintenance-policy TERMINATE
 
-The startup script ensures that the instances will restart the last active job if it needs to be restarted.
-
-*(To do: check that the startup script is actually working correctly.)*
-
+Make sure you `ssh` into the instance (`gcloud compute ssh $INSTANCE`) and install the nvidia drivers. You should be prompted to install them when logging in.
 
 ## Starting new jobs
 

@@ -69,15 +69,26 @@ os.remove('tmp_exclude_list')
 if result.returncode != 0:
     exit(result.returncode)
 
-# Start the job. Use tmux to prevent it from dying on hangup.
-# Note that if this session is already running, tmux should prevent us from
-# running it again.
+# Run the script, tunneling tensorboard to the specified port.
 result = subprocess.run([
     ssh_cmd, args.instance_name, '-L', args.port + ':localhost:6006',
-    ("ln -nsf {src_dir} ~/current_job; "
-    "tmux new-session -s {job_name} "
-    "{src_dir}/start-training {data_dir} "
-    "--install --shutdown --algo={algo}").format(
-        src_dir=src_dir, job_name=args.job_name,
-        data_dir=data_dir, algo=args.algo)
+
+    # Set the path variable to include conda, which contains the latest
+    # versions of python, torch, etc.
+    # This is very specific to our particular gcloud setup.
+    "PATH=/usr/local/cuda/bin:/opt/conda/bin:/opt/conda/condabin:$PATH; "
+
+    # Create a "current_job" directory. This is handy for re-entering the job.
+    f"ln -nsf {src_dir} ~/current_job; "
+
+    # Install dependencies.
+    "sudo apt-get install ffmpeg --yes; "
+    f"pip install -r {src_dir}/requirements.txt; "
+
+    # And run the training script!
+    # This uses tmux to prevent it from dying on hangup.
+    # Note that if this session is already running, tmux should prevent us
+    # from running it again.
+    f"tmux new-session -s {args.job_name} "
+    f"{src_dir}/start-training {data_dir} --shutdown --algo={args.algo}"
 ])

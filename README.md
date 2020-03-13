@@ -34,7 +34,7 @@ SafeLife requires Python 3.5 or better. If you wish to install in a clean enviro
 
     pip3 install safelife
 
-If you wish to save training or benchmark videos (using `env_wrappers.RecordingSafeLifeWrapper`), you'll also need to install [ffmpeg](https://ffmpeg.org) (e.g., `sudo apt-get install ffmpeg` or `brew install ffmpeg`).
+Note that the logging utilities (`safelife.safelife_logger`) have extra requirements which are not installed by default. These includes [ffmpeg](https://ffmpeg.org) (e.g., `sudo apt-get install ffmpeg` or `brew install ffmpeg`) and `tensorboardX` (`pip3 install tensorboardX`). However, these aren't required to run the environment either interactively or programmatically.
 
 ### Local installation
 
