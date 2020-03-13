@@ -1,5 +1,4 @@
 import warnings
-from types import SimpleNamespace
 
 import gym
 from gym import spaces

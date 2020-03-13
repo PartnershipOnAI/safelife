@@ -61,7 +61,8 @@ if os.path.exists(data_dir) and args.data_dir is not None:
           "Would you like to overwrite the old data, append to it, or abort?" %
           data_dir)
     response = None
-    response = 'overwrite' if job_name.startswith('tmp') else None
+    response = 'append' if args.run_benchmarks else \
+               'overwrite' if job_name.startswith('tmp') else None
     while response not in ('overwrite', 'append', 'abort'):
         response = input("(overwrite / append / abort) > ")
     if response == 'overwrite':
@@ -298,7 +299,7 @@ try:
             raise ValueError("unexpected algorithm type")
 
         if args.run_benchmarks:
-            algo.run_test_envs(num_episodes=1000)
+            algo.run_episodes(testing_envs, num_episodes=1000)
         else:
             algo.train(6e6)
 

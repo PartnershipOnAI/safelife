@@ -138,7 +138,7 @@ class DQN(BaseAlgo):
     def take_one_step(self, envs, add_to_replay=False):
         states = [
             e.last_state if hasattr(e, 'last_state') else e.reset()
-            for e in self.training_envs
+            for e in envs
         ]
         tensor_states = torch.tensor(states, device=self.compute_device, dtype=torch.float32)
         qvals = self.training_model(tensor_states).detach().cpu().numpy()
@@ -151,7 +151,7 @@ class DQN(BaseAlgo):
         rewards = []
         dones = []
 
-        for env, state, action in zip(self.training_envs, states, actions):
+        for env, state, action in zip(envs, states, actions):
             next_state, reward, done, info = env.step(action)
             if done:
                 next_state = env.reset()

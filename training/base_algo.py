@@ -119,7 +119,10 @@ class BaseAlgo(object):
         if not path or not os.path.exists(path):
             return
 
-        checkpoint = torch.load(path)
+        if torch.cuda.is_available():
+            checkpoint = torch.load(path)
+        else:
+            checkpoint = torch.load(path, map_location=torch.device('cpu'))
 
         for key, val in checkpoint.items():
             orig_val = nested_getattr(self, key, None)
