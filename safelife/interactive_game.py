@@ -759,9 +759,6 @@ def _make_cmd_args(subparsers):
             " folder if not found in the current working directory."
             " If no files are provided, a new board will be randomly generated"
             " with the default parameters.")
-        parser.add_argument('-n', '--num_levels', type=int,
-            help="Number of levels to load. "
-            "If negative, levels are repeated endlessly.")
     for parser in (new_parser,):
         parser.add_argument('-b', '--board_size', type=int, default=15,
             help="Width and height of the empty board.",
@@ -800,8 +797,7 @@ def _run_cmd_args(args):
         game = SafeLifeGame(board_size=(args.board_size, args.board_size))
         main_loop = GameLoop(iter([game]))
     else:
-        iterator = SafeLifeLevelIterator(
-            *args.load_from, total_levels=args.num_levels, seed=seed.spawn(1)[0])
+        iterator = SafeLifeLevelIterator(*args.load_from, seed=seed.spawn(1)[0])
         iterator.fill_queue()
         main_loop = GameLoop(iterator)
     if args.cmd == "print":

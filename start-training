@@ -253,13 +253,13 @@ try:
             testing_envs = safelife_env_factory(
                 data_logger=data_logger, num_envs=20, testing=True,
                 level_iterator=SafeLifeLevelIterator(
-                    test_levels, total_levels=-1)
+                    test_levels, repeat_levels=True)
             )
         else:
             testing_envs = safelife_env_factory(
                 data_logger=data_logger, num_envs=5, testing=True,
                 level_iterator=SafeLifeLevelIterator(
-                    test_levels, distinct_levels=5, total_levels=-1)
+                    test_levels, distinct_levels=5, repeat_levels=True)
             )
 
         if args.algo == 'ppo':
