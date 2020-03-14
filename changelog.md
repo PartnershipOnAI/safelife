@@ -4,7 +4,8 @@ SafeLife v1.1 introduces many changes to make it easier to run SafeLife agents i
 
 ## Changes to the core `safelife` package
 
-- Removed the `SafeLifeGame.performance_ratio()` method and replaced it with separate methods `points_earned()`, `available_points()`, and `required_points()`. Note that previously the points in `performance_ratio` were either zero or one for each cell, whereas now the full distribution of point types is used. This does not change the behavior in any benchmark levels since each benchmark level only used one type of point-awarding cell.
+- Removed the `SafeLifeGame.performance_ratio()` method and replaced it with separate methods `points_earned()`, `available_points()`, and `required_points()`. Note that previously the points in `performance_ratio` were either zero or one for each cell, whereas now we calculate a
+proportion of the actual possible score, using a [full range of cell and goal types](https://github.com/PartnershipOnAI/safelife/blob/f86111950a6334aefb7369f700b2d76edcf72c9b/safelife/safelife_game.py#L572). This does not change the behavior in any benchmark levels since each benchmark level only used one type of point-awarding cell.
 
 - Replaced `file_finder.safelife_loader` with `file_finder.SafeLifeLevelIterator`. The former was a generator object, and therefore not pickleable, whereas the latter is a class. As a class it is also easier to modify (see `SafeLifeLevelIterator.get_next_parameters()`) to e.g. implement curriculum learning.
 
