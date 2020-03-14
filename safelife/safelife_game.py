@@ -567,6 +567,7 @@ class GameWithGoals(GameState):
         point values for individual cells. Colors are KRGYBMCW.
     """
     goals = None
+    _static_goals = None  # can be set to True for minor performance boost
 
     point_table = np.array([
         # k   r   g   y   b   m   c   w
@@ -596,6 +597,7 @@ class GameWithGoals(GameState):
         if as_initial_state:
             self.initial_points = self.current_points()
             self.initial_available_points = self.available_points()
+        self._static_goals = None
 
     def execute_edit(self, command):
         if command.startswith("GOALS "):
@@ -603,6 +605,7 @@ class GameWithGoals(GameState):
             self.board, self.goals = self.goals, self.board
             rval = super().execute_edit(command[6:])
             self.board, self.goals = self.goals, self.board
+            self._static_goals = None
         else:
             rval = super().execute_edit(command)
         return rval
@@ -682,10 +685,22 @@ class SafeLifeGame(GameWithGoals):
     Along with parent classes, this defines all of SafeLife's basic physics
     and the actions that the player can take.
     """
+
     def advance_board(self):
         self.num_steps += 1
+
         self.board = advance_board(self.board, self.spawn_prob)
-        self.goals = advance_board(self.goals, self.spawn_prob)
+
+        if not self._static_goals:
+            new_goals = advance_board(self.goals, self.spawn_prob)
+            if self._static_goals is None:
+                # Check to see if they are, in fact, static
+                self._static_goals = (
+                    not (new_goals & CellTypes.spawning).any() and
+                    (new_goals == self.goals).all()
+                )
+            self.goals = new_goals
+        print("static goals?", self._static_goals)
 
     @property
     def is_stochastic(self):
