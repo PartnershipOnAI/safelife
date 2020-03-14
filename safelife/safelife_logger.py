@@ -52,8 +52,9 @@ class StreamingJSONWriter(object):
         Dump a JSON-serializable object to file.
         """
         data = json.dumps(obj, cls=self.encoder)
-        self.file.seek(max(self.file.seek(0, os.SEEK_END) - 3, 0))
-        self.file.write("%s\n    %s\n]\n" % (self.delimeter, data))
+        close_str = "\n]\n"
+        self.file.seek(max(self.file.seek(0, os.SEEK_END) - len(close_str), 0))
+        self.file.write("%s\n    %s%s" % (self.delimeter, data, close_str))
         self.file.flush()
         self.delimeter = ','
 
