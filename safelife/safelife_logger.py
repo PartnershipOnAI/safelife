@@ -331,7 +331,14 @@ class RemoteSafeLifeLogger(BaseLogger):
         self.logdir = logdir
         self.actor = self.SafeLifeLoggingActor.remote(logger, config_dict)
         self._cstats = logger.cumulative_stats.copy()
+
+        # _promises stores references to remote updates to cumulative_stats
+        # that will be received in response to having sent a log item. There
+        # is no point exposing this state because there is in general no way
+        # to get up-to-date statistics to any thread, and therefore no benefit
+        # from knowing whether you're waiting for an update.
         self._promises = []
+
         self._last_update = time.time()
 
     @property
