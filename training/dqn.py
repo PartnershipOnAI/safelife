@@ -90,13 +90,13 @@ class DQN(BaseAlgo):
     num_steps = 0
 
     gamma = 0.97
-    multi_step_learning = 15
+    multi_step_learning = 5
     training_batch_size = 96
     optimize_interval = 32
     learning_rate = 3e-4
     epsilon_schedule = UnivariateSpline(  # Piecewise linear schedule
         [5e4, 5e5, 4e6],
-        [1, 0.1, 0.03], s=0, k=1, ext='const')
+        [1, 0.5, 0.03], s=0, k=1, ext='const')
     epsilon_testing = 0.01
 
     replay_initial = 40000
