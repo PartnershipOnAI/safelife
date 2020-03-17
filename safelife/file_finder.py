@@ -136,9 +136,8 @@ class SafeLifeLevelIterator(object):
     repeat_levels : bool
         If true, levels are repeated (or procedurally generated) in an endless
         loop. Otherwise, each level that was specified in the input is
-        generated only once before iteration stops. The default is True if
-        there is only one input and that input is a procedural generation file,
-        and False otherwise.
+        generated only once before iteration stops. The default is True if any
+        of the input files are procedural generation files, and False otherwise.
     distinct_levels : int or None
         Number of distinct levels to produce. If levels are procedurally
         generated, then putting a cap on the number of distinct levels will
@@ -164,8 +163,8 @@ class SafeLifeLevelIterator(object):
         self.level_cache = []
 
         if repeat_levels is None:
-            repeat_levels = (
-                len(self.file_data) == 1 and self.file_data[0][1] == "procgen")
+            for data in self.file_data:
+                repeat_levels = repeat_levels or data[1] == "procgen"
 
         self.repeat_levels = repeat_levels
         self.distinct_levels = distinct_levels

@@ -34,7 +34,7 @@ class SwitchingLevelIterator(SafeLifeLevelIterator):
     Switch safelife level types after a certain number of training steps.
     """
     def __init__(self, level1, level2, t_switch, logger, **kwargs):
-        super().__init__(level1, level2, **kwargs)
+        super().__init__(level1, level2, repeat_levels=True, **kwargs)
         self.t_switch = t_switch
         self.logger = logger
 

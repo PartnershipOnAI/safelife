@@ -213,7 +213,7 @@ try:
             t_penalty = [2.0e6, 3.5e6]
             t_performance = [1.0e6, 2.0e6]
             level_iterator = SwitchingLevelIterator(
-                'random/append-still-easy.yaml'
+                'random/append-still-easy.yaml',
                 'random/append-spawn.yaml',
                 t_switch=1.5e6,
                 logger=data_logger,
@@ -225,7 +225,7 @@ try:
             t_penalty = [1.5e6, 2.5e6]
             t_performance = [0.5e6, 1.5e6]
             level_iterator = SwitchingLevelIterator(
-                'random/prune-still-easy.yaml'
+                'random/prune-still-easy.yaml',
                 'random/prune-spawn.yaml',
                 t_switch=2.0e6,
                 logger=data_logger,

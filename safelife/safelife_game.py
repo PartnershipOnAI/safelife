@@ -700,7 +700,6 @@ class SafeLifeGame(GameWithGoals):
                     (new_goals == self.goals).all()
                 )
             self.goals = new_goals
-        print("static goals?", self._static_goals)
 
     @property
     def is_stochastic(self):
