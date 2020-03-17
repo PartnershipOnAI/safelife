@@ -4,7 +4,7 @@ import gym
 from gym import spaces
 import numpy as np
 
-from .file_finder import SafeLifeLevelIterator
+from .level_iterator import SafeLifeLevelIterator
 from .safelife_game import CellTypes
 from .helper_utils import recenter_view, load_kwargs
 from .random import set_rng
@@ -29,7 +29,7 @@ class SafeLifeEnv(gym.Env):
     ----------
     level_iterator : iterator
         An iterator which produces :class:`safelife_game.SafeLifeGame` instances.
-        For example, :func:`file_finder.SafeLifeLevelIterator` will produce
+        For example, :func:`level_iterator.SafeLifeLevelIterator` will produce
         new games from saved game files or procedural generation parameters.
         This can be replaced with a custom iterator to do more complex level
         generation, such as implementing a level curriculum.

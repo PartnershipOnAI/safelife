@@ -4,7 +4,7 @@ from safelife.safelife_env import SafeLifeEnv
 from safelife.safelife_game import CellTypes
 from safelife import env_wrappers
 from safelife.safelife_logger import SafeLifeLogWrapper
-from safelife.file_finder import SafeLifeLevelIterator
+from safelife.level_iterator import SafeLifeLevelIterator
 
 
 class LinearSchedule(object):

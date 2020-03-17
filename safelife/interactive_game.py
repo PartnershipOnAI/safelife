@@ -12,7 +12,7 @@ from . import render_text
 from . import render_graphics
 from .keyboard_input import KEYS, getch
 from .side_effects import side_effect_score
-from .file_finder import SafeLifeLevelIterator
+from .level_iterator import SafeLifeLevelIterator
 from .random import set_rng
 
 
