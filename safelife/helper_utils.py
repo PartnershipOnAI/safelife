@@ -1,3 +1,4 @@
+import inspect
 import numpy as np
 import scipy.signal
 
@@ -74,15 +75,13 @@ def recenter_view(board, view_size, center, move_to_perimeter=None):
     return board2
 
 
-def coinflip(p, n=None):
+def load_kwargs(self, kwargs):
     """
-    Return True with probability `p`, False with probability `1-p`.
-
-    Parameters
-    ----------
-    p : float
-    n : None or int or tuple
-        If not None, return an array of `n` coin flips.
-        Tuples can be used to return a multi-dimensional array.
+    Simple function to load kwargs during class initialization.
     """
-    return np.random.random(n) < p
+    for key, val in kwargs.items():
+        if (not key.startswith('_') and hasattr(self, key) and
+                not inspect.ismethod(getattr(self, key))):
+            setattr(self, key, val)
+        else:
+            raise ValueError("Unrecognized parameter: '%s'" % (key,))

@@ -19,8 +19,8 @@ import numpy as np
 from .helper_utils import (
     wrapping_array,
     wrapped_convolution as convolve2d,
-    coinflip,
 )
+from .random import coinflip, get_rng
 from .speedups import advance_board
 
 
@@ -175,6 +175,8 @@ class GameState(object):
         else:
             self.make_default_board(board_size)
             self._init_data = self.serialize()
+        self.initial_points = 0
+        self.initial_available_points = 0
 
     def make_default_board(self, board_size):
         self.board = np.zeros(board_size, dtype=np.uint16)
@@ -243,7 +245,7 @@ class GameState(object):
             cls_name = cls_components[-1]
             try:
                 mod = import_module(mod_name)
-            except ModuleNotFoundError:
+            except ImportError:
                 mod = import_module(__name__)
             cls = getattr(mod, cls_name)
         obj = cls(board_size=None)
@@ -514,16 +516,31 @@ class GameState(object):
             raise ValueError("Unknown condition '%s'" % (condition,))
 
     def current_points(self):
+        """
+        Current point value of the board.
+
+        This depends on the current board state only.
+        It does not depend on the initial board state or the board history.
+        """
         return 0
 
-    def performance_ratio(self):
-        return 0, 0
+    def available_points(self):
+        """Number of points remaining to be earned."""
+        return 0
+
+    def points_earned(self):
+        """Number of points that have been earned."""
+        return self.current_points() - self.initial_points
+
+    def required_points(self):
+        """Total number of points needed to open the level exit."""
+        req_points = self.min_performance * self.initial_available_points
+        return max(0, int(np.ceil(req_points)))
 
     def can_exit(self):
         if self.min_performance < 0:
             return True
-        completed, total = self.performance_ratio()
-        return completed >= self.min_performance * total
+        return self.points_earned() >= self.required_points()
 
     def update_exit_locs(self):
         self.exit_locs = np.nonzero(self.board & CellTypes.exit)
@@ -550,6 +567,7 @@ class GameWithGoals(GameState):
         point values for individual cells. Colors are KRGYBMCW.
     """
     goals = None
+    _static_goals = None  # can be set to True for minor performance boost
 
     point_table = np.array([
         # k   r   g   y   b   m   c   w
@@ -573,9 +591,13 @@ class GameWithGoals(GameState):
         data['goals'] = self.goals.copy()
         return data
 
-    def deserialize(self, data, *args, **kw):
-        super().deserialize(data, *args, **kw)
+    def deserialize(self, data, as_initial_state=True):
+        super().deserialize(data, as_initial_state)
         self.goals = data['goals']
+        if as_initial_state:
+            self.initial_points = self.current_points()
+            self.initial_available_points = self.available_points()
+        self._static_goals = None
 
     def execute_edit(self, command):
         if command.startswith("GOALS "):
@@ -583,6 +605,7 @@ class GameWithGoals(GameState):
             self.board, self.goals = self.goals, self.board
             rval = super().execute_edit(command[6:])
             self.board, self.goals = self.goals, self.board
+            self._static_goals = None
         else:
             rval = super().execute_edit(command)
         return rval
@@ -593,42 +616,50 @@ class GameWithGoals(GameState):
         if goals is None:
             goals = self.goals
         goals = (goals & CellTypes.rainbow_color) >> CellTypes.color_bit
-        cell_colors = (self.board & CellTypes.rainbow_color) >> CellTypes.color_bit
-        alive = self.board & CellTypes.alive > 0
+        cell_colors = (board & CellTypes.rainbow_color) >> CellTypes.color_bit
+        alive = board & CellTypes.alive > 0
         cell_points = self.point_table[goals, cell_colors] * alive
         return np.sum(cell_points)
 
-    def performance_ratio(self, unit_rewards=True):
-        pt_table = self.point_table
-        if unit_rewards:
-            pt_table = np.sign(pt_table).astype(int)
-        if not hasattr(self, '_init_data'):
-            # Can't tell how much the agent has progressed if there is
-            # no baseline to compare against
-            return 0, 1
-        g1 = self._init_data['goals']
-        b1 = self._init_data['board']
-        g2 = self.goals
-        b2 = self.board
-        # Shift board and goals to only show their color. Values are [0, 8].
-        g1 = (g1 & CellTypes.rainbow_color) >> CellTypes.color_bit
-        g2 = (g2 & CellTypes.rainbow_color) >> CellTypes.color_bit
-        c1 = (b1 & CellTypes.rainbow_color) >> CellTypes.color_bit
-        c2 = (b2 & CellTypes.rainbow_color) >> CellTypes.color_bit
-        # Additionally, mask out all board positions that aren't alive, or
-        # that are both frozen and immovable.
-        m1 = b1 & CellTypes.alive > 0
-        m1 &= b1 & (CellTypes.frozen | CellTypes.movable) != CellTypes.frozen
-        m2 = b2 & CellTypes.alive > 0
-        m2 &= b2 & (CellTypes.frozen | CellTypes.movable) != CellTypes.frozen
+    def available_points(self, board=None, goals=None):
+        """
+        Calculate the remaining points that are available on the board.
 
-        baseline_score = np.sum(pt_table[g1, c1] * m1)
-        current_score = np.sum(pt_table[g2, c2] * m2)
-        possible_score = np.sum(np.max(pt_table, axis=1)[g2])
-        return (
-            int(current_score - baseline_score),
-            int(possible_score - baseline_score)
-        )
+        This assumes that all goals can be filled in with any live color that
+        exists on the board. It also assumes that the total number of goal
+        cells of each type is constant. Both of these can easily be violated
+        in practice.
+        """
+        if board is None:
+            board = self.board
+        if goals is None:
+            goals = self.goals
+
+        # Shift board and goals to only show their color. Values are [0, 8].
+        goals = (goals & CellTypes.rainbow_color) >> CellTypes.color_bit
+        cell_colors = (board & CellTypes.rainbow_color) >> CellTypes.color_bit
+
+        # Mask out columns in the point table for which no colors are available
+        alive_cells = board & CellTypes.alive > 0
+        agent_cells = board & CellTypes.agent > 0
+        available_colors = np.unique(cell_colors[alive_cells | agent_cells])
+        mask = np.zeros(8, dtype=bool)
+        mask[available_colors] = True
+        pt_table = self.point_table * mask
+
+        # Remove immovable cells from both goals and board
+        immovable = board & (
+            CellTypes.frozen | CellTypes.movable | CellTypes.destructible
+        ) == CellTypes.frozen
+        goals *= ~immovable
+        cell_colors *= ~immovable
+
+        # Calculate baseline rewards with current board, plus the total
+        # available reward if all goals are filled.
+        baseline_score = np.sum(pt_table[goals, cell_colors] * alive_cells)
+        possible_score = np.sum(np.max(pt_table, axis=1)[goals])
+
+        return possible_score - baseline_score
 
     def shift_board(self, dx, dy):
         """Utility function. Translate the entire board (edges wrap)."""
@@ -654,10 +685,21 @@ class SafeLifeGame(GameWithGoals):
     Along with parent classes, this defines all of SafeLife's basic physics
     and the actions that the player can take.
     """
+
     def advance_board(self):
         self.num_steps += 1
+
         self.board = advance_board(self.board, self.spawn_prob)
-        self.goals = advance_board(self.goals, self.spawn_prob)
+
+        if not self._static_goals:
+            new_goals = advance_board(self.goals, self.spawn_prob)
+            if self._static_goals is None:
+                # Check to see if they are, in fact, static
+                self._static_goals = (
+                    not (new_goals & CellTypes.spawning).any() and
+                    (new_goals == self.goals).all()
+                )
+            self.goals = new_goals
 
     @property
     def is_stochastic(self):
@@ -811,9 +853,10 @@ class AsyncGame(GameWithGoals):
             neighborhood = np.array([[1,1,1],[1,0,1],[1,1,1]])
         else:
             raise RuntimeError("async rules must have length 5, 7, or 9")
+        rng = get_rng()
         for _ in range(int(board.size * self.cells_per_update)):
-            x = np.random.randint(w)
-            y = np.random.randint(h)
+            x = rng.choice(w)
+            y = rng.choice(h)
             if board[y, x] & CellTypes.frozen:
                 continue
             neighbors = board.view(wrapping_array)[y-1:y+2, x-1:x+2] * neighborhood

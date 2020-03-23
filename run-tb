@@ -29,7 +29,7 @@ if not runs:
 
 subprocess.run([
     "tensorboard", "--port", str(args.port),
-    "--logdir", ",".join([
+    "--logdir_spec", ",".join([
         "{a}:{b}".format(a=run_name, b=run_folder)
         for run_name, run_folder in runs
     ])
