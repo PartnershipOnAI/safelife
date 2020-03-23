@@ -22,7 +22,7 @@ with open(os.path.join(base_dir, "README.md"), "rt", encoding="utf-8") as fh:
 
 setuptools.setup(
     name='safelife',
-    version='1.1rc1',
+    version='1.1',
     author="Carroll L. Wainwright",
     author_email="carroll@partnershiponai.org",
     description="Safety benchmarks for reinforcement learning",
