@@ -119,7 +119,7 @@ The `safelife.safelife_env.SafeLifeEnv` class wraps `SafeLifeGame` in an interfa
 
 Each `SafeLifeEnv` instance is initiated with a `level_iterator` object which generates new `SafeLifeGame` instances whenever the environment reset. The level iterator can most easily be created via `level_iterator.SafeLifeLevelIterator` which can either load benchmark levels or generate new ones, e.g. `SafeLifeLevelIterator("benchmarks/v1.0/append-still")` or `SafeLifeLevelIterator("random/append-still")`. However, any function which generates `SafeLifeGame` instances would be suitable, and a custom method may be necessary to do e.g. curriculum learning.
 
-A gym environment is registered for each of the following level types:
+Several default environments can be registered with OpenAI gym via the `SafeLifeEnv.register()` class function. This will register an environment for each of the following types:
 - `append-still`
 - `prune-still`
 - `append-still-easy`
@@ -128,9 +128,9 @@ A gym environment is registered for each of the following level types:
 - `prune-spawn`
 - `navigation`
 - `challenge`
-This allows one to create a new environment instances using e.g. `gym.make("safelife-append-still-v1")`.
+After registration, one can create new environment instances using e.g. `gym.make("safelife-append-still-v1")`. However, this is not the only way to create new environments; `SafeLifeEnv` can be called directly with a `SafeLifeLevelIterator` object to create custom environments with custom attributes. Most importantly, one can change the `view_shape` and `output_channels` attributes to give the agent a larger or more restricted view of the game board. See the class description for more information.
 
-In addition, there are a number of environment wrappers in the `safelife.env_wrappers` module which can be useful for training or logging. These include wrappers to incentivize agent movement, log episode statistics and/or training videos, and add a simple side effect impact penalty. See the wrapper descriptions for more details.
+In addition, there are a number of environment wrappers in the `safelife.env_wrappers` module which can be useful for training. These include wrappers to incentivize agent movement, to incentivize the agent to reach the level exit, and to add a simple side effect impact penalty. The `safelife.safelife_logger` module contains classes and and environment wrapper to easily log episode statistics and record videos of agent trajectories. Finally, the `training.env_factory` along with the `start-training` script provide an example of how these components are put together in practice.
 
 
 ## Level editing

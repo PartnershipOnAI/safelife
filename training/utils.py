@@ -18,6 +18,9 @@ def named_output(names):
 
     would, when called, return a named tuple ``my_func_rval(foo=1, bar=2)``.
     This is handy when returning lots of values from one function.
+
+    Note that the input can either be a list of names or a space-separated
+    string of names.
     """
     def decorator(func):
         rtype = namedtuple(func.__name__ + '_rval', names)
@@ -63,6 +66,24 @@ def shuffle_arrays(*data):
 
 
 def nested_getattr(obj, key, default=_no_default):
+    """
+    Get a named attribute from an object with support for nested keys.
+
+    This is equivalent to the built-in function ``getattr``, except that
+    they keys can have dots in them to signify nested attributes.
+
+    When a default argument is given, it is returned when the attribute
+    doesn't exist; without it, an exception is raised in that case.
+
+    Example
+    -------
+    >>> from types import SimpleNamespace
+    >>> x = SimpleNamespace(a=SimpleNamespace(b='hello!'))
+    >>> nested_getattr(x, 'a.b')
+        'hello!'
+    >>> x.a.b == nested_getattr(x, 'a.b')
+        True
+    """
     obj2 = obj
     for subkey in key.split('.'):
         obj2 = getattr(obj2, subkey, _no_default)
@@ -76,6 +97,23 @@ def nested_getattr(obj, key, default=_no_default):
 
 
 def nested_setattr(obj, key, val):
+    """
+    Sets a named attribute on an object with support for nested keys.
+
+    This is equivalent to the built-in function ``setattr``, except that
+    they keys can have dots in them to signify nested attributes.
+
+    Note that if an intermediate key does not exist, ``AttributeError``
+    will be raised.
+
+    Example
+    -------
+    >>> from types import SimpleNamespace
+    >>> x = SimpleNamespace(a=SimpleNamespace())
+    >>> nested_setattr(x, 'a.b', 'hello!')
+    >>> x.a.b
+        'hello!'
+    """
     obj_key, _, set_key = key.rpartition('.')
     if obj_key:
         obj = nested_getattr(obj, obj_key)

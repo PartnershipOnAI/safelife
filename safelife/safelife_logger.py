@@ -1,5 +1,33 @@
 """
-Logging utilities for recording SafeLife episodes and statistics.
+Logging utilities for recording SafeLife episodes and episode statistics.
+
+This module contains a number of classes to make logging in SafeLife easier.
+The `SafeLifeLogger` class does the bulk of the actual logging work: it
+maintains handles and writes to test and training logs, writes data to
+tensorboard, and records agent trajectories as movies and data archives.
+
+There are two main functions that `SafeLifeLogger`, and, more generally, the
+`BaseLogger` base class, implement. The `log_episode()` function logs
+statistics for a single SafeLife episode, and is generally called by instances
+of the `SafeLifeLogWrapper` class. The `log_scalars()` function logs arbitrary
+scalar statistics to tensorboard. This can be used from within training
+algorithms to monitor training progress (loss, value functions, etc.).
+There is also a `cumulative_stats` attribute that contains the total number of
+training episodes and steps taken, which can be helpful for setting
+hyperparameter training schedules in the training algorithm or for setting a
+curriculum for the environment itself.
+
+The `RemoteSafeLifeLogger` class has the same interface, but it's suitable
+for use in multiprocessing environments that use Ray. The actual logging work
+is delegated to a remote actor with `RemoteSafeLifeLogger` instances holding on
+to references to that actor. Importantly, this means that `RemoteSafeLifeLogger`
+instances can be copied within or between processes without competing for
+access to a single open log or tensorboard file.
+
+Finally, the `SafeLifeLogWrapper` class can wrap `SafeLifeEnv` environment
+instances to automatically log episodes upon completion. With this wrapper in
+place, the training algorithms themselves don't actually need to log any extra
+episode statistics; they just need to run episodes in the environment.
 """
 
 import os
