@@ -52,6 +52,7 @@ def safelife_env_factory(
         min_performance=None,
         data_logger=None,
         impact_penalty=None,
+        penalty_baseline='starting-state',
         testing=False):
     """
     Factory for creating SafeLifeEnv instances with useful wrappers.
@@ -81,7 +82,7 @@ def safelife_env_factory(
             env = env_wrappers.ExtraExitBonus(env)
         if impact_penalty is not None:
             env = env_wrappers.SimpleSideEffectPenalty(
-                env, penalty_coef=impact_penalty)
+                env, penalty_coef=impact_penalty, baseline=penalty_baseline)
         if min_performance is not None:
             env = env_wrappers.MinPerformanceScheduler(
                 env, min_performance=min_performance)
