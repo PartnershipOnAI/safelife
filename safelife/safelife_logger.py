@@ -37,6 +37,7 @@ import textwrap
 import logging
 import logging.config
 from datetime import datetime
+from collections import defaultdict
 
 import gym
 import numpy as np
@@ -247,7 +248,7 @@ class SafeLifeLogger(BaseLogger):
         log_data['reward'] = float(log_data['reward'])
         log_data['reward_possible'] = float(game.initial_available_points)
         log_data['reward_needed'] = game.required_points()
-        log_data['time'] = datetime.now().isoformat()
+        log_data['time'] = datetime.utcnow().isoformat()
         logger.info(console_msg.format(**log_data, **self.cumulative_stats))
 
         # Then log to file.
@@ -449,3 +450,79 @@ class SafeLifeLogWrapper(gym.Wrapper):
         }
 
         return observation
+
+
+def load_safelife_log(logfile, default_values={}):
+    """
+    Load a SafeLife log file as a dictionary of arrays.
+
+    This is *much* more space efficient than the json format, and generally
+    much easier to analyze.
+
+    Note that the returned dictionary can be saved to a numpy archive for
+    efficient storage and fast retrieval. E.g., ::
+
+        data = load_safelife_log('training-log.json')
+        numpy.savez_compressed('training-log.npz', **data)
+
+    Missing data is filled in with NaN.
+
+    Parameters
+    ----------
+    logfile : str or file-like object
+        Path of the file to load, or the file itself.
+    default_values : dict
+        Default values for rows with missing data.
+        Each key should receive it's own missing value.
+    """
+    if hasattr(logfile, 'read'):
+        data = json.load(logfile)
+    else:
+        data = json.load(open(logfile))
+    arrays = defaultdict(list)
+    indicies = defaultdict(list)
+
+    def flatten_dict(d):
+        out = {}
+        for key, val in d.items():
+            if isinstance(val, dict):
+                out.update({
+                    key + '.' + k:v
+                    for k,v in flatten_dict(val).items()
+                })
+            elif key == 'time':
+                out['time'] = np.datetime64(val)
+            else:
+                out[key] = val
+        return out
+
+    for n, datum in enumerate(data):
+        for key, val in flatten_dict(datum).items():
+            arrays[key].append(val)
+            indicies[key].append(n)
+
+    outdata = {}
+    for key, arr in arrays.items():
+        try:
+            arr1 = np.array(arr)
+        except Exception:
+            logger.error("Cannot load key: %s", key)
+            continue
+        dtype = arr1.dtype
+        if str(dtype).startswith('<U'):
+            # dtype is a unicode string
+            default_val = ''
+        elif str(dtype).startswith('<M'):
+            # dtype is a datetime
+            default_val = np.datetime64('nat')
+        elif str(dtype) == 'object':
+            logger.error("Cannot load key: %s", key)
+            continue
+        else:
+            default_val = 0
+        default_val = default_values.get(key, default_val)
+        arr2 = np.empty((len(data),) + arr1.shape[1:], dtype=dtype)
+        arr2[:] = default_val
+        arr2[indicies[key]] = arr1
+        outdata[key] = arr2
+    return outdata
