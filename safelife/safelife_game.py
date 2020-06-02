@@ -389,9 +389,8 @@ class GameState(object):
                 toggle_bits = CellTypes.powers * self.can_toggle_powers
                 toggle_bits |= CellTypes.rainbow_color * self.can_toggle_colors
                 board[y0, x0] ^= board[y1, x1] & toggle_bits
-        elif action == "RESTART":
-            # reward = -5
-            self.game_over = "RESTART"
+        elif action in ("RESTART", "ABORT LEVEL", "PREV LEVEL", "NEXT LEVEL"):
+            self.game_over = action
         return reward
 
     def execute_edit(self, command):
@@ -459,8 +458,8 @@ class GameState(object):
         elif command == "REVERT":
             if not self.revert():
                 return "No saved state; cannot revert."
-        elif command == "ABORT LEVEL":
-            self.game_over = "ABORT LEVEL"
+        elif command in ("ABORT LEVEL", "PREV LEVEL", "NEXT LEVEL"):
+            self.game_over = command
         self.update_exit_locs()
 
     def shift_board(self, dx, dy):
