@@ -3,6 +3,7 @@ import glob
 import logging
 
 import torch
+import numpy as np
 
 from .utils import nested_getattr, nested_setattr
 
@@ -135,6 +136,17 @@ class BaseAlgo(object):
                     logger.error("Cannot load key '%s'", key)
 
         self._last_checkpoint = self.num_steps
+
+    def tensor(self, data, dtype):
+        """
+        Shorthand for creating a tensor with the current compute device.
+
+        Note that this is *much* faster than passing data in list form to
+        ``torch.tensor`` directly, at least as of torch v1.3.
+        See https://github.com/pytorch/pytorch/issues/13918 for more details.
+        """
+        data = np.asanyarray(data)
+        return torch.as_tensor(data, device=self.compute_device, dtype=dtype)
 
     def take_one_step(self, envs):
         """

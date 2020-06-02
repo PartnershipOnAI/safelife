@@ -64,7 +64,7 @@ class PPO(BaseAlgo):
             e.last_obs if hasattr(e, 'last_obs') else e.reset()
             for e in envs
         ]
-        tensor_states = torch.tensor(states, device=self.compute_device, dtype=torch.float32)
+        tensor_states = self.tensor(states, torch.float32)
         values, policies = self.model(tensor_states)
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
@@ -101,8 +101,7 @@ class PPO(BaseAlgo):
             for _ in range(steps_per_env)
         ]
         final_states = [e.last_obs for e in self.training_envs]
-        tensor_states = torch.tensor(
-            final_states, device=self.compute_device, dtype=torch.float32)
+        tensor_states = self.tensor(final_states, torch.float32)
         final_vals = self.model(tensor_states)[0].detach().cpu().numpy()
         values = np.array([s.values for s in steps] + [final_vals])
         rewards = np.array([s.rewards for s in steps])
@@ -129,7 +128,7 @@ class PPO(BaseAlgo):
             if flat:
                 x = np.asanyarray(x)
                 x = x.reshape(-1, *x.shape[2:])
-            return torch.tensor(x, device=self.compute_device, dtype=dtype)
+            return torch.as_tensor(x, device=self.compute_device, dtype=dtype)
 
         self.num_steps += actions.size
 

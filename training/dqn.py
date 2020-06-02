@@ -140,7 +140,7 @@ class DQN(BaseAlgo):
             e.last_state if hasattr(e, 'last_state') else e.reset()
             for e in envs
         ]
-        tensor_states = torch.tensor(states, device=self.compute_device, dtype=torch.float32)
+        tensor_states = self.tensor(states, torch.float32)
         qvals = self.training_model(tensor_states).detach().cpu().numpy()
 
         num_states, num_actions = qvals.shape
@@ -171,11 +171,11 @@ class DQN(BaseAlgo):
         state, action, reward, next_state, done = \
             self.replay_buffer.sample(self.training_batch_size)
 
-        state = torch.tensor(state, device=self.compute_device, dtype=torch.float32)
-        next_state = torch.tensor(next_state, device=self.compute_device, dtype=torch.float32)
-        action = torch.tensor(action, device=self.compute_device, dtype=torch.int64)
-        reward = torch.tensor(reward, device=self.compute_device, dtype=torch.float32)
-        done = torch.tensor(done, device=self.compute_device, dtype=torch.float32)
+        state = self.tensor(state, torch.float32)
+        next_state = self.tensor(next_state, torch.float32)
+        action = self.tensor(action, torch.int64)
+        reward = self.tensor(reward, torch.float32)
+        done = self.tensor(done, torch.float32)
 
         q_values = self.training_model(state)
         next_q_values = self.target_model(next_state).detach()
