@@ -124,6 +124,9 @@ class SafeLifeEnv(gym.Env):
         if self.remove_white_goals:
             goals *= (goals != CellTypes.rainbow_color)
 
+        # Remove orientation bit
+        board &= ~CellTypes.orientation_mask
+
         # Combine board and goals into one array
         board += (goals << 3)
 
