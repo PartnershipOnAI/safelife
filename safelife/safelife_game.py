@@ -82,6 +82,7 @@ class CellTypes(object):
     spawning_bit = 7  # Randomly generates neighboring cells.
     exit_bit = 8
     color_bit = 9
+    orientation_bit = 12
 
     alive = np.uint16(1 << alive_bit)
     agent = np.uint16(1 << agent_bit)
@@ -96,6 +97,7 @@ class CellTypes(object):
     color_r = np.uint16(1 << color_bit)
     color_g = np.uint16(1 << color_bit + 1)
     color_b = np.uint16(1 << color_bit + 2)
+    orientation_mask = np.uint16(3 << orientation_bit)
 
     empty = np.uint16(0)
     freezing = inhibiting | preserving
@@ -153,7 +155,6 @@ class GameState(object):
         this fraction completed. If negative, the agent can always exit.
     """
     spawn_prob = 0.3
-    orientation = 1
     agent_loc = (0, 0)
     edit_loc = (0, 0)
     edit_color = 0
@@ -292,6 +293,19 @@ class GameState(object):
             'cyan',
             'white',
         ][(self.edit_color & CellTypes.rainbow_color) >> CellTypes.color_bit]
+
+    @property
+    def orientation(self):
+        """Orientation of the agent. For backwards compatibility."""
+        x,y = self.agent_loc
+        agent = self.board[y,x]
+        return (agent & CellTypes.orientation_mask) >> CellTypes.orientation_bit
+
+    @orientation.setter
+    def orientation(self, value):
+        x,y = self.agent_loc
+        self.board[y,x] &= ~CellTypes.orientation_mask
+        self.board[y,x] |= value << CellTypes.orientation_bit
 
     def relative_loc(self, n_forward, n_right=0):
         """

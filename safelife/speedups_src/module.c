@@ -285,13 +285,12 @@ static PyObject *render_board_py(PyObject *self, PyObject *args) {
     PyArrayObject
         *board = NULL,
         *goals = NULL,
-        *orientation = NULL,
         *sprites = NULL,
         *out = NULL;
 
     if (!PyArg_ParseTuple(
-            args, "OOOO",
-            &board_obj, &goals_obj, &orientation_obj, &sprites_obj)) {
+            args, "OOO",
+            &board_obj, &goals_obj, &sprites_obj)) {
         return NULL;
     }
 
@@ -299,13 +298,11 @@ static PyObject *render_board_py(PyObject *self, PyObject *args) {
         board_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
     goals = (PyArrayObject *)PyArray_FROM_OTF(
         goals_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
-    orientation = (PyArrayObject *)PyArray_FROM_OTF(
-        orientation_obj, NPY_UINT8, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
     sprites = (PyArrayObject *)PyArray_FROM_OTF(
         sprites_obj, NPY_FLOAT32, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
 
     // bunch of error checking
-    if (!board || !goals || !orientation || !sprites) {
+    if (!board || !goals || !sprites) {
         PY_VAL_ERROR("All inputs must be numpy arrays.");
     }
     int ndim = PyArray_NDIM(board);
@@ -316,9 +313,6 @@ static PyObject *render_board_py(PyObject *self, PyObject *args) {
     int depth = PyArray_SIZE(board) / (dims[ndim-1] * dims[ndim-2]);
     if (PyArray_SIZE(board) != PyArray_SIZE(goals)) {
         PY_VAL_ERROR("Board and goals must have same size.");
-    }
-    if (PyArray_SIZE(orientation) != depth) {
-        PY_VAL_ERROR("Only one orientation allowed per board.");
     }
     if (PyArray_SIZE(sprites) != 70*70*4) {
         PY_VAL_ERROR("Sprites should have shape (70, 70, 4).");
@@ -343,7 +337,6 @@ static PyObject *render_board_py(PyObject *self, PyObject *args) {
     render_board(
         (uint16_t *)PyArray_DATA(board),
         (uint16_t *)PyArray_DATA(goals),
-        (uint8_t *)PyArray_DATA(orientation),
         dims[ndim-1], dims[ndim-2], depth,
         (float *)PyArray_DATA(sprites),
         (uint8_t *)PyArray_DATA(out)
@@ -352,14 +345,12 @@ static PyObject *render_board_py(PyObject *self, PyObject *args) {
 
     Py_DECREF((PyObject *)board);
     Py_DECREF((PyObject *)goals);
-    Py_DECREF((PyObject *)orientation);
     Py_DECREF((PyObject *)sprites);
     return (PyObject *)out;
 
     error:
     Py_XDECREF((PyObject *)board);
     Py_XDECREF((PyObject *)goals);
-    Py_XDECREF((PyObject *)orientation);
     Py_XDECREF((PyObject *)sprites);
     Py_XDECREF((PyObject *)out);
     return NULL;
