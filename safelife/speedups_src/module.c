@@ -47,6 +47,57 @@ static PyObject *advance_board_py(PyObject *self, PyObject *args) {
 }
 
 
+static char alive_counts_doc[] =
+    "alice_counts(board, goals)\n--\n\n"
+    "Number of alive cells for each foreground/background color combination.\n"
+    "\n"
+    "Parameters\n"
+    "----------\n"
+    "board : ndarray\n"
+    "goals : ndarray\n"
+    "\n"
+    "Returns\n"
+    "-------\n"
+    "counts : ndarray of shape (8,8)\n"
+    "    Rows index the background color, columns the foreground color.\n";
+
+
+static PyObject *alive_counts_py(PyObject *self, PyObject *args) {
+    PyObject *board_obj, *goals_obj;
+    PyArrayObject *board, *goals, *out;
+
+    if (!PyArg_ParseTuple(args, "OO", &board_obj, &goals_obj)) return NULL;
+
+    board = (PyArrayObject *)PyArray_FROM_OTF(
+        board_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
+    goals = (PyArrayObject *)PyArray_FROM_OTF(
+        goals_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
+    const npy_intp out_dims[2] = {8,8};
+    out = (PyArrayObject *)PyArray_ZEROS(2, out_dims, NPY_INT64, 0);
+
+    if (PyArray_SIZE(board) != PyArray_SIZE(goals)) {
+        PY_VAL_ERROR("Board and goals must have same size.");
+    }
+
+    alive_counts(
+        (uint16_t *)PyArray_DATA(board),
+        (uint16_t *)PyArray_DATA(goals),
+        PyArray_SIZE(board),
+        (int64_t *)PyArray_DATA(out)
+    );
+
+    Py_DECREF((PyObject *)board);
+    Py_DECREF((PyObject *)goals);
+    return (PyObject *)out;
+
+    error:
+    Py_XDECREF((PyObject *)board);
+    Py_XDECREF((PyObject *)goals);
+    Py_XDECREF((PyObject *)out);
+    return NULL;
+}
+
+
 static char wrapped_label_doc[] =
     "wrapped_label(data)\n--\n\n"
     "Similar to :func:`ndimage.label`, but uses wrapped boundary conditions.\n"
@@ -281,7 +332,7 @@ static PyObject *set_bit_generator_py(PyObject *self, PyObject *args) {
 
 
 static PyObject *render_board_py(PyObject *self, PyObject *args) {
-    PyObject *board_obj, *goals_obj, *orientation_obj, *sprites_obj;
+    PyObject *board_obj, *goals_obj, *sprites_obj;
     PyArrayObject
         *board = NULL,
         *goals = NULL,
@@ -361,6 +412,10 @@ static PyMethodDef methods[] = {
     {
         "advance_board", (PyCFunction)advance_board_py, METH_VARARGS,
         "Advances the board one step."
+    },
+    {
+        "alive_counts", (PyCFunction)alive_counts_py,
+        METH_VARARGS | METH_KEYWORDS, alive_counts_doc
     },
     {
         "gen_pattern", (PyCFunction)gen_pattern_py,
