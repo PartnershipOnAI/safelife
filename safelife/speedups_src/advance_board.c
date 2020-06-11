@@ -119,3 +119,13 @@ void advance_board(
     }
 }
 
+
+void alive_counts(uint16_t *board, uint16_t *goals, int n, int64_t *out) {
+    uint16_t b, g, k;
+    for (int i=0; i<n; i++) {
+        b = board[i];
+        g = goals[i];
+        k = ((b & COLORS) >> COLOR_BIT) | ((g & COLORS) >> (COLOR_BIT - 3));
+        out[k] += b & ALIVE;
+    }
+}

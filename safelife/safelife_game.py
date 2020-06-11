@@ -21,7 +21,7 @@ from .helper_utils import (
     wrapped_convolution as convolve2d,
 )
 from .random import coinflip, get_rng
-from .speedups import advance_board
+from .speedups import advance_board, alive_counts
 
 
 ORIENTATION = {
@@ -628,11 +628,8 @@ class GameWithGoals(GameState):
             board = self.board
         if goals is None:
             goals = self.goals
-        goals = (goals & CellTypes.rainbow_color) >> CellTypes.color_bit
-        cell_colors = (board & CellTypes.rainbow_color) >> CellTypes.color_bit
-        alive = board & CellTypes.alive > 0
-        cell_points = self.point_table[goals, cell_colors] * alive
-        return np.sum(cell_points)
+        counts = alive_counts(board, goals)
+        return np.sum(self.point_table * counts)
 
     def available_points(self, board=None, goals=None):
         """
