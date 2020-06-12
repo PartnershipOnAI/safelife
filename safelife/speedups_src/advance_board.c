@@ -129,3 +129,87 @@ void alive_counts(uint16_t *board, uint16_t *goals, int n, int64_t *out) {
         out[k] += b & ALIVE;
     }
 }
+
+
+static int clip(int x, int width) {
+    while (x < 0) x += width;
+    while (x >= width) x -= width;
+    return x;
+}
+
+
+void execute_actions(
+        uint16_t *board, int w, int h,
+        int64_t *locations, int64_t *actions, int n_agents) {
+    for (int k=0; k < n_agents; k++) {
+        if (!actions[k]) continue;
+        int direction = (actions[k] - 1) & 3;
+        int dx, dy;
+        if (direction & 1) {
+            dx = 2 - direction;
+            dy = 0;
+        } else {
+            dx = 0;
+            dy = direction - 1;
+        }
+        int x0 = locations[2*k] % w;
+        int y0 = locations[2*k+1] % h;
+        uint16_t *p0 = board + (x0 + y0*w);
+        uint16_t *p1 = board + (clip(x0+dx, w) + clip(y0+dy, h)*w);
+        uint16_t *p2 = board + (clip(x0+2*dx, w) + clip(y0+2*dy, h)*w);
+        uint16_t *p3 = board + (clip(x0-dx, w) + clip(y0-dy, h)*w);
+
+        if (!(*p0 & AGENT)) continue;
+
+        // Re-orient the agent.
+        *p0 &= ~ORIENTATION_MASK;
+        *p0 |= direction << ORIENTATION_BIT;
+
+
+        if(actions[k] >= 5) {  // toggle action
+            if (!(*p1)) {  // empty block. Add a life cell.
+                *p1 = ALIVE | DESTRUCTIBLE | (*p0 & COLORS);
+            } else if (*p1 & DESTRUCTIBLE) {
+                *p1 = 0;
+            } else if (~*p0 & *p1 & PUSHABLE) {
+                // "shove" the block without moving
+                if (!(*p2)) {
+                    *p2 = *p1;
+                    *p1 = 0;
+                } else if (*p2 & EXIT) {
+                    // Push the block out the exit
+                    *p1 = 0;
+                }
+            }
+        } else {  // move action
+            if (~*p0 & *p1 & PUSHABLE) {
+                // Agent can only push pushable blocks, but only if it
+                // is not itself pushable.
+                if (!(*p2)) {
+                    *p2 = *p1;
+                    goto move;
+                } else if (*p2 & EXIT) {
+                    // Push the block out the exit
+                    goto move;
+                }
+            } else if (!(*p1)) {
+                goto move;
+            } else if (*p1 & EXIT && *p1 & COLORS) {
+                goto exit_move;
+            }
+            continue;
+
+            move:
+            *p1 = *p0;
+            exit_move:
+            locations[2*k] = clip(x0 + dx, w);
+            locations[2*k+1] = clip(y0 + dy, h);
+            if (~*p0 & *p3 & PULLABLE) {
+                *p0 = *p3;
+                *p3 = 0;
+            } else {
+                *p0 = 0;
+            }
+        }
+    }
+}

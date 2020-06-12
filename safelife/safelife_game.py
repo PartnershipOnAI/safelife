@@ -21,7 +21,7 @@ from .helper_utils import (
     wrapped_convolution as convolve2d,
 )
 from .random import coinflip, get_rng
-from .speedups import advance_board, alive_counts
+from .speedups import advance_board, alive_counts, execute_actions
 
 
 ORIENTATION = {
@@ -101,11 +101,11 @@ class CellTypes(object):
 
     empty = np.uint16(0)
     freezing = inhibiting | preserving
+    movable = pushable | pullable
     # Note that the player is marked as "destructible" so that they never
     # contribute to producing indestructible cells.
     player = agent | freezing | frozen | destructible
     wall = frozen
-    movable = pushable | pullable
     crate = frozen | movable
     spawner = frozen | spawning | destructible
     hard_spawner = frozen | spawning
@@ -204,10 +204,10 @@ class GameState(object):
         self.board = data['board'].copy()
         if 'spawn_prob' in keys:
             self.spawn_prob = float(data['spawn_prob'])
-        if 'orientation' in keys:
-            self.orientation = int(data['orientation'])
         if 'agent_loc' in keys:
             self.agent_loc = tuple(data['agent_loc'])
+        if 'orientation' in keys:
+            self.orientation = int(data['orientation'])
         if 'min_performance' in keys:
             self.min_performance = float(data['min_performance'])
         self.update_exit_locs()
@@ -304,83 +304,28 @@ class GameState(object):
     @orientation.setter
     def orientation(self, value):
         x,y = self.agent_loc
+        if not self.board[y,x] & CellTypes.agent:
+            return
         self.board[y,x] &= ~CellTypes.orientation_mask
-        self.board[y,x] |= value << CellTypes.orientation_bit
-
-    def relative_loc(self, n_forward, n_right=0):
-        """
-        Retrieves a location relative to the agent.
-
-        Note the board wraps (topologically a torus).
-        """
-        dx = n_right
-        dy = -n_forward
-        for _ in range(self.orientation):
-            # Rotate clockwise 90 degrees
-            dx, dy = -dy, dx
-        x0, y0 = self.agent_loc
-        return (x0 + dx) % self.width, (y0 + dy) % self.height
-
-    def move_agent(self, dy, dx=0):
-        """
-        Move the agent to a new location if that location is empty.
-
-        Returns any associated reward.
-        """
-        x0, y0 = self.agent_loc
-        x1, y1 = self.relative_loc(dy, dx)
-        x2, y2 = self.relative_loc(-dy, -dx)
-        can_push = (abs(dy), dx) == (1, 0)
-        board = self.board
-        reward = 0
-        if board[y1, x1] == CellTypes.empty:
-            board[y1, x1] = board[y0, x0]
-            board[y0, x0] = CellTypes.empty
-            self.agent_loc = (x1, y1)
-        elif (board[y1, x1] & CellTypes.exit) and self.can_exit():
-            # Don't actually move the agent, just mark as exited.
-            self.game_over = True
-            reward += self.points_on_level_exit
-        elif can_push and board[y1, x1] & CellTypes.pushable:
-            x3, y3 = self.relative_loc(dy*2)
-            if board[y3, x3] == CellTypes.empty:
-                # Push the cell forward one.
-                board[y3, x3] = board[y1, x1]
-                board[y1, x1] = board[y0, x0]
-                board[y0, x0] = CellTypes.empty
-                self.agent_loc = (x1, y1)
-            elif board[y3, x3] & CellTypes.exit:
-                # Push a block out of this level
-                board[y1, x1] = board[y0, x0]
-                board[y0, x0] = CellTypes.empty
-                self.agent_loc = (x1, y1)
-        agent_did_move = self.agent_loc == (x1, y1) and (x0, y0) != (x1, y1)
-        if can_push and board[y2, x2] & CellTypes.pullable and agent_did_move:
-            board[y0, x0] = board[y2, x2]
-            board[y2, x2] = CellTypes.empty
-        return reward
+        self.board[y,x] |= (value & 3) << CellTypes.orientation_bit
 
     def execute_action(self, action):
-        """
-        Execute an individual action and return the associated reward.
-
-        Parameters
-        ----------
-        action : str
-            Name of action to execute
-        """
-        board = self.board
-        reward = 0
-        if self.game_over:
+        agent_loc = np.array(self.agent_loc)[:2]
+        if self.game_over or len(agent_loc) != 2:
             pass
         elif action.startswith("MOVE "):
             direction = ORIENTATION[action[5:]]
+            flip = 2 if direction == 6 else 0
             if direction < 4:
-                self.orientation = direction
-                reward = self.move_agent(1)
+                execute_actions(self.board, agent_loc, direction + 1)
             else:
                 # Relative direction. Either forward (4) or backward (6)
-                reward = self.move_agent(5 - direction)
+                direction = self.orientation ^ flip
+                execute_actions(self.board, agent_loc, direction + 1)
+            self.agent_loc = tuple(agent_loc)
+            self.orientation ^= flip
+            if self.board[agent_loc[1], agent_loc[0]] & CellTypes.exit:
+                self.game_over = True
         elif action.startswith("TURN "):
             direction = ORIENTATION[action[5:]]
             self.orientation += 2 - direction
@@ -390,22 +335,14 @@ class GameState(object):
         elif action.startswith("TOGGLE"):
             if len(action) > 6:
                 # Toggle in a particular direction
-                self.orientation = ORIENTATION[action[7:]]
-            x0, y0 = self.agent_loc
-            x1, y1 = self.relative_loc(1)
-            player_color = board[y0, x0] & CellTypes.rainbow_color
-            target_cell = board[y1, x1]
-            if target_cell == CellTypes.empty:
-                board[y1, x1] = CellTypes.life | player_color
-            elif target_cell & CellTypes.destructible:
-                board[y1, x1] = CellTypes.empty
+                direction = ORIENTATION[action[7:]]
             else:
-                toggle_bits = CellTypes.powers * self.can_toggle_powers
-                toggle_bits |= CellTypes.rainbow_color * self.can_toggle_colors
-                board[y0, x0] ^= board[y1, x1] & toggle_bits
+                direction = self.orientation
+            execute_actions(self.board, agent_loc, direction + 5)
         elif action in ("RESTART", "ABORT LEVEL", "PREV LEVEL", "NEXT LEVEL"):
             self.game_over = action
-        return reward
+
+        return 0
 
     def execute_edit(self, command):
         """
@@ -535,6 +472,9 @@ class GameState(object):
         This depends on the current board state only.
         It does not depend on the initial board state or the board history.
         """
+        x, y = self.agent_loc
+        if self.board[y, x] & CellTypes.exit:
+            return self.points_on_level_exit
         return 0
 
     def available_points(self):
@@ -623,13 +563,9 @@ class GameWithGoals(GameState):
             rval = super().execute_edit(command)
         return rval
 
-    def current_points(self, board=None, goals=None):
-        if board is None:
-            board = self.board
-        if goals is None:
-            goals = self.goals
-        counts = alive_counts(board, goals)
-        return np.sum(self.point_table * counts)
+    def current_points(self):
+        counts = alive_counts(self.board, self.goals)
+        return np.sum(self.point_table * counts) + super().current_points()
 
     def available_points(self, board=None, goals=None):
         """

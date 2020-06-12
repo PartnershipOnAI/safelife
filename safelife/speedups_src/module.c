@@ -98,6 +98,71 @@ static PyObject *alive_counts_py(PyObject *self, PyObject *args) {
 }
 
 
+static char execute_actions_doc[] =
+    "execute_actions(board, locations, actions)\n--\n\n"
+    "Perform an action for each agent.\n"
+    "\n"
+    "Parameters\n"
+    "----------\n"
+    "board : ndarray\n"
+    "locations : ndarray\n"
+    "    Location of each agent on the board. Shape (n_agents, 2).\n"
+    "    Coordinates are x,y (column, row).\n"
+    "actions : ndarray\n"
+    "    One-dimensional, values 0-8.\n"
+    "    0 = no action, 1-4 = move, 5-8 = toggle."
+    "\n"
+    "Returns\n"
+    "-------\n"
+    "counts : ndarray of shape (8,8)\n"
+    "    Rows index the background color, columns the foreground color.\n";
+
+
+static PyObject *execute_actions_py(PyObject *self, PyObject *args) {
+    PyObject *board_obj, *locations_obj, *actions_obj;
+    PyArrayObject *board, *locations, *actions;
+    int height, width, n_agents;
+
+    if (!PyArg_ParseTuple(args, "OOO", &board_obj, &locations_obj, &actions_obj))
+        return NULL;
+
+    board = (PyArrayObject *)PyArray_FROM_OTF(
+        board_obj, NPY_UINT16, NPY_ARRAY_OUT_ARRAY);
+    locations = (PyArrayObject *)PyArray_FROM_OTF(
+        locations_obj, NPY_INT64, NPY_ARRAY_OUT_ARRAY);
+    actions = (PyArrayObject *)PyArray_FROM_OTF(
+        actions_obj, NPY_INT64, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
+
+    if (PyArray_NDIM(board) != 2)
+        PY_VAL_ERROR("Board should be 2-dimensional.");
+    if (PyArray_SIZE(locations) != 2*PyArray_SIZE(actions))
+        PY_VAL_ERROR("Locations should be shape (n_agent, 2).");
+    height = PyArray_DIM(board, 0);
+    width = PyArray_DIM(board, 1);
+    n_agents = PyArray_SIZE(actions);
+    if (height < 3 || width < 3)
+        PY_VAL_ERROR("Board must be at least 3x3.");
+
+    execute_actions(
+        (uint16_t *)PyArray_DATA(board), width, height,
+        (int64_t *)PyArray_DATA(locations),
+        (int64_t *)PyArray_DATA(actions), n_agents
+    );
+
+    Py_DECREF((PyObject *)board);
+    Py_DECREF((PyObject *)locations);
+    Py_DECREF((PyObject *)actions);
+    Py_INCREF(Py_None);
+    return Py_None;
+
+    error:
+    Py_XDECREF((PyObject *)board);
+    Py_XDECREF((PyObject *)locations);
+    Py_XDECREF((PyObject *)actions);
+    return NULL;
+}
+
+
 static char wrapped_label_doc[] =
     "wrapped_label(data)\n--\n\n"
     "Similar to :func:`ndimage.label`, but uses wrapped boundary conditions.\n"
@@ -414,20 +479,23 @@ static PyMethodDef methods[] = {
         "Advances the board one step."
     },
     {
-        "alive_counts", (PyCFunction)alive_counts_py,
-        METH_VARARGS | METH_KEYWORDS, alive_counts_doc
+        "alive_counts", (PyCFunction)alive_counts_py, METH_VARARGS,
+        alive_counts_doc
     },
     {
-        "gen_pattern", (PyCFunction)gen_pattern_py,
-        METH_VARARGS | METH_KEYWORDS, gen_pattern_doc
+        "execute_actions", (PyCFunction)execute_actions_py, METH_VARARGS,
+        execute_actions_doc
     },
     {
-        "wrapped_label", (PyCFunction)wrapped_label_py,
-        METH_VARARGS | METH_KEYWORDS, wrapped_label_doc
+        "gen_pattern", (PyCFunction)gen_pattern_py, METH_VARARGS | METH_KEYWORDS,
+        gen_pattern_doc
     },
     {
-        "_render_board", (PyCFunction)render_board_py,
-        METH_VARARGS | METH_KEYWORDS, NULL
+        "wrapped_label", (PyCFunction)wrapped_label_py, METH_VARARGS,
+        wrapped_label_doc
+    },
+    {
+        "_render_board", (PyCFunction)render_board_py, METH_VARARGS, NULL
     },
     {
         "seed", (PyCFunction)seed_py, METH_VARARGS,
