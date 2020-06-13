@@ -40,19 +40,21 @@ def print_reward_table():
 
 
 @np.vectorize
-def render_cell(cell, goal=0, orientation=0, edit_color=None):
+def render_cell(cell, goal=0, edit_color=None):
     cell_color = (cell & CellTypes.rainbow_color) >> CellTypes.color_bit
     goal_color = (goal & CellTypes.rainbow_color) >> CellTypes.color_bit
     val = background_colors[goal_color]
     val += ' ' if edit_color is None else foreground_colors[edit_color] + '∎'
     val += foreground_colors[cell_color]
 
-    if cell & CellTypes.agent:
-        arrow = '⋀>⋁<'[orientation]
-        val += '\x1b[1m' + arrow
+    gray_cell = cell & ~CellTypes.rainbow_color
+    if gray_cell & CellTypes.agent:
+        orientation = (gray_cell >> CellTypes.orientation_bit) & 3
+        val += '\x1b[1m' + '⋀>⋁<'[orientation]
     else:
-        gray_cell = cell & ~CellTypes.rainbow_color
         val += {
+            CellTypes.agent: '',
+            CellTypes.agent: '',
             CellTypes.empty: '.' if cell_color else ' ',
             CellTypes.life: 'z',
             CellTypes.alive: 'Z',
@@ -101,7 +103,7 @@ def cell_name(cell):
     return cell_type + '-' + color
 
 
-def render_board(board, goals=0, orientation=0, edit_loc=None, edit_color=0):
+def render_board(board, goals=0, edit_loc=None, edit_color=0):
     """
     Just render the board itself. Doesn't require game state.
     """
@@ -115,11 +117,11 @@ def render_board(board, goals=0, orientation=0, edit_loc=None, edit_color=0):
     screen[:,0] = screen[:,-2] = ' |'
     screen[:,-1] = '\n'
     screen[0,0] = screen[0,-2] = screen[-1,0] = screen[-1,-2] = ' +'
-    screen[1:-1,1:-2] = render_cell(board, goals, orientation)
+    screen[1:-1,1:-2] = render_cell(board, goals)
 
     if edit_loc:
-        x1, y1 = edit_loc
-        val = render_cell(board[y1, x1], goals[y1, x1], orientation, edit_color)
+        y1, x1 = edit_loc
+        val = render_cell(board[y1, x1], goals[y1, x1], edit_color)
         screen[y1+1, x1+1] = str(val)
     return ''.join(screen.ravel())
 
@@ -145,11 +147,13 @@ def render_game(game, view_size=None, edit_mode=None):
             center = game.edit_loc
             edit_loc = view_size[1] // 2, view_size[0] // 2
         else:
-            center = game.agent_loc
+            if len(game.agent_locs) > 0:
+                center = game.agent_locs[0]
+            else:
+                center = (0, 0)
             edit_loc = None
-        center = game.edit_loc if edit_mode else game.agent_loc
-        board = recenter_view(game.board, view_size, center[::-1], game.exit_locs)
-        goals = recenter_view(game.goals, view_size, center[::-1])
+        board = recenter_view(game.board, view_size, center, game.exit_locs)
+        goals = recenter_view(game.goals, view_size, center)
     else:
         board = game.board
         goals = game.goals
@@ -159,12 +163,13 @@ def render_game(game, view_size=None, edit_mode=None):
         # Render goals instead. Swap board and goals.
         board, goals = goals, board
 
-    return render_board(board, goals, game.orientation, edit_loc, edit_color)
+    return render_board(board, goals, edit_loc, edit_color)
 
 
 def agent_powers(game):
-    x0, y0 = game.agent_loc
-    agent = game.board[y0, x0]
+    if len(game.agent_locs) == 0:
+        return 'none'
+    agent = game.board[game.agent_locs_idx][0]
     power_names = [
         (CellTypes.alive, 'alive'),
         (CellTypes.preserving, 'preserving'),
