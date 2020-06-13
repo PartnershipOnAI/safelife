@@ -140,10 +140,13 @@ static int clip(int x, int width) {
 
 void execute_actions(
         uint16_t *board, int w, int h,
-        int64_t *locations, int64_t *actions, int n_agents) {
+        int64_t *locations, int64_t *actions, int n_agents, int action_stride) {
     for (int k=0; k < n_agents; k++) {
-        if (!actions[k]) continue;
-        int direction = (actions[k] - 1) & 3;
+        int64_t action = *actions;
+        actions += action_stride;
+        if (action == 0) continue;
+
+        int direction = (action - 1) & 3;
         int dx, dy;
         if (direction & 1) {
             dx = 2 - direction;
@@ -152,8 +155,8 @@ void execute_actions(
             dx = 0;
             dy = direction - 1;
         }
-        int x0 = locations[2*k] % w;
-        int y0 = locations[2*k+1] % h;
+        int y0 = locations[2*k] % h;
+        int x0 = locations[2*k+1] % w;
         uint16_t *p0 = board + (x0 + y0*w);
         uint16_t *p1 = board + (clip(x0+dx, w) + clip(y0+dy, h)*w);
         uint16_t *p2 = board + (clip(x0+2*dx, w) + clip(y0+2*dy, h)*w);
@@ -166,7 +169,7 @@ void execute_actions(
         *p0 |= direction << ORIENTATION_BIT;
 
 
-        if(actions[k] >= 5) {  // toggle action
+        if(action >= 5) {  // toggle action
             if (!(*p1)) {  // empty block. Add a life cell.
                 *p1 = ALIVE | DESTRUCTIBLE | (*p0 & COLORS);
             } else if (*p1 & DESTRUCTIBLE) {
@@ -202,8 +205,8 @@ void execute_actions(
             move:
             *p1 = *p0;
             exit_move:
-            locations[2*k] = clip(x0 + dx, w);
-            locations[2*k+1] = clip(y0 + dy, h);
+            locations[2*k] = clip(y0 + dy, h);
+            locations[2*k+1] = clip(x0 + dx, w);
             if (~*p0 & *p3 & PULLABLE) {
                 *p0 = *p3;
                 *p3 = 0;

@@ -130,8 +130,8 @@ class GameState(object):
         Array of cells that make up the board. Note that the board is laid out
         according to the usual array convention where [0,0] corresponds to the
         top left.
-    agent_loc : tuple
-        x and y coordinates of the agent
+    agent_locs : ndarray
+        Coordinates of each agent on the board (row, col)
     orientation : int
         Which way the agent is pointing. In range [0,3] with 0 indicating up.
     spawn_prob : float in [0,1]
@@ -155,7 +155,6 @@ class GameState(object):
         this fraction completed. If negative, the agent can always exit.
     """
     spawn_prob = 0.3
-    agent_loc = (0, 0)
     edit_loc = (0, 0)
     edit_color = 0
     board = None
@@ -170,6 +169,7 @@ class GameState(object):
 
     def __init__(self, board_size=(10,10)):
         self.exit_locs = (np.array([], dtype=int), np.array([], dtype=int))
+        self.agent_locs = np.empty((0,2), dtype=int)
         if board_size is None:
             # assume we'll load a new board from file
             pass
@@ -181,16 +181,15 @@ class GameState(object):
 
     def make_default_board(self, board_size):
         self.board = np.zeros(board_size, dtype=np.uint16)
-        self.agent_loc = (board_size[1]//2, board_size[0]//2)
-        self.board[self.agent_loc[1],self.agent_loc[0]] = CellTypes.player
+        self.agent_locs = np.array(board_size).reshape(1,2) // 2
+        self.board[self.agent_locs_idx] = CellTypes.player
 
     def serialize(self):
         """Return a dict of data to be serialized."""
         cls = self.__class__
         return {
             "spawn_prob": self.spawn_prob,
-            "orientation": self.orientation,
-            "agent_loc": self.agent_loc,
+            "agent_locs": self.agent_locs.copy(),
             "board": self.board.copy(),
             "class": "%s.%s" % (cls.__module__, cls.__name__),
             "min_performance": self.min_performance,
@@ -205,7 +204,10 @@ class GameState(object):
         if 'spawn_prob' in keys:
             self.spawn_prob = float(data['spawn_prob'])
         if 'agent_loc' in keys:
-            self.agent_loc = tuple(data['agent_loc'])
+            # Old single agent setting
+            self.agent_locs = np.array(data['agent_loc'])[None,::-1]
+        elif 'agent_locs' in keys:
+            self.agent_locs = data['agent_locs'].copy()
         if 'orientation' in keys:
             self.orientation = int(data['orientation'])
         if 'min_performance' in keys:
@@ -296,35 +298,40 @@ class GameState(object):
 
     @property
     def orientation(self):
-        """Orientation of the agent. For backwards compatibility."""
-        x,y = self.agent_loc
-        agent = self.board[y,x]
-        return (agent & CellTypes.orientation_mask) >> CellTypes.orientation_bit
+        """Orientation of the agents. For backwards compatibility."""
+        agents = self.board[self.agent_locs_idx]
+        out = (agents & CellTypes.orientation_mask) >> CellTypes.orientation_bit
+        return out.astype(np.int64)
 
     @orientation.setter
     def orientation(self, value):
-        x,y = self.agent_loc
-        if not self.board[y,x] & CellTypes.agent:
-            return
-        self.board[y,x] &= ~CellTypes.orientation_mask
-        self.board[y,x] |= (value & 3) << CellTypes.orientation_bit
+        value = (np.array(value, dtype=np.uint16) & 3) << CellTypes.orientation_bit
+        self.board[self.agent_locs_idx] &= ~CellTypes.orientation_mask
+        self.board[self.agent_locs_idx] |= value
+
+    @property
+    def agent_locs_idx(self):
+        """
+        Convenience for easier array indexing.
+
+        E.g., ``agents = self.board[self.agent_locs_idx]``
+        """
+        return tuple(self.agent_locs.T)
 
     def execute_action(self, action):
-        agent_loc = np.array(self.agent_loc)[:2]
-        if self.game_over or len(agent_loc) != 2:
+        if self.game_over or len(self.agent_locs) == 0:
             pass
         elif action.startswith("MOVE "):
             direction = ORIENTATION[action[5:]]
             flip = 2 if direction == 6 else 0
             if direction < 4:
-                execute_actions(self.board, agent_loc, direction + 1)
+                execute_actions(self.board, self.agent_locs, direction + 1)
             else:
                 # Relative direction. Either forward (4) or backward (6)
                 direction = self.orientation ^ flip
-                execute_actions(self.board, agent_loc, direction + 1)
-            self.agent_loc = tuple(agent_loc)
+                execute_actions(self.board, self.agent_locs, direction + 1)
             self.orientation ^= flip
-            if self.board[agent_loc[1], agent_loc[0]] & CellTypes.exit:
+            if np.any(self.board[self.agent_locs_idx] & CellTypes.exit):
                 self.game_over = True
         elif action.startswith("TURN "):
             direction = ORIENTATION[action[5:]]
@@ -338,7 +345,7 @@ class GameState(object):
                 direction = ORIENTATION[action[7:]]
             else:
                 direction = self.orientation
-            execute_actions(self.board, agent_loc, direction + 5)
+            execute_actions(self.board, self.agent_locs, direction + 5)
         elif action in ("RESTART", "ABORT LEVEL", "PREV LEVEL", "NEXT LEVEL"):
             self.game_over = action
 
@@ -367,6 +374,7 @@ class GameState(object):
             'FOUNTAIN': CellTypes.fountain,
             'PARASITE': CellTypes.parasite,
             'WEED': CellTypes.weed,
+            'AGENT': CellTypes.player,
         }
         toggles = {
             'ALIVE': CellTypes.alive,
@@ -375,26 +383,18 @@ class GameState(object):
             'SPAWNING': CellTypes.spawning,
         }
         board = self.board
-        x0, y0 = self.agent_loc
-        x1, y1 = self.edit_loc
+        edit_loc = self.edit_loc
         if command.startswith("MOVE "):
             direction = ORIENTATION[command[5:]]
             if direction % 2 == 0:
-                dx, dy = 0, direction - 1
+                dx = np.array([direction - 1, 0])
             else:
-                dx, dy = 2 - direction, 0
-            self.edit_loc = ((x1 + dx) % self.width, (y1 + dy) % self.height)
-        elif command == "PUT AGENT":
-            agent = board[y0, x0] & ~CellTypes.rainbow_color
-            board[y0, x0] = 0
-            board[y1, x1] = agent | self.edit_color
-            self.agent_loc = self.edit_loc
-        elif (command.startswith("PUT ") and command[4:] in named_objects and
-                self.agent_loc != self.edit_loc):
-            x1, y1 = self.edit_loc
-            board[y1, x1] = named_objects[command[4:]]
-            if board[y1, x1]:
-                board[y1, x1] |= self.edit_color
+                dx = np.array([0, 2 - direction])
+            self.edit_loc = tuple((edit_loc + dx) % board.shape)
+        elif command.startswith("PUT ") and command[4:] in named_objects:
+            board[edit_loc] = named_objects[command[4:]]
+            if board[edit_loc]:
+                board[edit_loc] |= self.edit_color
         elif command.startswith("CHANGE COLOR"):
             if command.endswith("FULL CYCLE"):
                 self.edit_color += CellTypes.color_r
@@ -405,20 +405,21 @@ class GameState(object):
             self.edit_color &= CellTypes.rainbow_color
             return "EDIT COLOR: " + self.edit_color_name
         elif command.startswith("TOGGLE ") and command[7:] in toggles:
-            board[y0, x0] ^= toggles[command[7:]]
+            board[edit_loc] ^= toggles[command[7:]]
         elif command == "REVERT":
             if not self.revert():
                 return "No saved state; cannot revert."
         elif command in ("ABORT LEVEL", "PREV LEVEL", "NEXT LEVEL"):
             self.game_over = command
         self.update_exit_locs()
+        self.update_agent_locs()
 
     def shift_board(self, dx, dy):
         """Utility function. Translate the entire board (edges wrap)."""
         self.board = np.roll(self.board, dy, axis=0)
         self.board = np.roll(self.board, dx, axis=1)
-        self.agent_loc = tuple(
-            (np.array(self.agent_loc) + [dx, dy]) % [self.width, self.height])
+        self.agent_locs += [dy, dx]
+        self.agent_locs %= self.board.shape
         self.update_exit_locs()
 
     def resize_board(self, dx, dy):
@@ -431,8 +432,9 @@ class GameState(object):
         width += min(0, dx)
         new_board[:height, :width] = self.board[:height, :width]
         self.board = new_board
-        self.agent_loc = tuple(
-            np.array(self.agent_loc) % [self.width, self.height])
+        out_of_bounds = np.any(self.agent_locs >= new_board.shape, axis=1)
+        self.agent_locs = self.agent_locs[~out_of_bounds]
+        self.edit_loc = tuple(np.array(self.edit_loc) % new_board.shape)
         self.update_exit_locs()
 
     def clip_board(self, left=0, right=0, top=0, bottom=0):
@@ -472,10 +474,8 @@ class GameState(object):
         This depends on the current board state only.
         It does not depend on the initial board state or the board history.
         """
-        x, y = self.agent_loc
-        if self.board[y, x] & CellTypes.exit:
-            return self.points_on_level_exit
-        return 0
+        agents = self.board[self.agent_locs_idx]
+        return self.points_on_level_exit * np.sum(agents & CellTypes.exit > 0)
 
     def available_points(self):
         """Number of points remaining to be earned."""
@@ -505,6 +505,12 @@ class GameState(object):
             exit_type = CellTypes.level_exit
         i1, i2 = self.exit_locs
         self.board[i1, i2] = exit_type
+
+    def update_agent_locs(self):
+        # Later we'll want to respect the existing order.
+        self.agent_locs = np.stack(
+            np.nonzero(self.board & CellTypes.agent),
+            axis=1)
 
 
 class GameWithGoals(GameState):

@@ -113,7 +113,8 @@ class GameLoop(object):
         else:
             self.state.game = next(self.level_generator)
             self.loaded_levels.append(self.state.game)
-        self.state.game.edit_loc = self.state.game.agent_loc
+        if len(self.state.game.agent_locs) > 0:
+            self.state.game.edit_loc = tuple(self.state.game.agent_locs[0])
         self.state.level_start_points = self.state.total_points
         self.state.level_start_steps = self.state.total_steps
         self.state.level_start_undos = self.state.total_undos
@@ -149,13 +150,11 @@ class GameLoop(object):
     def save_recording(self):
         boards = []
         goals = []
-        orientations = []
         agent_locs = []
         for snapshot in reversed(self.state.history):
             boards.append(snapshot['board'])
             goals.append(snapshot['goals'])
-            orientations.append(snapshot['orientation'])
-            agent_locs.append(snapshot['agent_loc'])
+            agent_locs.append(snapshot['agent_locs'])
             if snapshot['is_restart']:
                 break
         if not boards:
@@ -163,8 +162,7 @@ class GameLoop(object):
         data = {
             'board': boards[::-1],
             'goals': goals[::-1],
-            'orientation': orientations[::-1],
-            'agent_loc': agent_locs[::-1],
+            'agent_locs': agent_locs[::-1],
         }
 
         pattern = os.path.join(self.recording_directory, 'rec-*.npz')
@@ -265,8 +263,8 @@ class GameLoop(object):
         elif key in TOGGLE_EDIT:
             if not state.edit_mode:
                 state.edit_mode = "BOARD"
-                if state.game:
-                    state.game.edit_loc = state.game.agent_loc
+                if state.game and len(state.game.agent_locs) > 0:
+                    state.game.edit_loc = tuple(state.game.agent_locs[0])
             elif state.edit_mode == "BOARD":
                 state.edit_mode = "GOALS"
             else:

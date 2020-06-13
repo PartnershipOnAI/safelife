@@ -121,7 +121,7 @@ static char execute_actions_doc[] =
 static PyObject *execute_actions_py(PyObject *self, PyObject *args) {
     PyObject *board_obj, *locations_obj, *actions_obj;
     PyArrayObject *board, *locations, *actions;
-    int height, width, n_agents;
+    int height, width, n_agents, n_actions;
 
     if (!PyArg_ParseTuple(args, "OOO", &board_obj, &locations_obj, &actions_obj))
         return NULL;
@@ -135,18 +135,20 @@ static PyObject *execute_actions_py(PyObject *self, PyObject *args) {
 
     if (PyArray_NDIM(board) != 2)
         PY_VAL_ERROR("Board should be 2-dimensional.");
-    if (PyArray_SIZE(locations) != 2*PyArray_SIZE(actions))
-        PY_VAL_ERROR("Locations should be shape (n_agent, 2).");
     height = PyArray_DIM(board, 0);
     width = PyArray_DIM(board, 1);
-    n_agents = PyArray_SIZE(actions);
     if (height < 3 || width < 3)
         PY_VAL_ERROR("Board must be at least 3x3.");
+    n_agents = PyArray_SIZE(locations) / 2;
+    n_actions = PyArray_SIZE(actions);
+    if (n_actions != n_agents && n_actions > 1)
+        PY_VAL_ERROR("Locations should be shape (n_agent, 2).");
 
     execute_actions(
         (uint16_t *)PyArray_DATA(board), width, height,
         (int64_t *)PyArray_DATA(locations),
-        (int64_t *)PyArray_DATA(actions), n_agents
+        (int64_t *)PyArray_DATA(actions),
+        n_agents, (n_actions == n_agents) ? 1 : 0
     );
 
     Py_DECREF((PyObject *)board);

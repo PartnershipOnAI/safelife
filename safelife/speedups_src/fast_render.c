@@ -36,12 +36,17 @@ static inline void draw_sprite(
     float *fg_color = foreground_colors + ((cell & color_mask) >> COLOR_BIT) * 3;
     float *bg_color = background_colors + ((goal & color_mask) >> COLOR_BIT) * 3;
     uint16_t orientation = (cell & orient_mask) >> ORIENT_BIT;
+    uint16_t old_cell = cell;
     cell &= ~(color_mask | orient_mask);
 
     int row, col;
     switch (cell) {
         case 0:  // empty
-            row = 0; col = 0; break;
+            if (old_cell) {
+                row = 3; col = 4; break;
+            } else {
+                row = 0; col = 0; break;
+            }
 
         case 9:  // life
             row = 1; col = 0; break;

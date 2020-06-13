@@ -74,7 +74,7 @@ def render_board(board, goals, orientation, edit_loc=None, edit_color=0):
         board += orientation[...,None,None] << CellTypes.orientation_bit
     img = speedups._render_board(board, goals, sprite_sheet)
     if edit_loc is not None:
-        x, y = edit_loc
+        y, x = edit_loc
         edit_cell = img[...,
             y*SPRITE_SIZE:(y+1)*SPRITE_SIZE,
             x*SPRITE_SIZE:(x+1)*SPRITE_SIZE, :]
@@ -107,13 +107,15 @@ def render_game(game, view_size=None, edit_mode=None):
     if view_size is not None:
         if edit_mode:
             center = game.edit_loc
-            edit_loc = view_size[1] // 2, view_size[0] // 2
+            edit_loc = view_size[0] // 2, view_size[1] // 2
         else:
-            center = game.agent_loc
+            if len(game.agent_locs) > 0:
+                center = game.agent_locs[0]
+            else:
+                center = (0, 0)
             edit_loc = None
-        center = game.edit_loc if edit_mode else game.agent_loc
-        board = recenter_view(game.board, view_size, center[::-1], game.exit_locs)
-        goals = recenter_view(game.goals, view_size, center[::-1])
+        board = recenter_view(game.board, view_size, center, game.exit_locs)
+        goals = recenter_view(game.goals, view_size, center)
     else:
         board = game.board
         goals = game.goals
