@@ -89,7 +89,8 @@ def cell_name(cell):
         CellTypes.hard_spawner: 'hard-spawner',
         CellTypes.level_exit: 'exit',
         CellTypes.fountain: 'fountain',
-    }.get(cell & ~CellTypes.rainbow_color, 'unknown')
+    }.get(cell & ~CellTypes.rainbow_color,
+        'agent' if cell & CellTypes.agent else 'unknown')
     color = {
         0: 'gray',
         CellTypes.color_r: 'red',
@@ -161,7 +162,7 @@ def render_game(game, view_size=None, edit_mode=None):
     edit_color = (game.edit_color & CellTypes.rainbow_color) >> CellTypes.color_bit
     if edit_mode == "GOALS":
         # Render goals instead. Swap board and goals.
-        board, goals = goals, board
+        board = goals
 
     return render_board(board, goals, edit_loc, edit_color)
 
@@ -178,6 +179,44 @@ def agent_powers(game):
     ]
     powers = [txt for val, txt in power_names if agent & val]
     return ', '.join(powers) or 'none'
+
+
+def edit_details(game, edit_mode="BOARD"):
+    vals = []
+    properties = {
+        CellTypes.alive: 'alive',
+        CellTypes.pushable: 'pushable',
+        CellTypes.pullable: 'pullable',
+        CellTypes.destructible: 'destructible',
+        CellTypes.frozen: 'frozen',
+        CellTypes.preserving: 'preserves',
+        CellTypes.inhibiting: 'inhibits',
+        CellTypes.spawning: 'spawns',
+        CellTypes.exit: 'exit',
+    }
+    if edit_mode == "BOARD":
+        cell = game.board[game.edit_loc]
+
+        matching_locs = []
+        for loc_num, loc in enumerate(game.agent_locs):
+            if tuple(loc) == game.edit_loc:
+                matching_locs.append(str(loc_num))
+        if matching_locs:
+            vals.append('A' + ','.join(matching_locs))
+
+    elif edit_mode == "GOALS":
+        cell = game.goals[game.edit_loc]
+    else:
+        return ''
+
+    vals.insert(0, cell_name(cell))
+    for mask, label in properties.items():
+        if cell & mask:
+            vals.append(label)
+    if len(vals) > 1:
+        vals[0] += ':'
+
+    return ' '.join(vals)
 
 
 if __name__ == "__main__":
