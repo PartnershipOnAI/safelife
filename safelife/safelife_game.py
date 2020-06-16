@@ -351,7 +351,7 @@ class GameState(object):
 
         return 0
 
-    def execute_edit(self, command):
+    def execute_edit(self, command, board=None):
         """
         Edit the board. Returns an error or success message, or None.
 
@@ -377,12 +377,19 @@ class GameState(object):
             'AGENT': CellTypes.player,
         }
         toggles = {
-            'ALIVE': CellTypes.alive,
-            'INHIBITING': CellTypes.inhibiting,
-            'PRESERVING': CellTypes.preserving,
-            'SPAWNING': CellTypes.spawning,
+            "AGENT": CellTypes.agent,
+            "ALIVE": CellTypes.alive,
+            "PUSHABLE": CellTypes.pushable,
+            "PULLABLE": CellTypes.pullable,
+            "DESTRUCTIBLE": CellTypes.destructible,
+            "FROZEN": CellTypes.frozen,
+            "PRESERVING": CellTypes.preserving,
+            "INHIBITING": CellTypes.inhibiting,
+            "SPAWNING": CellTypes.spawning,
+            "EXIT": CellTypes.exit,
         }
-        board = self.board
+        if board is None:
+            board = self.board
         edit_loc = self.edit_loc
         if command.startswith("MOVE "):
             direction = ORIENTATION[command[5:]]
@@ -395,15 +402,17 @@ class GameState(object):
             board[edit_loc] = named_objects[command[4:]]
             if board[edit_loc]:
                 board[edit_loc] |= self.edit_color
-        elif command.startswith("CHANGE COLOR"):
-            if command.endswith("FULL CYCLE"):
-                self.edit_color += CellTypes.color_r
-            elif self.edit_color:
-                self.edit_color <<= 1
-            else:
-                self.edit_color = CellTypes.color_r
+        elif command == "NEXT EDIT COLOR":
+            self.edit_color += CellTypes.color_r
             self.edit_color &= CellTypes.rainbow_color
             return "EDIT COLOR: " + self.edit_color_name
+        elif command == "PREVIOUS EDIT COLOR":
+            self.edit_color -= CellTypes.color_r
+            self.edit_color &= CellTypes.rainbow_color
+            return "EDIT COLOR: " + self.edit_color_name
+        elif command == "APPLY EDIT COLOR":
+            board[edit_loc] &= ~CellTypes.rainbow_color
+            board[edit_loc] |= self.edit_color
         elif command.startswith("TOGGLE ") and command[7:] in toggles:
             board[edit_loc] ^= toggles[command[7:]]
         elif command == "REVERT":
@@ -497,20 +506,27 @@ class GameState(object):
 
     def update_exit_locs(self):
         self.exit_locs = np.nonzero(self.board & CellTypes.exit)
+        self.update_exit_colors()
 
     def update_exit_colors(self):
         if self.can_exit():
             exit_type = CellTypes.level_exit | CellTypes.color_r
         else:
             exit_type = CellTypes.level_exit
-        i1, i2 = self.exit_locs
-        self.board[i1, i2] = exit_type
+        self.board[self.exit_locs] = exit_type
 
     def update_agent_locs(self):
-        # Later we'll want to respect the existing order.
-        self.agent_locs = np.stack(
+        new_locs = np.stack(
             np.nonzero(self.board & CellTypes.agent),
             axis=1)
+
+        # Do some gymnastics to respect the old order
+        old_locs = self.agent_locs
+        compare = np.all(new_locs[None] == old_locs[:,None], axis=-1)
+        self.agent_locs = np.append(
+            old_locs[np.any(compare, axis=1)],
+            new_locs[~np.any(compare, axis=0)],
+            axis=0)
 
 
 class GameWithGoals(GameState):
@@ -551,8 +567,8 @@ class GameWithGoals(GameState):
         return data
 
     def deserialize(self, data, as_initial_state=True):
-        super().deserialize(data, as_initial_state)
         self.goals = data['goals']
+        super().deserialize(data, as_initial_state)
         if as_initial_state:
             self.initial_points = self.current_points()
             self.initial_available_points = self.available_points()
@@ -560,10 +576,7 @@ class GameWithGoals(GameState):
 
     def execute_edit(self, command):
         if command.startswith("GOALS "):
-            # Swap goals and board so that the edit is done on the goals.
-            self.board, self.goals = self.goals, self.board
-            rval = super().execute_edit(command[6:])
-            self.board, self.goals = self.goals, self.board
+            rval = super().execute_edit(command[6:], self.goals)
             self._static_goals = None
         else:
             rval = super().execute_edit(command)

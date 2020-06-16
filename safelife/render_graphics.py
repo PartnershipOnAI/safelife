@@ -124,7 +124,7 @@ def render_game(game, view_size=None, edit_mode=None):
         (game.edit_color & CellTypes.rainbow_color) >> 9] * 255
     if edit_mode == "GOALS":
         # Render goals instead. Swap board and goals.
-        board, goals = goals, board
+        board = goals
     return render_board(board, goals, None, edit_loc, edit_color)
 
 

@@ -49,12 +49,19 @@ EDIT_KEYS = {
     'f': "PUT FOUNTAIN",
     'n': "PUT SPAWNER",
     'N': "PUT HARD SPAWNER",
-    '1': "TOGGLE ALIVE",
-    '2': "TOGGLE PRESERVING",
-    '3': "TOGGLE INHIBITING",
-    '4': "TOGGLE SPAWNING",
-    'g': "CHANGE COLOR",
-    'G': "CHANGE COLOR FULL CYCLE",
+    '1': "TOGGLE AGENT",
+    '2': "TOGGLE ALIVE",
+    '3': "TOGGLE PUSHABLE",
+    '4': "TOGGLE PULLABLE",
+    '5': "TOGGLE DESTRUCTIBLE",
+    '6': "TOGGLE FROZEN",
+    '7': "TOGGLE PRESERVING",
+    '8': "TOGGLE INHIBITING",
+    '9': "TOGGLE SPAWNING",
+    '0': "TOGGLE EXIT",
+    '[': "PREVIOUS EDIT COLOR",
+    ']': "NEXT EDIT COLOR",
+    ';': "APPLY EDIT COLOR",
     's': "SAVE",
     'S': "SAVE AS",
     'R': "REVERT",
@@ -290,7 +297,7 @@ class GameLoop(object):
                 # Execute action immediately.
                 command = EDIT_KEYS[key]
                 state.last_command = command
-                if command.startswith("PUT") and state.edit_mode == "GOALS":
+                if state.edit_mode == "GOALS":
                     command = "GOALS " + command
                 if command.startswith("SAVE"):
                     if command == "SAVE" and (
@@ -423,17 +430,17 @@ class GameLoop(object):
 
     Edit mode
     ---------
-    x:  clear cell               1:  toggle alive
-    a:  move agent               2:  toggle preserving
-    c:  add life                 3:  toggle inhibiting
-    C:  add hard life            4:  toggle spawning
-    w:  add wall                 g:  change edit color
-    r:  add crate                G:  change edit color (full range)
-    e:  add exit                 s:  save
-    i:  add icecube              S:  save as (in terminal)
-    t:  add plant                R:  revert level
-    T:  add tree                 >:  skip to next level
-    p:  add parasite             <:  back to previous level
+    x:  clear cell               0-9:  toggle cell properties
+    a:  add agent                []:  change edit color
+    c:  add life                 ;:  apply edit color
+    C:  add hard life            v:  apply edit color
+    w:  add wall
+    r:  add crate                s:  save
+    e:  add exit                 S:  save as (in terminal)
+    i:  add icecube              R:  revert level
+    t:  add plant                >:  skip to next level
+    T:  add tree                 <:  back to previous level
+    p:  add parasite
     f:  add fountain             \\:  enter shell
     n:  add spawner
 
@@ -474,13 +481,15 @@ class GameLoop(object):
         if self.print_only:
             output += "\n"
         else:
-            output += "\nSteps: {bold}{}{clear}".format(state.total_steps, **styles)
-            output += "\nTotal Score: {bold}{}{clear}".format(state.total_points, **styles)
-            output += "\nLevel Score: {} / {}".format(
-                game.points_earned(), game.required_points(), **styles)
-            output += "\nPowers: {italics}{}{clear}".format(render_text.agent_powers(game), **styles)
+            output += "\n  Steps: {bold}{}{clear}".format(state.total_steps, **styles)
+            output += "    Score: {bold}{}{clear}".format(state.total_points, **styles)
+            req_points = game.required_points()
+            frac = game.points_earned() / req_points if req_points > 0 else 1.0
+            output += "    Power: {bold}{:0.0%}{clear}".format(frac, **styles)
             if state.edit_mode:
-                output += "\n{bold}*** EDIT {} ***{clear}".format(state.edit_mode, **styles)
+                output += "\n\n{bold}*** EDIT {} ***{clear}".format(state.edit_mode, **styles)
+                output += "\n  {italics}{}{clear}".format(
+                    render_text.edit_details(game, state.edit_mode), **styles)
         return output
 
     def below_game_message(self):
