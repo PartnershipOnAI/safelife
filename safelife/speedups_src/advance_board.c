@@ -121,12 +121,19 @@ void advance_board(
 
 
 void alive_counts(uint16_t *board, uint16_t *goals, int n, int64_t *out) {
-    uint16_t b, g, k;
+    uint16_t b, g, b_color, g_color;
+    uint16_t movable = DESTRUCTIBLE | PUSHABLE | PULLABLE;
     for (int i=0; i<n; i++) {
         b = board[i];
         g = goals[i];
-        k = ((b & COLORS) >> COLOR_BIT) | ((g & COLORS) >> (COLOR_BIT - 3));
-        out[k] += b & ALIVE;
+        b_color = ((b & COLORS) >> COLOR_BIT);
+        g_color = ((g & COLORS) >> COLOR_BIT);
+        if ((b & movable) || !(b & FROZEN)) {
+            // Don't add to counts if it's immovable and frozen,
+            // as there isn't any way for an agent to change such a cell.
+            out[b_color + 9*g_color] += b & ALIVE;
+            out[8 + 9*g_color] += 1 - (b & ALIVE);
+        }
     }
 }
 
@@ -197,7 +204,7 @@ void execute_actions(
                 }
             } else if (!(*p1)) {
                 goto move;
-            } else if (*p1 & EXIT && *p1 & COLORS) {
+            } else if ((*p0 & *p1 & EXIT) && !(*p1 & AGENT)) {
                 goto exit_move;
             }
             continue;

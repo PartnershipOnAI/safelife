@@ -143,16 +143,6 @@ class GameState(object):
         Flag to indicate that the current game has ended.
     num_steps : int
         Number of steps taken since last reset.
-    can_toggle_powers : bool
-        If true, players can absorb special powers of indestructible blocks
-        by executing the "create" action on them. If they already have the
-        power, they instead lose it. Note that the "freezing" power effectively
-        cancels out the "alive" and "spawning" powers.
-    can_toggle_colors : bool
-        If true, players can also absorb the colors of indestructible blocks.
-    min_performance : float
-        Don't allow the agent to exit the level until the level is at least
-        this fraction completed. If negative, the agent can always exit.
     """
     spawn_prob = 0.3
     edit_loc = (0, 0)
@@ -162,10 +152,6 @@ class GameState(object):
     game_over = False
     points_on_level_exit = +1
     num_steps = 0
-    min_performance = -1
-
-    can_toggle_powers = False
-    can_toggle_colors = False
 
     def __init__(self, board_size=(10,10)):
         self.exit_locs = (np.array([], dtype=int), np.array([], dtype=int))
@@ -176,8 +162,6 @@ class GameState(object):
         else:
             self.make_default_board(board_size)
             self._init_data = self.serialize()
-        self.initial_points = 0
-        self.initial_available_points = 0
 
     def make_default_board(self, board_size):
         self.board = np.zeros(board_size, dtype=np.uint16)
@@ -192,7 +176,6 @@ class GameState(object):
             "agent_locs": self.agent_locs.copy(),
             "board": self.board.copy(),
             "class": "%s.%s" % (cls.__module__, cls.__name__),
-            "min_performance": self.min_performance,
         }
 
     def deserialize(self, data, as_initial_state=True):
@@ -210,8 +193,6 @@ class GameState(object):
             self.agent_locs = data['agent_locs'].copy()
         if 'orientation' in keys:
             self.orientation = int(data['orientation'])
-        if 'min_performance' in keys:
-            self.min_performance = float(data['min_performance'])
         self.update_exit_locs()
         self.game_over = False
         self.num_steps = 0
@@ -319,6 +300,12 @@ class GameState(object):
         return tuple(self.agent_locs.T)
 
     def execute_action(self, action):
+        """
+        Perform a named agent action.
+
+        This is primarily for interactive use. Learning algorithms
+        and environments should call `speedups.execute_actions` instead.
+        """
         if self.game_over or len(self.agent_locs) == 0:
             pass
         elif action.startswith("MOVE "):
@@ -331,8 +318,7 @@ class GameState(object):
                 direction = self.orientation ^ flip
                 execute_actions(self.board, self.agent_locs, direction + 1)
             self.orientation ^= flip
-            if np.any(self.board[self.agent_locs_idx] & CellTypes.exit):
-                self.game_over = True
+            self.game_over = self.has_exited().any()
         elif action.startswith("TURN "):
             direction = ORIENTATION[action[5:]]
             self.orientation += 2 - direction
@@ -348,7 +334,6 @@ class GameState(object):
             execute_actions(self.board, self.agent_locs, direction + 5)
         elif action in ("RESTART", "ABORT LEVEL", "PREV LEVEL", "NEXT LEVEL"):
             self.game_over = action
-
         return 0
 
     def execute_edit(self, command, board=None):
@@ -421,6 +406,7 @@ class GameState(object):
         elif command in ("ABORT LEVEL", "PREV LEVEL", "NEXT LEVEL"):
             self.game_over = command
         self.update_exit_locs()
+        self.update_exit_colors()
         self.update_agent_locs()
 
     def shift_board(self, dx, dy):
@@ -464,17 +450,12 @@ class GameState(object):
     def is_stochastic(self):
         raise NotImplementedError
 
-    def check(self, condition):
+    def has_exited(self):
         """
-        Checks for a particular condition in front of the agent.
-
-        Used for programmatic action sequences.
+        Boolean value for each agent.
         """
-        x, y = self.relative_loc(1)
-        if condition == 'IFEMPTY':
-            return self.board[y, x] == CellTypes.empty
-        else:
-            raise ValueError("Unknown condition '%s'" % (condition,))
+        agents = self.board[self.agent_locs_idx]
+        return agents & (CellTypes.agent | CellTypes.exit) == CellTypes.exit
 
     def current_points(self):
         """
@@ -483,33 +464,29 @@ class GameState(object):
         This depends on the current board state only.
         It does not depend on the initial board state or the board history.
         """
-        agents = self.board[self.agent_locs_idx]
-        return self.points_on_level_exit * np.sum(agents & CellTypes.exit > 0)
-
-    def available_points(self):
-        """Number of points remaining to be earned."""
-        return 0
-
-    def points_earned(self):
-        """Number of points that have been earned."""
-        return self.current_points() - self.initial_points
-
-    def required_points(self):
-        """Total number of points needed to open the level exit."""
-        req_points = self.min_performance * self.initial_available_points
-        return max(0, int(np.ceil(req_points)))
+        return self.points_on_level_exit * self.has_exited()
 
     def can_exit(self):
-        if self.min_performance < 0:
-            return True
-        return self.points_earned() >= self.required_points()
+        # As long as the agent is on the board, it can exit
+        # (this is overridden below)
+        return self.board[self.agent_locs_idx] & CellTypes.agent > 0
 
     def update_exit_locs(self):
-        self.exit_locs = np.nonzero(self.board & CellTypes.exit)
-        self.update_exit_colors()
+        exits = self.board & (CellTypes.exit | CellTypes.agent) == CellTypes.exit
+        self.exit_locs = np.nonzero(exits)
 
     def update_exit_colors(self):
-        if self.can_exit():
+        can_exit = self.can_exit()
+
+        # Set the exit bit on top of each agent that is allowed to exit
+        self.board[self.agent_locs_idx] &= ~CellTypes.exit
+        self.board[self.agent_locs_idx] |= CellTypes.exit * can_exit
+
+        # If any agent can exit, set the exit color to red.
+        # This is mostly a visual aid for humans, but could conceivably be
+        # used by non-human agents too (e.g., recognize when another agent is
+        # able to open the exit).
+        if can_exit.any():
             exit_type = CellTypes.level_exit | CellTypes.color_r
         else:
             exit_type = CellTypes.level_exit
@@ -537,42 +514,61 @@ class GameWithGoals(GameState):
     ----------
     goals : ndarray
         Point value associated with each cell. Can be negative.
-    point_table: ndarray
+    points_table: ndarray
         Lookup table that maps goals (rows) and cell colors (columns) to
         point values for individual cells. Colors are KRGYBMCW.
+    min_performance : float
+        Don't allow the agent to exit the level until the level is at least
+        this fraction completed. If negative, the agent can always exit.
     """
     goals = None
     _static_goals = None  # can be set to True for minor performance boost
+    min_performance = -1
 
-    point_table = np.array([
-        # k   r   g   y   b   m   c   w
-        [+0, -1, +0, +0, +0, +0, +0, +0],  # black / no goal
-        [-3, +3, -3, +0, -3, +0, -3, -3],  # red goal
-        [+0, -3, +5, +0, +0, +0, +3, +0],  # green goal
-        [-3, +0, +0, +3, +0, +0, +0, +0],  # yellow goal
-        [+3, -3, +3, +0, +5, +3, +3, +3],  # blue goal
-        [-3, +3, -3, +0, -3, +5, -3, -3],  # magenta goal
-        [+3, -3, +3, +0, +3, +0, +5, +3],  # cyan goal
-        [+0, -1, +0, +0, +0, +0, +0, +0],  # white / rainbow goal
-    ])
-    point_table.setflags(write=False)
+    # TODO: make a different point table for each color agent
+    default_point_table = np.array([[
+        # k   r   g   y   b   m   c   w  empty
+        [+0, -1, +0, +0, +0, +0, +0, +0, 0],  # black / no goal
+        [-3, +3, -3, +0, -3, +0, -3, -3, 0],  # red goal
+        [+0, -3, +5, +0, +0, +0, +3, +0, 0],  # green goal
+        [-3, +0, +0, +3, +0, +0, +0, +0, 0],  # yellow goal
+        [+3, -3, +3, +0, +5, +3, +3, +3, 0],  # blue goal
+        [-3, +3, -3, +0, -3, +5, -3, -3, 0],  # magenta goal
+        [+3, -3, +3, +0, +3, +0, +5, +3, 0],  # cyan goal
+        [+0, -1, +0, +0, +0, +0, +0, +0, 0],  # white / rainbow goal
+    ]] * 8)
+    default_point_table.setflags(write=False)
 
     def make_default_board(self, board_size):
         super().make_default_board(board_size)
         self.goals = np.zeros_like(self.board)
+        self._needs_new_counts = True
+        self.setup_initial_counts()
+        self.update_points_table()
 
     def serialize(self):
         data = super().serialize()
         data['goals'] = self.goals.copy()
+        data['points_table'] = self.points_table.copy()
+        data['min_performance'] = self.min_performance
         return data
 
     def deserialize(self, data, as_initial_state=True):
-        self.goals = data['goals']
         super().deserialize(data, as_initial_state)
+
+        keys = data.dtype.fields if hasattr(data, 'dtype') else data
+        self.goals = data['goals']
+        if 'min_performance' in keys:
+            self.min_performance = data['min_performance']
+        if 'points_table' in keys:
+            self.points_table = data['points_table']
+        else:
+            self.update_points_table()
+        self._needs_new_counts = True
         if as_initial_state:
-            self.initial_points = self.current_points()
-            self.initial_available_points = self.available_points()
+            self.setup_initial_counts()
         self._static_goals = None
+        self.update_exit_colors()
 
     def execute_edit(self, command):
         if command.startswith("GOALS "):
@@ -580,51 +576,88 @@ class GameWithGoals(GameState):
             self._static_goals = None
         else:
             rval = super().execute_edit(command)
+        self._needs_new_counts = True
+        self.update_points_table()
         return rval
 
+    def execute_action(self, action):
+        self._needs_new_counts = True
+        return super().execute_action(action)
+
+    @property
+    def alive_counts(self):
+        if getattr(self, '_needs_new_counts', True):
+            self._needs_new_counts = False
+            self._alive_counts = alive_counts(self.board, self.goals)
+            self._alive_counts.setflags(write=False)
+        return self._alive_counts
+
+    def setup_initial_counts(self):
+        """
+        Record the counts of live cells and possible colors for new cells.
+        """
+        self.initial_counts = self.alive_counts
+        self.initial_colors = np.zeros(9, dtype=bool)
+        generators = CellTypes.agent | CellTypes.alive | CellTypes.spawning
+        colors = self.board[self.board & generators > 0] & CellTypes.rainbow_color
+        colors = np.unique(colors) >> CellTypes.color_bit
+        self.initial_colors[colors] = True
+        self.initial_colors[-1] = True  # 'empty' color
+
+    def update_points_table(self):
+        """
+        Create the points table for each agent.
+
+        The points table is an array of shape (n_agents, 8, 9).
+        It determines how many points each agent gets for matching live cells
+        of different colors to goals of different colors.
+
+        The points for each agent in this function are determined by the
+        agent's color, but an entirely separate points table can be used
+        instead, in which case this function shouldn't be called.
+        """
+        agents = self.board[self.agent_locs_idx]
+        is_agent = agents & CellTypes.agent > 0
+        colors = (agents & CellTypes.rainbow_color) >> CellTypes.color_bit
+        self.points_table = self.default_point_table[colors]
+        self.points_table *= is_agent.reshape(-1,1,1)
+
     def current_points(self):
-        counts = alive_counts(self.board, self.goals)
-        return np.sum(self.point_table * counts) + super().current_points()
+        points = self.points_table * self.alive_counts
+        points = points.reshape(-1,72)  # unravel the points for easier sum
+        return np.sum(points, axis=1) + super().current_points()
 
-    def available_points(self, board=None, goals=None):
+    def points_earned(self, counts=None):
+        """Number of points that have been earned."""
+        delta_counts = self.alive_counts - self.initial_counts
+        points = self.points_table * delta_counts
+        points = points.reshape(-1,72)  # unravel the points for easier sum
+        return np.sum(points, axis=1) + super().current_points()
+
+    def available_points(self):
         """
-        Calculate the remaining points that are available on the board.
-
-        This assumes that all goals can be filled in with any live color that
-        exists on the board. It also assumes that the total number of goal
-        cells of each type is constant. Both of these can easily be violated
-        in practice.
+        Total points available to the agents, assuming all goals can be filled.
         """
-        if board is None:
-            board = self.board
-        if goals is None:
-            goals = self.goals
+        goal_counts = np.sum(self.initial_counts, axis=1)  # int array, length 8
+        # Zero out columns in the point table corresponding to unavailable colors
+        points_table = self.points_table * self.initial_colors  # shape (n,8,9)
+        max_points = np.max(points_table, axis=2)  # shape (n,8)
+        total_available = np.sum(max_points * goal_counts, axis=1)  # shape (n,)
 
-        # Shift board and goals to only show their color. Values are [0, 8].
-        goals = (goals & CellTypes.rainbow_color) >> CellTypes.color_bit
-        cell_colors = (board & CellTypes.rainbow_color) >> CellTypes.color_bit
+        initial_points = self.points_table * self.initial_counts
+        initial_points = np.sum(initial_points.reshape(-1,72), axis=1)
 
-        # Mask out columns in the point table for which no colors are available
-        alive_cells = board & CellTypes.alive > 0
-        agent_cells = board & CellTypes.agent > 0
-        available_colors = np.unique(cell_colors[alive_cells | agent_cells])
-        mask = np.zeros(8, dtype=bool)
-        mask[available_colors] = True
-        pt_table = self.point_table * mask
+        return total_available - initial_points
 
-        # Remove immovable cells from both goals and board
-        immovable = board & (
-            CellTypes.frozen | CellTypes.movable | CellTypes.destructible
-        ) == CellTypes.frozen
-        goals *= ~immovable
-        cell_colors *= ~immovable
+    def required_points(self):
+        """Total number of points needed to open the level exit."""
+        req_points = self.min_performance * self.available_points()
+        return np.maximum(0, np.int64(np.ceil(req_points)))
 
-        # Calculate baseline rewards with current board, plus the total
-        # available reward if all goals are filled.
-        baseline_score = np.sum(pt_table[goals, cell_colors] * alive_cells)
-        possible_score = np.sum(np.max(pt_table, axis=1)[goals])
-
-        return possible_score - baseline_score
+    def can_exit(self):
+        points_earned = np.maximum(0, self.points_earned())
+        is_agent = self.board[self.agent_locs_idx] & CellTypes.agent > 0
+        return is_agent & (points_earned >= self.required_points())
 
     def shift_board(self, dx, dy):
         """Utility function. Translate the entire board (edges wrap)."""
@@ -653,6 +686,7 @@ class SafeLifeGame(GameWithGoals):
 
     def advance_board(self):
         self.num_steps += 1
+        self._needs_new_counts = True
 
         self.board = advance_board(self.board, self.spawn_prob)
 
