@@ -193,7 +193,8 @@ class GameLoop(object):
         if not state.game or not self.logfile:
             return
         with open(self.logfile, 'a') as logfile:
-            p1, p2 = state.game.points_earned(), state.game.initial_available_points
+            p1 = state.game.points_earned().tolist()
+            p2 = state.game.available_points().tolist()
             msg = """
             - level: {level}
               score: {score}
@@ -336,10 +337,10 @@ class GameLoop(object):
                 state.last_command = command
                 if needs_board_advance:
                     state.total_steps += 1
-                    start_pts = game.current_points()
+                    start_pts = np.sum(game.current_points())
                     action_pts = game.execute_action(command)
                     game.advance_board()
-                    end_pts = game.current_points()
+                    end_pts = np.sum(game.current_points())
                     state.total_points += (end_pts - start_pts) + action_pts
                     self.record_frame()
                 else:
@@ -483,8 +484,8 @@ class GameLoop(object):
         else:
             output += "\n  Steps: {bold}{}{clear}".format(state.total_steps, **styles)
             output += "    Score: {bold}{}{clear}".format(state.total_points, **styles)
-            req_points = game.required_points()
-            frac = game.points_earned() / req_points if req_points > 0 else 1.0
+            req_points = np.sum(game.required_points())
+            frac = np.sum(game.points_earned()) / req_points if req_points > 0 else 1.0
             output += "    Power: {bold}{:0.0%}{clear}".format(frac, **styles)
             if state.edit_mode:
                 output += "\n\n{bold}*** EDIT {} ***{clear}".format(state.edit_mode, **styles)

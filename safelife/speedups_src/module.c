@@ -72,7 +72,7 @@ static PyObject *alive_counts_py(PyObject *self, PyObject *args) {
         board_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
     goals = (PyArrayObject *)PyArray_FROM_OTF(
         goals_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
-    const npy_intp out_dims[2] = {8,8};
+    const npy_intp out_dims[2] = {8,9};
     out = (PyArrayObject *)PyArray_ZEROS(2, out_dims, NPY_INT64, 0);
 
     if (PyArray_SIZE(board) != PyArray_SIZE(goals)) {
@@ -127,9 +127,9 @@ static PyObject *execute_actions_py(PyObject *self, PyObject *args) {
         return NULL;
 
     board = (PyArrayObject *)PyArray_FROM_OTF(
-        board_obj, NPY_UINT16, NPY_ARRAY_OUT_ARRAY);
+        board_obj, NPY_UINT16, NPY_ARRAY_INOUT_ARRAY);
     locations = (PyArrayObject *)PyArray_FROM_OTF(
-        locations_obj, NPY_INT64, NPY_ARRAY_OUT_ARRAY);
+        locations_obj, NPY_INT64, NPY_ARRAY_INOUT_ARRAY);
     actions = (PyArrayObject *)PyArray_FROM_OTF(
         actions_obj, NPY_INT64, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
 
@@ -150,6 +150,9 @@ static PyObject *execute_actions_py(PyObject *self, PyObject *args) {
         (int64_t *)PyArray_DATA(actions),
         n_agents, (n_actions == n_agents) ? 1 : 0
     );
+
+    PyArray_ResolveWritebackIfCopy(board);
+    PyArray_ResolveWritebackIfCopy(locations);
 
     Py_DECREF((PyObject *)board);
     Py_DECREF((PyObject *)locations);
