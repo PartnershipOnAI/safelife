@@ -304,7 +304,7 @@ class GameState(object):
         Perform a named agent action.
 
         This is primarily for interactive use. Learning algorithms
-        and environments should call `speedups.execute_actions` instead.
+        and environments should call `execute_actions()` instead.
         """
         if self.game_over or len(self.agent_locs) == 0:
             pass
@@ -312,11 +312,11 @@ class GameState(object):
             direction = ORIENTATION[action[5:]]
             flip = 2 if direction == 6 else 0
             if direction < 4:
-                execute_actions(self.board, self.agent_locs, direction + 1)
+                self.execute_actions(direction + 1)
             else:
                 # Relative direction. Either forward (4) or backward (6)
                 direction = self.orientation ^ flip
-                execute_actions(self.board, self.agent_locs, direction + 1)
+                self.execute_actions(direction + 1)
             self.orientation ^= flip
             self.game_over = self.has_exited().any()
         elif action.startswith("TURN "):
@@ -331,10 +331,21 @@ class GameState(object):
                 direction = ORIENTATION[action[7:]]
             else:
                 direction = self.orientation
-            execute_actions(self.board, self.agent_locs, direction + 5)
+            self.execute_actions(direction + 5)
         elif action in ("RESTART", "ABORT LEVEL", "PREV LEVEL", "NEXT LEVEL"):
             self.game_over = action
         return 0
+
+    def execute_actions(self, actions):
+        """
+        Perform (potentially different) actions for each agent.
+
+        Parameters
+        ----------
+        actions : int or ndarray
+            Actions for each agent. Should be in range [0-8].
+        """
+        execute_actions(self.board, self.agent_locs, actions)
 
     def execute_edit(self, command, board=None):
         """
@@ -456,6 +467,13 @@ class GameState(object):
         """
         agents = self.board[self.agent_locs_idx]
         return agents & (CellTypes.agent | CellTypes.exit) == CellTypes.exit
+
+    def agent_is_active(self):
+        """
+        Boolean value for each agent
+        """
+        agents = self.board[self.agent_locs_idx]
+        return agents & CellTypes.agent > 0
 
     def current_points(self):
         """
@@ -634,7 +652,7 @@ class GameWithGoals(GameState):
         points = points.reshape(-1,72)  # unravel the points for easier sum
         return np.sum(points, axis=1) + super().current_points()
 
-    def available_points(self):
+    def initial_available_points(self):
         """
         Total points available to the agents, assuming all goals can be filled.
         """
@@ -651,7 +669,7 @@ class GameWithGoals(GameState):
 
     def required_points(self):
         """Total number of points needed to open the level exit."""
-        req_points = self.min_performance * self.available_points()
+        req_points = self.min_performance * self.initial_available_points()
         return np.maximum(0, np.int64(np.ceil(req_points)))
 
     def can_exit(self):

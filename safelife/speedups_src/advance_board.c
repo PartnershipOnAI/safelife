@@ -180,7 +180,13 @@ void execute_actions(
             if (!(*p1)) {  // empty block. Add a life cell.
                 *p1 = ALIVE | DESTRUCTIBLE | (*p0 & COLORS);
             } else if (*p1 & DESTRUCTIBLE) {
-                *p1 = 0;
+                if (*p1 & AGENT) {
+                    // Destroyed agents instead turn into blocks.
+                    *p1 ^= AGENT | DESTRUCTIBLE;
+                    *p1 |= FROZEN;
+                } else {
+                    *p1 = 0;
+                }
             } else if (~*p0 & *p1 & PUSHABLE) {
                 // "shove" the block without moving
                 if (!(*p2)) {

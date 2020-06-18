@@ -36,6 +36,10 @@ class SafeLifeEnv(gym.Env):
 
         Note that if the level iterator has a `seed` method it will be called
         with a :class:`numpy.random.SeedSequence` object.
+    single_agent : bool
+        If True, the `step` function will return a single reward and
+        observation. If False, it will return separate rewards and observations
+        for each agent in the level.
     time_limit : int
         Maximum steps allowed per episode.
     remove_white_goals : bool
@@ -47,25 +51,11 @@ class SafeLifeEnv(gym.Env):
         Shape of the agent observation.
     """
 
-    metadata = {
-        'render.modes': ['ansi', 'rgb_array'],
-        'video.frames_per_second': 30
-    }
-    action_names = (
-        "NULL",
-        "MOVE UP",
-        "MOVE RIGHT",
-        "MOVE DOWN",
-        "MOVE LEFT",
-        "TOGGLE UP",
-        "TOGGLE RIGHT",
-        "TOGGLE DOWN",
-        "TOGGLE LEFT",
-    )
     game = None
 
     # The following are default parameters that can be overridden during
     # initialization.
+    single_agent = True
     time_limit = 1000
     remove_white_goals = True
     view_shape = (15, 15)
@@ -76,7 +66,7 @@ class SafeLifeEnv(gym.Env):
 
         load_kwargs(self, kwargs)
 
-        self.action_space = spaces.Discrete(len(self.action_names))
+        self.action_space = spaces.Discrete(9)
         if self.output_channels is None:
             self.observation_space = spaces.Box(
                 low=0, high=2**15,
@@ -107,13 +97,19 @@ class SafeLifeEnv(gym.Env):
             self.level_iterator.seed(seed.spawn(1)[0])
         return [seed.entropy]
 
-    def get_obs(self, board=None, goals=None, agent_loc=None):
+    def get_obs(self, board=None, goals=None, agent_locs=None):
         if board is None:
             board = self.game.board
         if goals is None:
             goals = self.game.goals
-        if agent_loc is None:
-            agent_loc = self.game.agent_loc
+        if agent_locs is None:
+            agent_locs = self.game.agent_locs
+        if self.single_agent:
+            if len(agent_locs) > 0:
+                agent_locs = agent_locs[:1]
+            else:
+                # Make default view centered at origin if there are no agents.
+                agent_locs = np.array([[0,0]])
 
         board = board.copy()
         goals = goals & CellTypes.rainbow_color
@@ -131,8 +127,10 @@ class SafeLifeEnv(gym.Env):
         board += (goals << 3)
 
         # And center the array on the agent.
-        board = recenter_view(
-            board, self.view_shape, agent_loc[::-1], self.game.exit_locs)
+        board = np.stack([
+            recenter_view(board, self.view_shape, x0, self.game.exit_locs)
+            for x0 in agent_locs
+        ])
 
         # If the environment specifies output channels, output a boolean array
         # with the channels as the third dimension. Otherwise output a bit
@@ -141,27 +139,41 @@ class SafeLifeEnv(gym.Env):
             shift = np.array(list(self.output_channels), dtype=np.uint16)
             board = (board[...,None] & (1 << shift)) >> shift
             board = board.astype(np.uint8)
+        if self.single_agent:
+            board = board[0]
         return board
 
-    def step(self, action):
+    def step(self, actions):
         assert self.game is not None, "Game state is not initialized."
-        action_name = self.action_names[action]
-        reward = self.game.execute_action(action_name)
+
+        self.game.execute_actions(actions)
         with set_rng(self.rng):
             self.game.advance_board()
-        new_game_value = self.game.current_points()
-        reward += new_game_value - self._old_game_value
-        self._old_game_value = new_game_value
-        self.episode_length += 1
-        self.episode_reward += reward
         self.game.update_exit_colors()
-        times_up = self.episode_length > self.time_limit
-        self.episode_completed = times_up or self.game.game_over
 
-        return self.get_obs(), reward, self.episode_completed, {
+        self.episode_length += 1
+        times_up = self.episode_length > self.time_limit
+
+        new_game_value = self.game.current_points()
+        reward = new_game_value - self._old_game_value
+        self._old_game_value = new_game_value
+        done = self.game.has_exited()
+        done |= np.all(~self.game.agent_is_active()) | times_up
+
+        if self.single_agent:
+            if len(reward) == 0:
+                reward = 0
+                done = True
+            else:
+                reward = reward[0]
+                done = done[0]
+
+        self.episode_reward += reward
+
+        return self.get_obs(), reward, done, {
             'board': self.game.board,
             'goals': self.game.goals,
-            'agent_loc': self.game.agent_loc,
+            'agent_locs': self.game.agent_locs,
             'times_up': times_up,
             'episode': {
                 'length': self.episode_length,
@@ -176,7 +188,6 @@ class SafeLifeEnv(gym.Env):
         self._old_game_value = self.game.current_points()
         self.episode_length = 0
         self.episode_reward = 0
-        self.episode_completed = False
         return self.get_obs()
 
     def render(self, mode='ansi'):
