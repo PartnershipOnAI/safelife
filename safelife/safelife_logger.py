@@ -213,8 +213,7 @@ class SafeLifeLogger(BaseLogger):
             Episode data to log. Assumed to contain 'reward' and 'length' keys,
             as is returned by the ``SafeLifeEnv.step()`` function.
         history : dict
-            Trajectory of the episode. Should contain keys 'board', 'goals',
-            and 'orientations'.
+            Trajectory of the episode. Should contain keys 'board' and 'goals'.
         training : bool
             Whether to log output as a training or testing episode.
         """
@@ -242,12 +241,18 @@ class SafeLifeLogger(BaseLogger):
 
         # First, log to screen.
         log_data = info.copy()
-        log_data.setdefault('reward', 0)
         log_data.setdefault('length', 0)
+        reward = np.array(log_data.get('reward', 0.0))
+        reward_possible = game.initial_available_points()
+        required_points = game.required_points()
+        if not reward.shape:
+            # convert to scalars
+            reward_possible = np.sum(reward_possible[:1])
+            required_points = np.sum(required_points[:1])
         log_data['level_name'] = game.title
-        log_data['reward'] = float(log_data['reward'])
-        log_data['reward_possible'] = float(game.initial_available_points)
-        log_data['reward_needed'] = game.required_points()
+        log_data['reward'] = reward.tolist()
+        log_data['reward_possible'] = reward_possible.tolist()
+        log_data['reward_needed'] = required_points.tolist()
         log_data['time'] = datetime.utcnow().isoformat()
         logger.info(console_msg.format(**log_data, **self.cumulative_stats))
 
@@ -265,9 +270,8 @@ class SafeLifeLogger(BaseLogger):
         # Log to tensorboard.
         tb_data = info.copy()
         # Use a normalized reward
-        tb_data['reward_frac'] = (
-            log_data['reward'] / max(log_data['reward_possible'], 1))
         tb_data.pop('reward')
+        tb_data['reward_frac'] = (reward / np.maximum(reward_possible, 1)).tolist()
         if training:
             tb_data['total_episodes'] = self.cumulative_stats['training_episodes']
             tb_data['reward_frac_needed'] = game.min_performance
@@ -428,7 +432,6 @@ class SafeLifeLogWrapper(gym.Wrapper):
             game = self.env.game
             self._episode_history['board'].append(game.board)
             self._episode_history['goals'].append(game.goals)
-            self._episode_history['orientation'].append(game.orientation)
 
         if done and not self._did_log_episode and self.logger is not None:
             self._did_log_episode = True
@@ -446,7 +449,6 @@ class SafeLifeLogWrapper(gym.Wrapper):
         self._episode_history = {
             'board': [],
             'goals': [],
-            'orientation': []
         }
 
         return observation

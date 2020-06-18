@@ -68,31 +68,33 @@ class MovementBonusWrapper(BaseWrapper):
         obs, reward, done, info = self.env.step(action)
 
         # Calculate the movement bonus
-        p0 = self.game.agent_loc
+        p0 = self.game.agent_locs
         n = self.movement_bonus_period
         if len(self._prior_positions) >= n:
             p1 = self._prior_positions[-n]
-            dist = abs(p0[0]-p1[0]) + abs(p0[1]-p1[1])
+            dist = np.sum(np.abs(p0-p1), axis=-1)
         elif len(self._prior_positions) > 0:
             p1 = self._prior_positions[0]
-            dist = abs(p0[0]-p1[0]) + abs(p0[1]-p1[1])
+            dist = np.sum(np.abs(p0-p1), axis=-1)
             # If we're at the beginning of an episode, treat the
             # agent as if it were moving continuously before entering.
             dist += n - len(self._prior_positions)
         else:
             dist = n
         speed = dist / n
+        if self.single_agent:  # convert to a scalar
+            speed = np.sum(speed[:1])
         reward += self.movement_bonus * speed**self.movement_bonus_power
         if self.as_penalty:
             reward -= self.movement_bonus
-        self._prior_positions.append(self.game.agent_loc)
+        self._prior_positions.append(self.game.agent_locs)
 
         return obs, reward, done, info
 
     def reset(self):
         obs = self.env.reset()
         self._prior_positions = queue.deque(
-            [self.game.agent_loc], self.movement_bonus_period)
+            [self.game.agent_locs], self.movement_bonus_period)
         return obs
 
 
@@ -101,8 +103,11 @@ class ContinuingEnv(Wrapper):
     Change to a continuing (rather than episodic) environment.
 
     The episode only ever ends if the 'times_up' flag gets set to True.
+
+    Only suitable for single-agent environments.
     """
     def reset(self):
+        assert self.single_agent, "ContinuingEnv requires single_agent = True"
         return self.env.reset()
 
     def step(self, action):
@@ -118,8 +123,8 @@ class ExtraExitBonus(BaseWrapper):
 
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
-        if done and not info['times_up']:
-            reward += call(self.bonus) * self.episode_reward
+        if not info['times_up']:
+            reward += done * call(self.bonus) * self.episode_reward
         return obs, reward, done, info
 
 

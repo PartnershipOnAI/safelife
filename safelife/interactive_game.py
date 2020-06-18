@@ -194,7 +194,7 @@ class GameLoop(object):
             return
         with open(self.logfile, 'a') as logfile:
             p1 = state.game.points_earned().tolist()
-            p2 = state.game.available_points().tolist()
+            p2 = state.game.initial_available_points().tolist()
             msg = """
             - level: {level}
               score: {score}
