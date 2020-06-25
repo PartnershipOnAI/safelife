@@ -157,8 +157,7 @@ class SafeLifeEnv(gym.Env):
         new_game_value = self.game.current_points()
         reward = new_game_value - self._old_game_value
         self._old_game_value = new_game_value
-        done = self.game.has_exited()
-        done |= np.all(~self.game.agent_is_active()) | times_up
+        done = ~self.game.agent_is_active() | times_up
 
         if self.single_agent:
             if len(reward) == 0:
@@ -168,6 +167,7 @@ class SafeLifeEnv(gym.Env):
                 reward = reward[0]
                 done = done[0]
 
+        reward = np.float32(reward)
         self.episode_reward += reward
 
         return self.get_obs(), reward, done, {

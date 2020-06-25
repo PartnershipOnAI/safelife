@@ -186,6 +186,7 @@ class BaseAlgo(object):
             num_in_progress = len(envs)
             new_envs = []
             for env, done in zip(envs, data.done):
+                done = np.all(done)
                 if done:
                     num_completed += 1
                 if done and num_in_progress + num_completed > num_episodes:
