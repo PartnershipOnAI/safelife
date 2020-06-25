@@ -23,6 +23,19 @@ COLORS = {
     'white': CellTypes.rainbow_color
 }
 
+AGENT_PROPERTIES = {
+    "default": CellTypes.player,
+    "alive": CellTypes.alive,
+    "pushable": CellTypes.pushable,
+    "pullable": CellTypes.pullable,
+    "destructible": CellTypes.destructible,
+    "frozen": CellTypes.frozen,
+    "preserving": CellTypes.preserving,
+    "inhibiting": CellTypes.inhibiting,
+    "spawning": CellTypes.spawning,
+    **COLORS
+}
+
 
 def make_partioned_regions(shape, alpha=1.0, max_regions=5, min_regions=2):
     """
@@ -471,10 +484,74 @@ def populate_region(mask, layer_params):
     return board, goals
 
 
+def add_agents_and_exit(board, regions, agents=['default black']):
+    """
+    Add agents and exits to the board.
+
+    This modifies both the board and regions in place.
+
+    Parameters
+    ----------
+    board : ndarray
+    regions : ndarray
+    agents : list
+        Each entry should contain a string of agent properties.
+        Both the entries themselves and the entire list can be randomized.
+
+    Returns
+    -------
+    agent_locs : ndarray
+        Location of agents placed on the board.
+    """
+    agent_vals = []
+    for agent_str in _fix_random_values(agents):
+        agent_str = _fix_random_values(agent_str)
+        if agent_str is None:
+            continue
+        agent_val = CellTypes.agent
+        for key in agent_str.split():
+            if key not in AGENT_PROPERTIES:
+                print("Invalid agent property '%s'" % key)
+            else:
+                agent_val |= AGENT_PROPERTIES[key]
+        agent_vals.append(agent_val)
+
+    if not agent_vals:
+        return np.zeros((0,2), dtype=int)
+
+    # Add agents to the board
+    zero_reg = (regions == 0)
+    zero_idx = np.array(np.nonzero(zero_reg)).T
+    # ensure that there are not more agents than places to put them:
+    agent_vals = agent_vals[:len(zero_idx)]
+    agent_locs = zero_idx[
+        get_rng().choice(len(zero_idx), len(agent_vals), replace=False)]
+    board[tuple(agent_locs.T)] = agent_vals
+
+    # Find the location that's as far away from agents as possible while still
+    # in the buffer region.
+    row_dist = np.abs(np.arange(board.shape[0])[:, np.newaxis] - agent_locs[:,0])
+    col_dist = np.abs(np.arange(board.shape[1])[:, np.newaxis] - agent_locs[:,1])
+    row_dist = np.sum(np.minimum(row_dist, board.shape[0] - row_dist), axis=-1)
+    col_dist = np.sum(np.minimum(col_dist, board.shape[1] - col_dist), axis=-1)
+    dist = (row_dist[:, np.newaxis] + col_dist[np.newaxis, :]) * zero_reg
+    k = np.argmax(dist)
+    exit_loc = k // board.shape[1], k % board.shape[1]
+    board[exit_loc] = CellTypes.level_exit | CellTypes.color_r
+
+    # Ensure that the player and exit aren't touching any other region
+    all_locs = np.append(agent_locs, [exit_loc], axis=0)
+    n = np.array([[-1,0,1,-1,0,1,-1,0,1],[-1,-1,-1,0,0,0,1,1,1]]).T
+    new_locs = (all_locs[:,np.newaxis] + n).reshape(-1, 2) % board.shape
+    regions[tuple(new_locs.T)] = -1
+
+    return agent_locs
+
+
 def gen_game(
         board_shape=(25,25), min_performance=-1, partitioning={},
         starting_region=None, later_regions=None, buffer_region=None,
-        named_regions={}, **etc):
+        named_regions={}, agents=['default black'], **etc):
     """
     Randomly generate a new SafeLife game board.
 
@@ -521,6 +598,12 @@ def gen_game(
         A dictionary of region types to region parameters. Each set of region
         parameters should consist of a list of layer parameters. See
         :func:`populate_region` for more details.
+    agents : list
+        Types of agents to add to the board, each expressed as a string.
+        For example, 'default black' produces the default black agent.
+        Other colors or properties can be added as well. As another example,
+        'red frozen preserving' will create a red agent that preserves nearby
+        life cells, but doesn't prevent new adjacent life cells from growing.
 
     Returns
     -------
@@ -535,26 +618,7 @@ def gen_game(
     goals = np.zeros(board_shape, dtype=np.uint16)
 
     # Create locations for the player and the exit
-    zero_reg = regions == 0
-    i, j = np.nonzero(zero_reg)
-    k1 = get_rng().choice(len(i))
-    i1, j1 = i[k1], j[k1]
-    board[i1, j1] = CellTypes.player
-    # Make the exit as far away from the player as possible
-    row_dist = np.abs(np.arange(board_shape[0])[:, np.newaxis] - i1)
-    col_dist = np.abs(np.arange(board_shape[1])[np.newaxis, :] - j1)
-    row_dist = np.minimum(row_dist, board_shape[0] - row_dist)
-    col_dist = np.minimum(col_dist, board_shape[1] - col_dist)
-    dist = (row_dist + col_dist) * zero_reg
-    k2 = np.argmax(dist)
-    i2 = k2 // board_shape[1]
-    j2 = k2 % board_shape[1]
-    board[i2, j2] = CellTypes.level_exit | CellTypes.color_r
-
-    # Ensure that the player and exit aren't touching any other region
-    n = np.array([[-1,-1,-1],[0,0,0],[1,1,1]])
-    regions[(i1+n) % board.shape[0], (j1+n.T) % board.shape[1]] = -1
-    regions[(i2+n) % board.shape[0], (j2+n.T) % board.shape[1]] = -1
+    agent_locs = add_agents_and_exit(board, regions, agents)
 
     # and fill in the regions...
     for k in np.unique(regions)[2:]:
@@ -587,7 +651,7 @@ def gen_game(
     game.deserialize({
         'board': board,
         'goals': goals,
-        'agent_loc': (j[k1], i[k1]),
+        'agent_locs': agent_locs,
         'min_performance': min_performance,
         'orientation': 1,
     })
