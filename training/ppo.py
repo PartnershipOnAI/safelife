@@ -1,5 +1,6 @@
 import logging
 import numpy as np
+from collections import defaultdict
 
 import torch
 import torch.optim as optim
@@ -74,7 +75,7 @@ class PPO(BaseAlgo):
         for policy, env in zip(policies, envs):
             action = get_rng().choice(len(policy), p=policy)
             obs, reward, done, info = env.step(action)
-            if done:
+            if np.all(done):
                 obs = env.reset()
             env.last_obs = obs
             actions.append(action)
@@ -207,3 +208,155 @@ class PPO(BaseAlgo):
 
             if self.testing_envs and num_steps >= next_test:
                 self.run_episodes(self.testing_envs)
+
+
+class PPO_MultiAgent(PPO):
+    """
+    Similar the PPO class, but the environments are expected to return arrays
+    of observations, rewards, and done flags for each agent.
+    """
+    @named_output('states actions rewards done obs active policies values agent_ids')
+    def take_one_step(self, envs):
+        """
+        Take a single step in each of the environments.
+
+        Note that when you have multiple agents, the number of output states
+        (really, observations) won't match the number of environments. There
+        won't even be the same number of observations per environment, since
+        different environments can have different numbers of agents and some
+        agents can leave an environment before others.
+
+        Pseudo-code:
+
+        for each env:
+            get list of observations
+            get list of active agents
+        calculte all policies / actions
+        split action for each env
+        """
+        states = []
+        active = []
+        counts = [0]
+        for env in envs:
+            if hasattr(env, 'last_obs'):
+                obs = env.last_obs
+                done = env.last_done
+            else:
+                obs = env.reset()
+                done = np.tile(False, len(obs))
+                env.num_resets = 0
+            states.append(obs)
+            active.append(~done)
+            counts.append(len(obs))
+
+        states = np.concatenate(states)
+        active = np.concatenate(active)
+
+        tensor_states = self.tensor(states, torch.float32)
+        values, policies = self.model(tensor_states)
+        values = values.detach().cpu().numpy()
+        policies = policies.detach().cpu().numpy()
+        actions = [get_rng().choice(len(policy), p=policy) for policy in policies]
+
+        rewards = []
+        dones = []
+        agent_id = []
+        next_obs = []
+
+        for i, env in enumerate(envs):
+            k1, k2 = counts[i:i+2]
+            obs, reward, done, info = env.step(actions[k1:k2])
+            next_obs += list(obs)
+            rewards += list(reward)
+            dones += list(done)
+            agent_id += [(i, env.num_resets, j) for j in range(len(obs))]
+
+            if np.all(done):
+                obs = env.reset()
+                done = np.tile(False, len(obs))
+                env.num_resets += 1
+            env.last_obs = obs
+            env.last_done = done
+
+        return (
+            states, actions, rewards, dones,
+            next_obs, active, policies, values, agent_id
+        )
+
+    @named_output('states actions action_prob returns advantages values')
+    def gen_training_batch(self, steps_per_env):
+        """
+        Run each environment a number of steps and calculate advantages.
+
+        Note that the output is flat, i.e., a single list of observations,
+        actions, etc.
+
+        ...should test to see how much slower this is than the old function.
+        There are now a bunch of loops and dictionary lookups where we
+        previously had numpy functions, but that's *probably* insignificant
+        compared to the model evaluation.
+
+        Parameters
+        ----------
+        steps_per_env : int
+            Number of steps to take per environment.
+        """
+        assert steps_per_env > 0
+
+        trajectories = defaultdict(lambda: {
+            'states': [],
+            'actions': [],
+            'action_prob': [],
+            'rewards': [],
+            'values': [],
+            'final_value': 0.0,
+        })
+
+        # Take a bunch of steps, and put them into trajectories associated with
+        # each distinct agent
+        for _ in range(steps_per_env):
+            step = self.take_one_step(self.training_envs)
+            for k, agent_id in enumerate(step.agent_ids):
+                if step.active[k]:
+                    t = trajectories[agent_id]
+                    action = step.actions[k]
+                    t['states'].append(step.states[k])
+                    t['actions'].append(action)
+                    t['action_prob'].append(step.policies[k, action])
+                    t['rewards'].append(step.rewards[k])
+                    t['values'].append(step.values[k])
+
+        # For the final step in each environment, also calculate the value
+        # function associated with the next observation
+        tensor_states = self.tensor(step.obs, torch.float32)
+        vals = self.model(tensor_states)[0].detach().cpu().numpy()
+        for k, agent_id in enumerate(step.agent_ids):
+            if not step.done[k]:
+                t = trajectories[agent_id]
+                t['final_value'] = vals[k]
+
+        # Calculate the discounted rewards for each trajectory
+        gamma = self.gamma
+        lmda = self.lmda
+        for t in trajectories.values():
+            val0 = np.array(t['values'])
+            val1 = np.append(t['values'][1:], t['final_value'])
+            rewards = returns = np.array(t['rewards'])
+            advantages = rewards + gamma * val1 - val0
+            returns[-1] += gamma * t['final_value']
+            for i in range(len(rewards) - 2, -1, -1):
+                returns[i] += gamma * returns[i+1]
+                advantages[i] += lmda * advantages[i+1]
+            t['returns'] = returns
+            t['advantages'] = advantages
+
+        self.num_steps += steps_per_env * len(self.training_envs)
+
+        def t(label, dtype=torch.float32):
+            x = np.concatenate([d[label] for d in trajectories.values()])
+            return torch.as_tensor(x, device=self.compute_device, dtype=dtype)
+
+        return (
+            t('states'), t('actions', torch.int64), t('action_prob'),
+            t('returns'), t('advantages'), t('values')
+        )
