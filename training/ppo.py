@@ -162,11 +162,14 @@ class PPO(BaseAlgo):
         return entropy, policy_loss + value_loss * self.vf_coef + entropy_loss
 
     def train_batch(self, batch):
-        idx = np.arange(len(batch.states))
+        num_samples = len(batch.states)
+        idx = np.arange(num_samples)
+        splits = np.linspace(
+            0, num_samples, self.num_minibatches+2, dtype=int)[1:-1]
 
         for _ in range(self.epochs_per_batch):
             get_rng().shuffle(idx)
-            for k in idx.reshape(self.num_minibatches, -1):
+            for k in np.split(idx, splits):
                 entropy, loss = self.calculate_loss(
                     batch.states[k], batch.actions[k], batch.action_prob[k],
                     batch.values[k], batch.returns[k], batch.advantages[k])
@@ -247,7 +250,7 @@ class PPO_MultiAgent(PPO):
                 env.num_resets = 0
             states.append(obs)
             active.append(~done)
-            counts.append(len(obs))
+            counts.append(counts[-1] + len(obs))
 
         states = np.concatenate(states)
         active = np.concatenate(active)

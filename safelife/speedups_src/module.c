@@ -141,7 +141,7 @@ static PyObject *execute_actions_py(PyObject *self, PyObject *args) {
         PY_VAL_ERROR("Board must be at least 3x3.");
     n_agents = PyArray_SIZE(locations) / 2;
     n_actions = PyArray_SIZE(actions);
-    if (n_actions != n_agents && n_actions > 1)
+    if (n_actions != n_agents && n_actions != 1)
         PY_VAL_ERROR("Locations should be shape (n_agent, 2).");
 
     execute_actions(
