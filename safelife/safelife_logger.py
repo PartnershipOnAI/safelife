@@ -271,7 +271,8 @@ class SafeLifeLogger(BaseLogger):
         tb_data = info.copy()
         # Use a normalized reward
         tb_data.pop('reward')
-        tb_data['reward_frac'] = (reward / np.maximum(reward_possible, 1)).tolist()
+        tb_data['reward_frac'] = (
+            np.sum(reward) / np.maximum(np.sum(reward_possible), 1))
         if training:
             tb_data['total_episodes'] = self.cumulative_stats['training_episodes']
             tb_data['reward_frac_needed'] = game.min_performance
@@ -433,7 +434,7 @@ class SafeLifeLogWrapper(gym.Wrapper):
             self._episode_history['board'].append(game.board)
             self._episode_history['goals'].append(game.goals)
 
-        if done and not self._did_log_episode and self.logger is not None:
+        if np.all(done) and not self._did_log_episode and self.logger is not None:
             self._did_log_episode = True
             self.logger.log_episode(
                 game, info.get('episode', {}),
