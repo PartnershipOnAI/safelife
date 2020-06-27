@@ -74,7 +74,10 @@ def safelife_env_factory(
                 CellTypes.exit_bit,
                 CellTypes.color_bit + 0,  # red
                 CellTypes.color_bit + 1,  # green
-                CellTypes.color_bit + 5,  # blue goal
+                CellTypes.color_bit + 2,  # blue
+                CellTypes.color_bit + 18,  # blue goal
+                CellTypes.orientation_bit + 0,
+                CellTypes.orientation_bit + 1,
             ))
 
         if not testing:

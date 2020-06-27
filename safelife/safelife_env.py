@@ -55,7 +55,7 @@ class SafeLifeEnv(gym.Env):
 
     # The following are default parameters that can be overridden during
     # initialization.
-    single_agent = True
+    single_agent = False
     time_limit = 1000
     remove_white_goals = True
     view_shape = (15, 15)
@@ -71,7 +71,7 @@ class SafeLifeEnv(gym.Env):
             self.observation_space = spaces.Box(
                 low=0, high=2**15,
                 shape=self.view_shape,
-                dtype=np.uint16,
+                dtype=np.uint32,
             )
         else:
             self.observation_space = spaces.Box(
@@ -111,7 +111,7 @@ class SafeLifeEnv(gym.Env):
                 # Make default view centered at origin if there are no agents.
                 agent_locs = np.array([[0,0]])
 
-        board = board.copy()
+        board = board.astype(np.uint32)
         goals = goals & CellTypes.rainbow_color
 
         # Get rid of white cells in the goals.
@@ -120,11 +120,8 @@ class SafeLifeEnv(gym.Env):
         if self.remove_white_goals:
             goals *= (goals != CellTypes.rainbow_color)
 
-        # Remove orientation bit
-        board &= ~CellTypes.orientation_mask
-
         # Combine board and goals into one array
-        board += (goals << 3)
+        board += (goals.astype(np.uint32) << 16)
 
         # And center the array on the agent.
         board = np.stack([
@@ -136,7 +133,7 @@ class SafeLifeEnv(gym.Env):
         # with the channels as the third dimension. Otherwise output a bit
         # array.
         if self.output_channels:
-            shift = np.array(list(self.output_channels), dtype=np.uint16)
+            shift = np.array(list(self.output_channels), dtype=np.uint32)
             board = (board[...,None] & (1 << shift)) >> shift
             board = board.astype(np.uint8)
         if self.single_agent:
