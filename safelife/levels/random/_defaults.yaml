@@ -8,6 +8,8 @@ board_shape: [26,26]
 min_performance:
   uniform: [-0.5, 0.5]
 
+agents: ['default black']
+
 partitioning:
   # The board is partitioned into distinct regions.
   # Each region has a two-cell buffer surrounding it, so any pattern that's

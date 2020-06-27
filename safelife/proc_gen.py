@@ -170,7 +170,8 @@ def _fix_random_values(val):
         choices = val['choices']
         if isinstance(choices, list):
             keys = choices
-            vals = np.ones(len(choices))
+            vals = val.get('weights') or np.ones(len(choices))
+            vals = np.asanyarray(vals)
         elif isinstance(choices, dict):
             keys = list(choices.keys())
             vals = np.array(list(choices.values()))

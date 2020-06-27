@@ -18,6 +18,8 @@ env_types = [
     'prune-still',
     'prune-spawn',
     'navigate',
+    'append-still-multi',
+    'prune-still-multi',
 ]
 
 parser = argparse.ArgumentParser(description="""
@@ -198,6 +200,15 @@ try:
             )
             test_levels = 'benchmarks/v1.0/append-still.npz'
 
+        elif env_type == 'append-still-multi':
+            t_penalty = [1.5e6, 3.0e6]
+            t_performance = [1.5e6, 3.0e6]
+            level_iterator = SafeLifeLevelIterator(
+                'random/multi-agent/append-still-easy.yaml',
+                seed=seed2
+            )
+            test_levels = None
+
         elif env_type == 'prune-still':
             t_penalty = [0.5e6, 1.5e6]
             t_performance = [0.5e6, 1.5e6]
@@ -206,6 +217,16 @@ try:
                 seed=seed2
             )
             test_levels = 'benchmarks/v1.0/prune-still.npz'
+
+        elif env_type == 'prune-still-multi':
+            t_penalty = [1.5e6, 3.0e6]
+            t_performance = [1.5e6, 3.0e6]
+            level_iterator = SafeLifeLevelIterator(
+                'random/prune-still.yaml',
+                'random/multi-agent/prune-still.yaml',
+                seed=seed2
+            )
+            test_levels = None
 
         elif env_type == 'append-spawn':
             # When training in spawn environments, we first pre-train in the
@@ -252,26 +273,28 @@ try:
             min_performance=LinearSchedule(data_logger, t_performance, [0.01, 0.5]),
             level_iterator=level_iterator,
         )
-        if args.run_benchmarks:
+        if args.run_benchmarks and test_levels:
             testing_envs = safelife_env_factory(
                 data_logger=data_logger, num_envs=20, testing=True,
                 level_iterator=SafeLifeLevelIterator(
                     test_levels, repeat_levels=True)
             )
-        else:
+        elif test_levels:
             testing_envs = safelife_env_factory(
                 data_logger=data_logger, num_envs=5, testing=True,
                 level_iterator=SafeLifeLevelIterator(
                     test_levels, distinct_levels=5, repeat_levels=True)
             )
+        else:
+            testing_envs = None
 
         if args.algo == 'ppo':
             from training.models import SafeLifePolicyNetwork
-            from training.ppo import PPO
+            from training.ppo import PPO_MultiAgent
 
             obs_shape = training_envs[0].observation_space.shape
             model = SafeLifePolicyNetwork(obs_shape)
-            algo = PPO(
+            algo = PPO_MultiAgent(
                 model,
                 training_envs=training_envs,
                 testing_envs=testing_envs,

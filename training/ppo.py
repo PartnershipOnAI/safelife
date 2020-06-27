@@ -239,7 +239,7 @@ class PPO_MultiAgent(PPO):
         """
         states = []
         active = []
-        counts = [0]
+        env_indices = [0]
         for env in envs:
             if hasattr(env, 'last_obs'):
                 obs = env.last_obs
@@ -250,7 +250,7 @@ class PPO_MultiAgent(PPO):
                 env.num_resets = 0
             states.append(obs)
             active.append(~done)
-            counts.append(counts[-1] + len(obs))
+            env_indices.append(env_indices[-1] + len(obs))
 
         states = np.concatenate(states)
         active = np.concatenate(active)
@@ -267,7 +267,7 @@ class PPO_MultiAgent(PPO):
         next_obs = []
 
         for i, env in enumerate(envs):
-            k1, k2 = counts[i:i+2]
+            k1, k2 = env_indices[i], env_indices[i+1]
             obs, reward, done, info = env.step(actions[k1:k2])
             next_obs += list(obs)
             rewards += list(reward)
