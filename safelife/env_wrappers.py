@@ -60,7 +60,7 @@ class MovementBonusWrapper(BaseWrapper):
         the level exit.
     """
     movement_bonus = 0.1
-    movement_bonus_power = 0.01
+    movement_bonus_power = 1e-100
     movement_bonus_period = 4
     as_penalty = True
 
@@ -87,14 +87,14 @@ class MovementBonusWrapper(BaseWrapper):
         reward += self.movement_bonus * speed**self.movement_bonus_power
         if self.as_penalty:
             reward -= self.movement_bonus
-        self._prior_positions.append(self.game.agent_locs)
+        self._prior_positions.append(self.game.agent_locs.copy())
 
         return obs, reward, done, info
 
     def reset(self):
         obs = self.env.reset()
         self._prior_positions = queue.deque(
-            [self.game.agent_locs], self.movement_bonus_period)
+            [self.game.agent_locs.copy()], self.movement_bonus_period)
         return obs
 
 

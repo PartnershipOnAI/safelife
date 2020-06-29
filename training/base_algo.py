@@ -33,7 +33,6 @@ class BaseAlgo(object):
         checkpoint. This should be overridden by subclasses.
         Note that this implicitly contains ``num_steps``.
     """
-    checkpoint_directory = None
     data_logger = None
 
     num_steps = 0
@@ -52,7 +51,7 @@ class BaseAlgo(object):
 
     @checkpoint_directory.setter
     def checkpoint_directory(self, value):
-        self,_checkpoint_directory = value
+        self._checkpoint_directory = value
 
     def get_all_checkpoints(self):
         """
@@ -119,6 +118,8 @@ class BaseAlgo(object):
             path = checkpoints and checkpoints[-1]
         if not path or not os.path.exists(path):
             return
+
+        logger.info("Loading checkpoint: %s", path)
 
         if torch.cuda.is_available():
             checkpoint = torch.load(path)
