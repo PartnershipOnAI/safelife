@@ -101,12 +101,10 @@ def _load_files(paths):
 def _game_from_data(file_name, data_type, data, seed=None):
     if data_type == "procgen":
         with set_rng(np.random.default_rng(seed)):
-            named_regions = _default_params['named_regions'].copy()
-            named_regions.update(data.get('named_regions', {}))
-            data2 = _default_params.copy()
-            data2.update(**data)
-            data2['named_regions'] = named_regions
-            game = gen_game(**data2)
+            data = {**_default_params, **data}
+            for key in ('named_regions', 'agent_types'):
+                data[key] = {**_default_params[key], **data[key]}
+            game = gen_game(**data)
     else:
         game = SafeLifeGame.loaddata(data)
     game.file_name = file_name

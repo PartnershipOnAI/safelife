@@ -24,7 +24,6 @@ COLORS = {
 }
 
 AGENT_PROPERTIES = {
-    "default": CellTypes.player,
     "alive": CellTypes.alive,
     "pushable": CellTypes.pushable,
     "pullable": CellTypes.pullable,
@@ -33,7 +32,12 @@ AGENT_PROPERTIES = {
     "preserving": CellTypes.preserving,
     "inhibiting": CellTypes.inhibiting,
     "spawning": CellTypes.spawning,
-    **COLORS
+}
+
+DEFAULT_AGENT = {
+    'color': 'black',
+    'flags': ['preserving', 'inhibiting'],
+    'points_table': SafeLifeGame.default_points_table,
 }
 
 
@@ -485,7 +489,7 @@ def populate_region(mask, layer_params):
     return board, goals
 
 
-def add_agents_and_exit(board, regions, agents=['default black']):
+def add_agents_and_exit(board, regions, agents, agent_types):
     """
     Add agents and exits to the board.
 
@@ -495,30 +499,46 @@ def add_agents_and_exit(board, regions, agents=['default black']):
     ----------
     board : ndarray
     regions : ndarray
-    agents : list
-        Each entry should contain a string of agent properties.
-        Both the entries themselves and the entire list can be randomized.
+    agents : [str]
+        List of agent names, each name corresponding to one of the types in
+        agent_types. Both the names themselves and the entire list can be
+        randomized.
+    agent_types : dict
+        Map of agent names to agent properties. Properties can include 'color'
+        (black, red, green, blue, magenta, cyan, or white), 'flags' (a list of
+        strings), and 'points_table' (a 8x9 matrix). See
+        "levels/random/_defaults.yaml" for an example.
 
     Returns
     -------
     agent_locs : ndarray
         Location of agents placed on the board.
+    points_table : ndarray
+        Points table for this agent.
     """
     agent_vals = []
-    for agent_str in _fix_random_values(agents):
-        agent_str = _fix_random_values(agent_str)
-        if agent_str is None:
+    point_tables = []
+    agent_types = {'default': DEFAULT_AGENT, **agent_types}
+    for agent_type in _fix_random_values(agents):
+        agent_type = _fix_random_values(agent_type)
+        if agent_type not in agent_types:
             continue
-        agent_val = CellTypes.agent
-        for key in agent_str.split():
-            if key not in AGENT_PROPERTIES:
-                print("Invalid agent property '%s'" % key)
+        agent = {**DEFAULT_AGENT, **agent_types[agent_type]}
+        agent_val = CellTypes.agent | CellTypes.frozen
+        if agent['color'] in COLORS:
+            agent_val |= COLORS[agent['color']]
+        else:
+            logger.error("Invalid agent color: '%s'", agent['color'])
+        for flag in agent['flags']:
+            if flag in AGENT_PROPERTIES:
+                agent_val |= AGENT_PROPERTIES[flag]
             else:
-                agent_val |= AGENT_PROPERTIES[key]
+                logger.error("Invalid agent property '%s'", flag)
         agent_vals.append(agent_val)
+        point_tables.append(agent['points_table'])
 
     if not agent_vals:
-        return np.zeros((0,2), dtype=int)
+        return np.zeros((0,2), dtype=int), np.zeros((0,8,9), dtype=int)
 
     # Add agents to the board
     zero_reg = (regions == 0)
@@ -546,13 +566,13 @@ def add_agents_and_exit(board, regions, agents=['default black']):
     new_locs = (all_locs[:,np.newaxis] + n).reshape(-1, 2) % board.shape
     regions[tuple(new_locs.T)] = -1
 
-    return agent_locs
+    return agent_locs, point_tables
 
 
 def gen_game(
         board_shape=(25,25), min_performance=-1, partitioning={},
         starting_region=None, later_regions=None, buffer_region=None,
-        named_regions={}, agents=['default black'], **etc):
+        named_regions={}, agents=['default'], agent_types={}, **etc):
     """
     Randomly generate a new SafeLife game board.
 
@@ -601,10 +621,11 @@ def gen_game(
         :func:`populate_region` for more details.
     agents : list
         Types of agents to add to the board, each expressed as a string.
-        For example, 'default black' produces the default black agent.
-        Other colors or properties can be added as well. As another example,
-        'red frozen preserving' will create a red agent that preserves nearby
-        life cells, but doesn't prevent new adjacent life cells from growing.
+    agent_types : dict
+        Map of agent names to agent properties. Properties can include 'color'
+        (black, red, green, blue, magenta, cyan, or white), 'flags' (a list of
+        strings), and 'points_table' (a 8x9 matrix). See
+        "levels/random/_defaults.yaml" for an example.
 
     Returns
     -------
@@ -619,7 +640,8 @@ def gen_game(
     goals = np.zeros(board_shape, dtype=np.uint16)
 
     # Create locations for the player and the exit
-    agent_locs = add_agents_and_exit(board, regions, agents)
+    agent_locs, points_table = add_agents_and_exit(
+        board, regions, agents, agent_types)
 
     # and fill in the regions...
     for k in np.unique(regions)[2:]:
@@ -654,6 +676,7 @@ def gen_game(
         'goals': goals,
         'agent_locs': agent_locs,
         'min_performance': min_performance,
+        'points_table': points_table,
         'orientation': 1,
     })
     return game

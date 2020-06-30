@@ -544,7 +544,7 @@ class GameWithGoals(GameState):
     min_performance = -1
 
     # TODO: make a different point table for each color agent
-    default_point_table = np.array([[
+    default_points_table = np.array([
         # k   r   g   y   b   m   c   w  empty
         [+0, -1, +0, +0, +0, +0, +0, +0, 0],  # black / no goal
         [-3, +3, -3, +0, -3, +0, -3, -3, 0],  # red goal
@@ -554,15 +554,15 @@ class GameWithGoals(GameState):
         [-3, +3, -3, +0, -3, +5, -3, -3, 0],  # magenta goal
         [+3, -3, +3, +0, +3, +0, +5, +3, 0],  # cyan goal
         [+0, -1, +0, +0, +0, +0, +0, +0, 0],  # white / rainbow goal
-    ]] * 8)
-    default_point_table.setflags(write=False)
+    ])
+    default_points_table.setflags(write=False)
 
     def make_default_board(self, board_size):
         super().make_default_board(board_size)
         self.goals = np.zeros_like(self.board)
         self._needs_new_counts = True
         self.setup_initial_counts()
-        self.update_points_table()
+        self.reset_points_table()
 
     def serialize(self):
         data = super().serialize()
@@ -581,7 +581,7 @@ class GameWithGoals(GameState):
         if 'points_table' in keys:
             self.points_table = data['points_table']
         else:
-            self.update_points_table()
+            self.reset_points_table()
         self._needs_new_counts = True
         if as_initial_state:
             self.setup_initial_counts()
@@ -595,7 +595,11 @@ class GameWithGoals(GameState):
         else:
             rval = super().execute_edit(command)
         self._needs_new_counts = True
-        self.update_points_table()
+        if len(self.points_table) != len(self.agent_locs):
+            # Ideally we would handle this in a smarter way, but for now
+            # if we add or subtract an agent, we just reset the scoring to
+            # the default values.
+            self.reset_points_table()
         return rval
 
     def execute_action(self, action):
@@ -622,23 +626,12 @@ class GameWithGoals(GameState):
         self.initial_colors[colors] = True
         self.initial_colors[-1] = True  # 'empty' color
 
-    def update_points_table(self):
+    def reset_points_table(self):
         """
-        Create the points table for each agent.
-
-        The points table is an array of shape (n_agents, 8, 9).
-        It determines how many points each agent gets for matching live cells
-        of different colors to goals of different colors.
-
-        The points for each agent in this function are determined by the
-        agent's color, but an entirely separate points table can be used
-        instead, in which case this function shouldn't be called.
+        Reset the points table to default values.
         """
-        agents = self.board[self.agent_locs_idx]
-        is_agent = agents & CellTypes.agent > 0
-        colors = (agents & CellTypes.rainbow_color) >> CellTypes.color_bit
-        self.points_table = self.default_point_table[colors]
-        self.points_table *= is_agent.reshape(-1,1,1)
+        num_agents = len(self.agent_locs)
+        self.points_table = np.tile(self.default_points_table, [num_agents, 1, 1])
 
     def current_points(self):
         points = self.points_table * self.alive_counts
