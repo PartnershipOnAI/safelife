@@ -18,8 +18,9 @@ env_types = [
     'prune-still',
     'prune-spawn',
     'navigate',
-    'append-still-multi',
-    'prune-still-multi',
+    'multi-build-coop',
+    'multi-build-compete',
+    'multi-build-parallel',
 ]
 
 parser = argparse.ArgumentParser(description="""
@@ -38,8 +39,12 @@ parser.add_argument('--shutdown', action="store_true",
     "(helpful for running remotely).")
 parser.add_argument('--port', default=6006, type=int,
     help="Port on which to run tensorboard.")
-parser.add_argument('--run-benchmarks', action="store_true",
-    help="Don't do training; just run benchmarks on all benchmark levels.")
+parser.add_argument('--run-type', choices=('train', 'benchmark', 'inspect'),
+    default='train',
+    help="What to do once the algorithm and environments have been loaded. "
+    "If 'train', train the model. If 'benchmark', run the model on testing "
+    "environments. If 'inspect', load an ipython prompt for interactive "
+    "debugging.")
 parser.add_argument('--impact-penalty', default=0.0, type=float)
 parser.add_argument('--penalty-baseline',
     choices=('starting-state', 'inaction'), default='starting-state')
@@ -57,13 +62,11 @@ job_name = os.path.basename(data_dir)
 sys.path.insert(1, safety_dir)  # ensure current directory is on the path
 os.chdir(safety_dir)
 
-if os.path.exists(data_dir) and args.data_dir is not None:
+if os.path.exists(data_dir) and args.data_dir is not None and args.run_type == 'train':
     print("The directory '%s' already exists. "
           "Would you like to overwrite the old data, append to it, or abort?" %
           data_dir)
-    response = None
-    response = 'append' if args.run_benchmarks else \
-               'overwrite' if job_name.startswith('tmp') else None
+    response = 'overwrite' if job_name.startswith('tmp') else None
     while response not in ('overwrite', 'append', 'abort'):
         response = input("(overwrite / append / abort) > ")
     if response == 'overwrite':
@@ -124,12 +127,12 @@ logging_config = {
     },
     'loggers': {
         'training': {
-            'level': 'INFO',
+            'level': 'INFO' if args.run_type != 'inspect' else 'DEBUG',
             'propagate': False,
             'handlers': ['console', 'logfile'],
         },
         'safelife': {
-            'level': 'INFO',
+            'level': 'INFO' if args.run_type != 'inspect' else 'DEBUG',
             'propagate': False,
             'handlers': ['console', 'logfile'],
         }
@@ -174,6 +177,7 @@ try:
     logger = logging.getLogger('training')
 
     seed1, seed2 = np.random.SeedSequence(args.seed).spawn(2)
+    logger.info("COMMAND ARGUMENTS: %s", ' '.join(sys.argv))
     logger.info("SETTING GLOBAL SEED: %i", seed1.entropy)
     set_rng(np.random.default_rng(seed1))
 
@@ -181,15 +185,23 @@ try:
         subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
         os.makedirs(subdir, exist_ok=True)
 
-        if args.run_benchmarks:
+        if args.run_type == "benchmark":
             data_logger = SafeLifeLogger(
                 subdir,
                 summary_writer=False,
                 training_log=False,
                 testing_video_name="benchmark-{level_name}",
                 testing_log="benchmark-data.json")
-        else:
+        elif args.run_type == "train":
             data_logger = SafeLifeLogger(subdir)
+        else:
+            data_logger = SafeLifeLogger(
+                subdir,
+                summary_writer=False,
+                training_log=False,
+                testing_log=False,
+                training_video_name=False,
+                testing_video_name=False)
 
         if env_type == 'append-still':
             t_penalty = [1.0e6, 2.0e6]
@@ -200,11 +212,29 @@ try:
             )
             test_levels = 'benchmarks/v1.0/append-still.npz'
 
-        elif env_type == 'append-still-multi':
+        elif env_type == 'multi-build-coop':
             t_penalty = [1.5e6, 3.0e6]
             t_performance = [1.5e6, 3.0e6]
             level_iterator = SafeLifeLevelIterator(
-                'random/multi-agent/append-still-easy.yaml',
+                'random/multi-agent/build-coop.yaml',
+                seed=seed2
+            )
+            test_levels = None
+
+        elif env_type == 'multi-build-compete':
+            t_penalty = [1.5e6, 3.0e6]
+            t_performance = [1.5e6, 3.0e6]
+            level_iterator = SafeLifeLevelIterator(
+                'random/multi-agent/build-compete.yaml',
+                seed=seed2
+            )
+            test_levels = None
+
+        elif env_type == 'multi-build-parallel':
+            t_penalty = [1.5e6, 3.0e6]
+            t_performance = [1.5e6, 3.0e6]
+            level_iterator = SafeLifeLevelIterator(
+                'random/multi-agent/build-parallel.yaml',
                 seed=seed2
             )
             test_levels = None
@@ -273,7 +303,7 @@ try:
             min_performance=LinearSchedule(data_logger, t_performance, [0.01, 0.5]),
             level_iterator=level_iterator,
         )
-        if args.run_benchmarks and test_levels:
+        if args.run_type == "benchmark" and test_levels:
             testing_envs = safelife_env_factory(
                 data_logger=data_logger, num_envs=20, testing=True,
                 level_iterator=SafeLifeLevelIterator(
@@ -316,10 +346,14 @@ try:
             logging.error("Unexpected algorithm type '%s'", args.algo)
             raise ValueError("unexpected algorithm type")
 
-        if args.run_benchmarks:
-            algo.run_episodes(testing_envs, num_episodes=1000)
-        else:
+        if args.run_type == "train":
             algo.train(6e6)
+        elif args.run_type == "benchmark":
+            algo.run_episodes(testing_envs, num_episodes=1000)
+        elif args.run_type == "inspect":
+            from IPython import embed
+            print('')
+            embed()
 
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
