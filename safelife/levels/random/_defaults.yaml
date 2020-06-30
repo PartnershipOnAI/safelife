@@ -8,7 +8,7 @@ board_shape: [26,26]
 min_performance:
   uniform: [-0.5, 0.5]
 
-agents: ['default black']
+agents: ['default']
 
 partitioning:
   # The board is partitioned into distinct regions.
@@ -60,6 +60,34 @@ later_regions:
 # Note that doing so can easily disrupt patterns in neighboring regions,
 # especially if neighboring regions contain stochastic patterns.
 buffer_region: null
+
+
+agent_types:
+  default:
+    color: black
+    flags:
+      - preserving    # live cells next to the agent do not die
+      - inhibiting    # dead cells next to the agent do not become alive
+      # alive         # counts as a living cell
+      # pushable      # the agent can be pushed, but cannot push blocks
+      # pullable      # the agent can be pulled, but cannot pull blocks
+      # destructible  # can be destroyed by other agents
+      # spawning      # randomly spawns adjacent life cells
+    points_table:
+      # The points table determines how many points this agent gets for getting
+      # different colors of life onto different background goals.
+      # Columns indicate different forground (life) colors; rows indicate
+      # different background (goal) colors.
+      #   k   r   g   y   b   m   c   w  empty
+      - [+0, -1, +0, +0, +0, +0, +0, +0, 0]  # black / no goal
+      - [-3, +3, -3, +0, -3, +0, -3, -3, 0]  # red goal
+      - [+0, -3, +5, +0, +0, +0, +3, +0, 0]  # green goal
+      - [-3, +0, +0, +3, +0, +0, +0, +0, 0]  # yellow goal
+      - [+3, -3, +3, +0, +5, +3, +3, +0, 0]  # blue goal
+      - [-3, +3, -3, +0, -3, +5, -3, -3, 0]  # magenta goal
+      - [+3, -3, +3, +0, +3, +0, +5, +3, 0]  # cyan goal
+      - [+0, -1, +0, +0, +0, +0, +0, +0, 0]  # white goal
+
 
 named_regions:
   # Each region is given by a name followed by a list of layers.
