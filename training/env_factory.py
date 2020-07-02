@@ -1,10 +1,14 @@
 from scipy import interpolate
 
+import numpy as np
+import numpy.random as npr
+
+from safelife import env_wrappers
+from safelife.random import coinflip
+from safelife.level_iterator import SafeLifeLevelIterator
 from safelife.safelife_env import SafeLifeEnv
 from safelife.safelife_game import CellTypes
-from safelife import env_wrappers
 from safelife.safelife_logger import SafeLifeLogWrapper
-from safelife.level_iterator import SafeLifeLevelIterator
 
 
 class LinearSchedule(object):
@@ -28,6 +32,7 @@ class LinearSchedule(object):
     def __call__(self):
         return self.func(self.logger.cumulative_stats['training_steps'])
 
+
 class CurricularLevelIterator(SafeLifeLevelIterator):
     """
     Iterate through a curriculum of [typically increasingly challenging] level tyepes
@@ -35,33 +40,48 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
     Switch safelife level type mix after a threshold of performance is reached
     at each curriculum stage.
     """
+    curr_progression_mid = 0.47
+    curr_progression_span = 0.25
+
     def __init__(self, levels, logger, **kwargs):
         super().__init__(*levels, repeat_levels=True, **kwargs)
         self.logger = logger
         self.curriculum_stage = 0
         self.max_stage = len(levels) - 1
-        self.current_stage = 0
+        self.curr_currently_playing = 0
+        self.best_score_by_level = {}
+        self.best_perf_by_level = {}
+        self.just_advanced = False
 
     def get_next_parameters(self):
-        t = self.logger.cumulative_stats['training_steps']
         _data, performance = self.results[-1] if len(self.results) > 0 else 0.0
 
-        advanced = False
+        self.just_advanced = False  # watch out for timing between this and self.results.append()
         pop = self.probability_of_progression(performance)
-        if self.current_stage == self.curriculum_stage:   # we played at the current curriculum frontier
+        if self.curr_currently_playing == self.curriculum_stage:  # we played at the curriculum frontier
             if coinflip(pop):
                 if self.curriculum_stage < self.max_stage:
                     self.curriculum_stage += 1
-                    self.best_score_by_level[curriculum_stage] = 0
-                    self.best_perf_by_level[curriculum_stage] = 0.
-                    logger.info("Curriculum advanced to level %d" % self.curriculum_stage)
-                    advanced = True
+                    self.best_score_by_level[self.curriculum_stage] = 0
+                    self.best_perf_by_level[self.curriculum_stage] = 0.
+                    self.logger.info("Curriculum advanced to level %d" % self.curriculum_stage)
+                    self.just_advanced = True
         revision = int(np.clip(npr.pareto(self.revision_param), 0, self.curriculum_stage))
-        self.current_stage = self.curriculum_stage - revision  # pick next stage;
-                                                               # current = next
+        self.curr_currently_playing = self.curriculum_stage - revision  # pick next stage; current = next
+        # Tensorflow-dependent logging...
+        # summary = tf.Summary()
+        # stage = self.curriculum_stage
+        # summary.value.add(tag='episode/performance', simple_value=performance)
+        # summary.value.add(tag='curriculum/stage', simple_value=stage)
+        # summary.value.add(tag='curriculum/pr_progression', simple_value=pop)
+        # summary.value.add(tag='curriculum/level', simple_value=self.level)
+        # summary.value.add(tag='curriculum/best_score_this_lvl',
+        #                   simple_value=self.best_score_by_level[stage])
+        # summary.value.add(tag='curriculum/best_perf_this_lvl',
+        #                   simple_value=self.best_perf_by_level[stage])
+        # self.logger.add_summary(summary, self.num_steps)
 
-        return self.file_data[self.current_stage]
-
+        return self.file_data[self.curr_currently_playing]
 
     def probability_of_progression(self, score):
         """
@@ -71,8 +91,7 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         def sigmoid(x):
             return 1.0 / (1 + np.exp(-x))
 
-        rel_score = (score - self.curr_progression_mid) * 6.0 \
-                    / (self.curr_progression_span)
+        rel_score = (score - self.curr_progression_mid) * 6.0 / (self.curr_progression_span)
 
         return sigmoid(rel_score) * self.progression_lottery_ticket
 
