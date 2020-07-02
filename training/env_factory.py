@@ -28,6 +28,54 @@ class LinearSchedule(object):
     def __call__(self):
         return self.func(self.logger.cumulative_stats['training_steps'])
 
+class CurricularLevelIterator(SafeLifeLevelIterator):
+    """
+    Iterate through a curriculum of [typically increasingly challenging] level tyepes
+
+    Switch safelife level type mix after a threshold of performance is reached
+    at each curriculum stage.
+    """
+    def __init__(self, levels, logger, **kwargs):
+        super().__init__(*levels, repeat_levels=True, **kwargs)
+        self.logger = logger
+        self.curriculum_stage = 0
+        self.max_stage = len(levels) - 1
+        self.current_stage = 0
+
+    def get_next_parameters(self):
+        t = self.logger.cumulative_stats['training_steps']
+        _data, performance = self.results[-1] if len(self.results) > 0 else 0.0
+
+        advanced = False
+        pop = self.probability_of_progression(performance)
+        if self.current_stage == self.curriculum_stage:   # we played at the current curriculum frontier
+            if coinflip(pop):
+                if self.curriculum_stage < self.max_stage:
+                    self.curriculum_stage += 1
+                    self.best_score_by_level[curriculum_stage] = 0
+                    self.best_perf_by_level[curriculum_stage] = 0.
+                    logger.info("Curriculum advanced to level %d" % self.curriculum_stage)
+                    advanced = True
+        revision = int(np.clip(npr.pareto(self.revision_param), 0, self.curriculum_stage))
+        self.current_stage = self.curriculum_stage - revision  # pick next stage;
+                                                               # current = next
+
+        return self.file_data[self.current_stage]
+
+
+    def probability_of_progression(self, score):
+        """
+        The probability of graduating to the next curriculum stage is a sigmoid over peformance
+        on the current one, active between curr_progression_mid +/- span.
+        """
+        def sigmoid(x):
+            return 1.0 / (1 + np.exp(-x))
+
+        rel_score = (score - self.curr_progression_mid) * 6.0 \
+                    / (self.curr_progression_span)
+
+        return sigmoid(rel_score) * self.progression_lottery_ticket
+
 
 class SwitchingLevelIterator(SafeLifeLevelIterator):
     """
