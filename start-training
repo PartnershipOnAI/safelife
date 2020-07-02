@@ -15,6 +15,7 @@ import logging.config
 env_types = [
     'append-still',
     'append-spawn',
+    'curr-append-spawn',
     'prune-still',
     'prune-spawn',
     'navigate',
@@ -280,8 +281,7 @@ try:
             t_penalty = [2.0e6, 3.5e6]
             t_performance = [1.0e6, 2.0e6]
             level_iterator = CurricularLevelIterator(
-                'random/append-still-easy.yaml',
-                'random/append-spawn.yaml',
+                ['random/append-still-easy.yaml', 'random/append-spawn.yaml'],
                 logger=data_logger,
                 seed=seed2,
             )

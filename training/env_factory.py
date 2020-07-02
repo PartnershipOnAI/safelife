@@ -42,6 +42,8 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
     """
     curr_progression_mid = 0.47
     curr_progression_span = 0.25
+    progression_lottery_ticket = 0.3  # max chance of progression per epoch
+    revision_param = 2.0              # pareto param, lower -> more revision of past curriculum grades
 
     def __init__(self, levels, logger, **kwargs):
         super().__init__(*levels, repeat_levels=True, **kwargs)
@@ -54,7 +56,12 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         self.just_advanced = False
 
     def get_next_parameters(self):
-        _data, performance = self.results[-1] if len(self.results) > 0 else 0.0
+        if len(self.results) > 0:
+            _data, result = self.results[-1]
+            game = result.get()
+            performance = game.current_points()
+        else:
+            performance = 0.0
 
         self.just_advanced = False  # watch out for timing between this and self.results.append()
         pop = self.probability_of_progression(performance)
