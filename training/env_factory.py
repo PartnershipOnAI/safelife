@@ -89,6 +89,7 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         return results, performance, logstring
 
     def get_next_parameters(self):
+        "Get the next level to play, managing curriculum progression along the way."
         results, performance, scorelog = self.get_last_results()
 
         self.just_advanced = False  # watch out for timing between this and self.results.append()
@@ -96,6 +97,7 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         if results:
             # if we played at the curriculum frontier
             if results["level_name"] in self.file_data[self.curriculum_stage][0]:
+                # and we scored high enough, progress to the next curriculum stage
                 if coinflip(pop) and self.curriculum_stage < self.max_stage:
                     self.curriculum_stage += 1
                     self.just_advanced = True
