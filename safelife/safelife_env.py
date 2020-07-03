@@ -171,6 +171,7 @@ class SafeLifeEnv(gym.Env):
             'board': self.game.board,
             'goals': self.game.goals,
             'agent_locs': self.game.agent_locs,
+            'title': self.game.title,
             'times_up': times_up,
             'episode': {
                 'length': self.episode_length,
