@@ -53,12 +53,13 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
     revision_param = 2.0              # pareto param, lower -> more revision of past curriculum grades
 
     def __init__(self, levels, logger, **kwargs):
-        super().__init__(*levels, repeat_levels=True, **kwargs)
+        super().__init__(*levels, repeat_levels=True, curriculum_params={}, **kwargs)
         self.logger = logger
         self.curriculum_stage = 0
         self.max_stage = len(levels) - 1
         self.curr_currently_playing = 0
         self.just_advanced = False
+        self.__dict__.update(curriculum_params)
 
     def get_last_results(self):
         """
