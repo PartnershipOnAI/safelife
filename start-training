@@ -287,7 +287,6 @@ try:
             )
             test_levels = 'benchmarks/v1.0/append-spawn.npz'
 
-
         elif env_type == 'prune-spawn':
             t_penalty = [1.5e6, 2.5e6]
             t_performance = [0.5e6, 1.5e6]

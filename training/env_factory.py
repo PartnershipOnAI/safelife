@@ -7,8 +7,9 @@ import logging
 import os
 
 from safelife import env_wrappers
-from safelife.random import coinflip
+from safelife.helper_utils import load_kwargs
 from safelife.level_iterator import SafeLifeLevelIterator
+from safelife.random import coinflip
 from safelife.render_graphics import render_file
 from safelife.safelife_env import SafeLifeEnv
 from safelife.safelife_game import CellTypes
@@ -52,14 +53,14 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
     progression_lottery_ticket = 0.9  # max chance of progression per epoch
     revision_param = 2.0              # pareto param, lower -> more revision of past curriculum grades
 
-    def __init__(self, levels, logger, **kwargs):
-        super().__init__(*levels, repeat_levels=True, curriculum_params={}, **kwargs)
+    def __init__(self, levels, logger, curriculum_params={}, **kwargs):
+        super().__init__(*levels, repeat_levels=True, **kwargs)
         self.logger = logger
         self.curriculum_stage = 0
         self.max_stage = len(levels) - 1
         self.curr_currently_playing = 0
         self.just_advanced = False
-        self.__dict__.update(curriculum_params)
+        load_kwargs(self, curriculum_params)
 
     def get_last_results(self):
         """
