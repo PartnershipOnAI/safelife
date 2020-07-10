@@ -283,7 +283,7 @@ def gen_many(param_file, out_dir, num_gen, num_workers=8, max_queue=100):
     Generate and save many levels using the above loader.
     """
     out_dir = os.path.abspath(out_dir)
-    base_name = os.path.basepath(out_dir)
+    base_name = os.path.basename(out_dir)
     os.makedirs(out_dir, exist_ok=True)
     num_digits = int(np.log10(num_gen))+1
     fmt = "{}-{{:0{}d}}.npz".format(base_name, num_digits)
@@ -308,7 +308,7 @@ def combine_levels(directory):
         with np.load(file) as data:
             name = os.path.split(file)[1]
             max_name_len = max(max_name_len, len(name))
-            all_data.append(data.items() + [('name', name)])
+            all_data.append(list(data.items()) + [('name', name)])
     dtype = []
     for key, val in all_data[0][:-1]:
         dtype.append((key, val.dtype, val.shape))
