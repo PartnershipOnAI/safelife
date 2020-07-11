@@ -10,19 +10,8 @@ import argparse
 import subprocess
 import shutil
 import logging
-import logging.config
 
-env_types = [
-    'append-still',
-    'append-spawn',
-    'curr-append-spawn',
-    'prune-still',
-    'prune-spawn',
-    'navigate',
-    'multi-build-coop',
-    'multi-build-compete',
-    'multi-build-parallel',
-]
+from training.logging_setup import setup_logging, setup_data_logger
 
 parser = argparse.ArgumentParser(description="""
     Run agent training using proximal policy optimization.
@@ -46,10 +35,10 @@ parser.add_argument('--run-type', choices=('train', 'benchmark', 'inspect'),
     "If 'train', train the model. If 'benchmark', run the model on testing "
     "environments. If 'inspect', load an ipython prompt for interactive "
     "debugging.")
-parser.add_argument('--impact-penalty', default=0.0, type=float)
+parser.add_argument('-p', '--impact-penalty', action='append', type=float)
 parser.add_argument('--penalty-baseline',
     choices=('starting-state', 'inaction'), default='starting-state')
-parser.add_argument('--env-type', choices=env_types)
+parser.add_argument('-e', '--env-type', default='prune-still')
 parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
 parser.add_argument('--seed', default=None, type=int)
 args = parser.parse_args()
@@ -78,72 +67,7 @@ if os.path.exists(data_dir) and args.data_dir is not None and args.run_type == '
         exit()
 
 os.makedirs(data_dir, exist_ok=True)
-logfile = os.path.join(data_dir, 'training.log')
-
-
-# Get the environment type from the job name if not otherwise supplied
-if args.env_type:
-    env_type = args.env_type
-else:
-    for env_type in env_types:
-        if env_type in job_name:
-            break
-    else:
-        env_type = 'prune-still'
-
-assert env_type in env_types
-
-
-# Setup logging
-
-if not os.path.exists(logfile):
-    open(logfile, 'w').close()  # write an empty file
-logging_config = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'simple': {
-            'format': '{levelname:8s} {message}',
-            'style': '{',
-        },
-        'dated': {
-            'format': '{asctime} {levelname} ({filename}:{lineno}) {message}',
-            'style': '{',
-            'datefmt': '%Y-%m-%d %H:%M:%S',
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'level': 'INFO',
-            'stream': 'ext://sys.stdout',
-            'formatter': 'simple',
-        },
-        'logfile': {
-            'class': 'logging.FileHandler',
-            'level': 'INFO',
-            'formatter': 'dated',
-            'filename': logfile,
-        }
-    },
-    'loggers': {
-        'training': {
-            'level': 'INFO' if args.run_type != 'inspect' else 'DEBUG',
-            'propagate': False,
-            'handlers': ['console', 'logfile'],
-        },
-        'safelife': {
-            'level': 'INFO' if args.run_type != 'inspect' else 'DEBUG',
-            'propagate': False,
-            'handlers': ['console', 'logfile'],
-        }
-    },
-    'root': {
-        'level': 'WARNING',
-        'handlers': ['console', 'logfile'],
-    }
-}
-logging.config.dictConfig(logging_config)
+logger = setup_logging(data_dir, debug=(args.run_type == 'inspect'))
 
 
 # Build the safelife C extensions.
@@ -166,170 +90,23 @@ if args.port:
 
 try:
     import numpy as np
-    from training.env_factory import (
-        LinearSchedule,
-        CurricularLevelIterator,
-        SafeLifeLevelIterator,
-        SwitchingLevelIterator,
-        safelife_env_factory
-    )
-    from safelife.safelife_logger import SafeLifeLogger
+    from training.env_factory import build_environments
     from safelife.random import set_rng
-
-    logger = logging.getLogger('training')
 
     seed1, seed2 = np.random.SeedSequence(args.seed).spawn(2)
     logger.info("COMMAND ARGUMENTS: %s", ' '.join(sys.argv))
     logger.info("SETTING GLOBAL SEED: %i", seed1.entropy)
     set_rng(np.random.default_rng(seed1))
 
-    for penalty in [args.impact_penalty]:
-        subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
-        os.makedirs(subdir, exist_ok=True)
-
-        if args.run_type == "benchmark":
-            data_logger = SafeLifeLogger(
-                subdir,
-                summary_writer=False,
-                training_log=False,
-                testing_video_name="benchmark-{level_name}",
-                testing_log="benchmark-data.json")
-        elif args.run_type == "train":
-            data_logger = SafeLifeLogger(subdir)
+    for penalty in args.impact_penalty or [None]:
+        if penalty is None:
+            subdir = data_dir
         else:
-            data_logger = SafeLifeLogger(
-                subdir,
-                summary_writer=False,
-                training_log=False,
-                testing_log=False,
-                training_video_name=False,
-                testing_video_name=False)
-
-        if env_type == 'append-still':
-            t_penalty = [1.0e6, 2.0e6]
-            t_performance = [1.0e6, 2.0e6]
-            level_iterator = SafeLifeLevelIterator(
-                'random/append-still-easy.yaml',
-                seed=seed2
-            )
-            test_levels = 'benchmarks/v1.0/append-still.npz'
-
-        elif env_type == 'multi-build-coop':
-            t_penalty = [1.5e6, 3.0e6]
-            t_performance = [1.5e6, 3.0e6]
-            level_iterator = SafeLifeLevelIterator(
-                'random/multi-agent/build-coop.yaml',
-                seed=seed2
-            )
-            test_levels = None
-
-        elif env_type == 'multi-build-compete':
-            t_penalty = [1.5e6, 3.0e6]
-            t_performance = [1.5e6, 3.0e6]
-            level_iterator = SafeLifeLevelIterator(
-                'random/multi-agent/build-compete.yaml',
-                seed=seed2
-            )
-            test_levels = None
-
-        elif env_type == 'multi-build-parallel':
-            t_penalty = [1.5e6, 3.0e6]
-            t_performance = [1.5e6, 3.0e6]
-            level_iterator = SafeLifeLevelIterator(
-                'random/multi-agent/build-parallel.yaml',
-                seed=seed2
-            )
-            test_levels = None
-
-        elif env_type == 'prune-still':
-            t_penalty = [0.5e6, 1.5e6]
-            t_performance = [0.5e6, 1.5e6]
-            level_iterator = SafeLifeLevelIterator(
-                'random/prune-still-easy.yaml',
-                seed=seed2
-            )
-            test_levels = 'benchmarks/v1.0/prune-still.npz'
-
-        elif env_type == 'prune-still-multi':
-            t_penalty = [1.5e6, 3.0e6]
-            t_performance = [1.5e6, 3.0e6]
-            level_iterator = SafeLifeLevelIterator(
-                'random/prune-still.yaml',
-                'random/multi-agent/prune-still.yaml',
-                seed=seed2
-            )
-            test_levels = None
-
-        elif env_type == 'append-spawn':
-            # When training in spawn environments, we first pre-train in the
-            # static environments for a couple million time steps. This just
-            # provides more opportunities for rewards so makes the initial
-            # training easier.
-            t_penalty = [2.0e6, 3.5e6]
-            t_performance = [1.0e6, 2.0e6]
-            level_iterator = SwitchingLevelIterator(
-                'random/append-still-easy.yaml',
-                'random/append-spawn.yaml',
-                t_switch=1.5e6,
-                logger=data_logger,
-                seed=seed2,
-            )
-            test_levels = 'benchmarks/v1.0/append-spawn.npz'
-
-        elif env_type == 'curr-append-spawn':
-            # mimic 'append-spawn' to test curriculuar learning
-            t_penalty = [2.0e6, 3.5e6]
-            t_performance = [1.0e6, 2.0e6]
-            level_iterator = CurricularLevelIterator(
-                ['random/append-still-easy.yaml', 'random/append-spawn.yaml'],
-                logger=data_logger,
-                seed=seed2,
-            )
-            test_levels = 'benchmarks/v1.0/append-spawn.npz'
-
-        elif env_type == 'prune-spawn':
-            t_penalty = [1.5e6, 2.5e6]
-            t_performance = [0.5e6, 1.5e6]
-            level_iterator = SwitchingLevelIterator(
-                'random/prune-still-easy.yaml',
-                'random/prune-spawn.yaml',
-                t_switch=2.0e6,
-                logger=data_logger,
-                seed=seed2,
-            )
-            test_levels = 'benchmarks/v1.0/prune-spawn.npz'
-
-        elif env_type == 'navigate':
-            t_penalty = [1.0e6, 2.0e6]
-            t_performance = [1.0e6, 2.0e6]  # not actually relevant for navigate
-            level_iterator = SafeLifeLevelIterator(
-                'random/navigation.yaml', seed=seed2,
-            )
-            test_levels = 'benchmarks/v1.0/navigation.npz'
-        else:
-            logging.error("Unexpected environment type '%s'", env_type)
-
-        training_envs = safelife_env_factory(
-            data_logger=data_logger, num_envs=16,
-            impact_penalty=LinearSchedule(data_logger, t_penalty, [0, penalty]),
-            penalty_baseline=args.penalty_baseline,
-            min_performance=LinearSchedule(data_logger, t_performance, [0.01, 0.5]),
-            level_iterator=level_iterator,
-        )
-        if args.run_type == "benchmark" and test_levels:
-            testing_envs = safelife_env_factory(
-                data_logger=data_logger, num_envs=20, testing=True,
-                level_iterator=SafeLifeLevelIterator(
-                    test_levels, repeat_levels=True)
-            )
-        elif test_levels:
-            testing_envs = safelife_env_factory(
-                data_logger=data_logger, num_envs=5, testing=True,
-                level_iterator=SafeLifeLevelIterator(
-                    test_levels, distinct_levels=5, repeat_levels=True)
-            )
-        else:
-            testing_envs = None
+            subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
+        data_logger = setup_data_logger(subdir, args.run_type)
+        training_envs, testing_envs = build_environments(
+            args.env_type, args.run_type, seed2, data_logger,
+            penalty, args.penalty_baseline)
 
         if args.algo == 'ppo':
             from training.models import SafeLifePolicyNetwork
