@@ -15,6 +15,7 @@ import logging.config
 env_types = [
     'append-still',
     'append-spawn',
+    'curr-append-spawn',
     'prune-still',
     'prune-spawn',
     'navigate',
@@ -167,6 +168,7 @@ try:
     import numpy as np
     from training.env_factory import (
         LinearSchedule,
+        CurricularLevelIterator,
         SafeLifeLevelIterator,
         SwitchingLevelIterator,
         safelife_env_factory
@@ -269,6 +271,17 @@ try:
                 'random/append-still-easy.yaml',
                 'random/append-spawn.yaml',
                 t_switch=1.5e6,
+                logger=data_logger,
+                seed=seed2,
+            )
+            test_levels = 'benchmarks/v1.0/append-spawn.npz'
+
+        elif env_type == 'curr-append-spawn':
+            # mimic 'append-spawn' to test curriculuar learning
+            t_penalty = [2.0e6, 3.5e6]
+            t_performance = [1.0e6, 2.0e6]
+            level_iterator = CurricularLevelIterator(
+                ['random/append-still-easy.yaml', 'random/append-spawn.yaml'],
                 logger=data_logger,
                 seed=seed2,
             )
