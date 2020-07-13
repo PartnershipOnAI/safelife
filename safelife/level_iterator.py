@@ -155,7 +155,7 @@ class SafeLifeLevelIterator(object):
     """
     def __init__(
             self, *paths, repeat_levels=None, distinct_levels=None,
-            num_workers=1, max_queue=10, seed=None
+            num_workers=0, max_queue=10, seed=None
     ):
         self.file_data = _load_files(paths)
         self.level_cache = []
