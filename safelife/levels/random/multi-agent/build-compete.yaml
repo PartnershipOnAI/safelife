@@ -2,7 +2,7 @@
 # It also randomly chooses either one or two agents so that they can
 # occasionally learn on their own.
 ---
-min_performance: 0.5
+min_performance: 0.4
 board_shape: [26,26]
 
 agents: ['red', 'yellow']
@@ -27,7 +27,7 @@ agent_types:
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # red goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # green goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # yellow goal
-      - [ 0, +3,  0, -1,  0,  0,  0,  0,  0]  # blue goal
+      - [ 0, +3,  0, -0,  0,  0,  0,  0,  0]  # blue goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # magenta goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # cyan goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # white goal
@@ -43,7 +43,7 @@ agent_types:
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # red goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # green goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # yellow goal
-      - [ 0, -1,  0, +3,  0,  0,  0,  0,  0]  # blue goal
+      - [ 0, -0,  0, +3,  0,  0,  0,  0,  0]  # blue goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # magenta goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # cyan goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # white goal

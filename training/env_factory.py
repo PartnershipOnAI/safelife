@@ -64,7 +64,7 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         pool = np.array(results[-n:])
         return np.quantile(pool, 1 - (self.eval_nth_best / n))
 
-    def __init__(self, levels, logger, curriculum_params={}, **kwargs):
+    def __init__(self, *levels, logger, curriculum_params={}, **kwargs):
         super().__init__(*levels, repeat_levels=True, **kwargs)
         self.logger = logger
         self.curriculum_stage = 0
@@ -221,3 +221,108 @@ def safelife_env_factory(
         envs.append(env)
 
     return envs
+
+
+task_types = {
+    'append-still': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['random/append-still-easy'],
+        'test_levels': 'benchmarks/v1.0/append-still.npz',
+        'schedule': [1e6, 2e6],
+    },
+    'multi-build-coop': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['random/multi-agent/build-coop'],
+        'schedule': [1.5e6, 3e6],
+    },
+    'multi-build-compete': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['random/multi-agent/build-compete'],
+        'schedule': [1.5e6, 3e6],
+    },
+    'multi-build-parallel': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['random/multi-agent/build-parallel'],
+        'schedule': [1.5e6, 3e6],
+    },
+    'prune-still': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['random/prune-still-easy'],
+        'test_levels': 'benchmarks/v1.0/prune-still.npz',
+        'schedule': [0.5e6, 1.5e6],
+    },
+    'multi-prune': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['random/prune-still', 'random/multi-agent/prune-still'],
+        'schedule': [1.5e6, 3e6],
+    },
+    'append-spawn': {
+        'iter_class': SwitchingLevelIterator,
+        'train_levels': ['random/append-still-easy', 'random/append-spawn'],
+        'test_levels': 'benchmarks/v1.0/append-spawn.npz',
+        'schedule': [1e6, 2e6],
+        't_switch': 1.5e6,
+    },
+    'prune-spawn': {
+        'iter_class': SwitchingLevelIterator,
+        'train_levels': ['random/prune-still-easy', 'random/prune-spawn'],
+        'test_levels': 'benchmarks/v1.0/prune-spawn.npz',
+        'schedule': [0.5e6, 2e6],
+        't_switch': 1.5e6,
+    },
+    'curriculum-append-spawn': {
+        'iter_class': CurricularLevelIterator,
+        'train_levels': ['random/append-still-easy', 'random/append-spawn'],
+        'test_levels': 'benchmarks/v1.0/append-spawn.npz',
+        'schedule': [1e6, 2e6],
+    },
+    'navigate': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['random/navigation'],
+        'test_levels': 'benchmarks/v1.0/navigation.npz',
+        'schedule': [1e6, 2e6],
+    },
+}
+
+
+def build_environments(
+        task, run_type='train', seed=None, data_logger=None,
+        impact_penalty=None, penalty_baseline='starting-state'):
+    assert task in task_types, "'%s' is not a recognized task" % (task,)
+
+    task_data = task_types[task]
+    iter_class = task_data.get('iter_class', SafeLifeLevelIterator)
+    iter_args = {'seed': seed}
+    if iter_class is SwitchingLevelIterator:
+        iter_args['t_switch'] = task_data['t_switch']
+        iter_args['logger'] = data_logger
+    elif iter_class is CurricularLevelIterator:
+        iter_args['logger'] = data_logger
+
+    training_iter = iter_class(*task_data['train_levels'], **iter_args)
+    schedule = task_data['schedule']
+    if impact_penalty is not None:
+        impact_penalty = LinearSchedule(data_logger, schedule, [0, impact_penalty])
+    training_envs = safelife_env_factory(
+        training_iter, data_logger=data_logger, num_envs=16,
+        impact_penalty=impact_penalty, penalty_baseline=penalty_baseline,
+        min_performance=LinearSchedule(data_logger, schedule, [0.01, 0.5]),
+    )
+
+    test_levels = task_data.get('test_levels')
+    if run_type == "benchmark" and test_levels:
+        testing_envs = safelife_env_factory(
+            data_logger=data_logger, num_envs=20, testing=True,
+            level_iterator=SafeLifeLevelIterator(
+                test_levels, repeat_levels=True)
+        )
+    elif test_levels:
+        testing_envs = safelife_env_factory(
+            data_logger=data_logger, num_envs=5, testing=True,
+            level_iterator=SafeLifeLevelIterator(
+                test_levels, distinct_levels=5, repeat_levels=True)
+        )
+    else:
+        testing_envs = None
+
+    return training_envs, testing_envs
