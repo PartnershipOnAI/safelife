@@ -1,4 +1,5 @@
 from scipy import interpolate
+from scipy.special import softmax
 
 import numpy as np
 import numpy.random as npr
@@ -55,6 +56,7 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
     revision_param = 2.0              # pareto param, lower -> more revision of past curriculum grades
     eval_lookback = 10
     eval_nth_best = 3
+    lookback = 100  # base performance estimates on the last 100 episodes of each level
 
     def progression_statistic(self, results):
         n = self.eval_lookback
@@ -73,6 +75,7 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         self.just_advanced = False
         self.perf_records = defaultdict(lambda: [0.0])  # map level to history of performance
         self.pops = defaultdict(lambda: [0.0])
+        self.best = defaultdict(lambda: 0)
         load_kwargs(self, curriculum_params)
 
     def get_last_results(self):
@@ -96,8 +99,13 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
             filename = self.logger.last_game.file_name
             if reward.size > 0:
                 performance = np.average(reward / reward_possible)
+                if np.isnan(performance):
+                    performance = 0
+                    logger.info("perf was nan")
                 logstring = "Scoring from result {}".format(performance)
                 self.perf_records[filename].append(performance)
+                if performance > self.best[filename]:
+                    self.best[filename] = performance
                 pop = self.probability_of_progression(performance)
                 self.pops[filename].append(pop)
             else:
@@ -107,23 +115,55 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
             logstring = "Skipped result"
             performance = 0.0
         return filename, logstring
+    
+
+    def choose_next_level(self):
+        "Choose a next level to play based on softmax'd estimates of dperf/dtrain"
+
+        # Default to a large estimate when there isn't enough information
+        # about training performance on a level: 20% performance gained in
+        # [lookback] levels would be a very large perf gain
+        training_progress = 0.2 * np.ones(self.max_stage + 1) / self.lookback
+
+        for i, entry in enumerate(self.file_data):
+            level = entry[0]
+            if len(self.perf_records[level]) >= self.lookback:
+                dom = np.arange(self.lookback)
+                m, c = np.polyfit(dom, self.perf_records[level][-self.lookback:], 1)
+                training_progress[i] = 10 * m
+
+        logger.info("Progress: %s", training_progress)
+        scale = np.min(np.abs(training_progress))
+        training_progress = training_progress.clip(0, None)
+        training_progress = training_progress / scale
+        logger.info("Normalised: %s", training_progress)
+
+        probabilities = softmax(training_progress)
+        choice = npr.choice(self.max_stage + 1, p=probabilities)
+        logger.info("Probabilities: %s, chose %s", probabilities, choice)
+
+        record = {}
+        for lvl, f in enumerate(self.file_data):
+            record["normalised_progress_lvl{}".format(lvl)] = training_progress[lvl]
+            record["probability_lvl{}".format(lvl)] = probabilities[lvl]
+            record["best_perf_lvl{}".format(lvl)] = self.best[f[0]]
+        self.logger.log_scalars(record)
+
+        return self.file_data[choice]
+
 
     def get_next_parameters(self):
         "Get the next level to play, managing curriculum progression along the way."
         filename, scorelog = self.get_last_results()
+        print("best", dict(self.best))
 
         self.just_advanced = False  # watch out for timing between this and self.results.append()
         pop = self.progression_statistic(self.pops[filename])
-        print(filename, self.file_data[0])
-        if filename:
-            # if we played at the curriculum frontier
-            if filename == self.file_data[self.curriculum_stage][0]:
-                # and we scored high enough, progress to the next curriculum stage
-                if coinflip(pop) and self.curriculum_stage < self.max_stage:
-                    self.curriculum_stage += 1
-                    self.just_advanced = True
 
-        if self.just_advanced:
+        return self.choose_next_level()
+
+        #if self.just_advanced:
+        if False:
             # create a video of the episode that caused curriculum progression
             assert self.logger.last_game, "Mysterious advancement"
             assert self.logger.last_history, "Historical amnesia"
@@ -134,7 +174,8 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
             logger.info("{}; Curriculum advanced to stage {} on POP {:0%}".format(
                         scorelog, self.curriculum_stage, pop))
         else:
-            logger.info("{}; No curriculum advance; POP is {:.0%}".format(scorelog, pop))
+            pass
+            #logger.info("{}; No curriculum advance; POP is {:.0%}".format(scorelog, pop))
 
         revision = int(np.clip(npr.pareto(self.revision_param), 0, self.curriculum_stage))
         self.curr_currently_playing = self.curriculum_stage - revision  # pick next stage; current = next
