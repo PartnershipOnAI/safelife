@@ -5,6 +5,7 @@ import numpy.random as npr
 
 import logging
 import os
+from collections import defaultdict
 
 from safelife import env_wrappers
 from safelife.helper_utils import load_kwargs
@@ -52,6 +53,16 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
     curr_progression_span = 0.25
     progression_lottery_ticket = 0.9  # max chance of progression per epoch
     revision_param = 2.0              # pareto param, lower -> more revision of past curriculum grades
+    eval_lookback = 10
+    eval_nth_best = 3
+
+    def progression_statistic(self, results):
+        n = self.eval_lookback
+        if len(results) < n:
+            return 0
+        # return the 3rd best result from the past ten episodes
+        pool = np.array(results[-n:])
+        return np.quantile(pool, 1 - (self.eval_nth_best / n))
 
     def __init__(self, *levels, logger, curriculum_params={}, **kwargs):
         super().__init__(*levels, repeat_levels=True, **kwargs)
@@ -60,6 +71,8 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         self.max_stage = len(levels) - 1
         self.curr_currently_playing = 0
         self.just_advanced = False
+        self.perf_records = defaultdict(lambda: [0.0])  # map level to history of performance
+        self.pops = defaultdict(lambda: [0.0])
         load_kwargs(self, curriculum_params)
 
     def get_last_results(self):
@@ -75,30 +88,36 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         logstring: str
             brief description of whether a score was obtained
         """
-        results = self.logger.last_game
+        results = self.logger.last_data
+        filename = None
         if results is not None:
             reward = np.array(results['reward'])
             reward_possible = np.array(results['reward_possible'])
+            filename = self.logger.last_game.file_name
             if reward.size > 0:
                 performance = np.average(reward / reward_possible)
                 logstring = "Scoring from result {}".format(performance)
+                self.perf_records[filename].append(performance)
+                pop = self.probability_of_progression(performance)
+                self.pops[filename].append(pop)
             else:
                 performance = 0.0
                 logstring = "Null score, using {}".format(performance)
         else:
             logstring = "Skipped result"
             performance = 0.0
-        return results, performance, logstring
+        return filename, logstring
 
     def get_next_parameters(self):
         "Get the next level to play, managing curriculum progression along the way."
-        results, performance, scorelog = self.get_last_results()
+        filename, scorelog = self.get_last_results()
 
         self.just_advanced = False  # watch out for timing between this and self.results.append()
-        pop = self.probability_of_progression(performance)
-        if results:
+        pop = self.progression_statistic(self.pops[filename])
+        print(filename, self.file_data[0])
+        if filename:
             # if we played at the curriculum frontier
-            if results["level_name"] in self.file_data[self.curriculum_stage][0]:
+            if filename == self.file_data[self.curriculum_stage][0]:
                 # and we scored high enough, progress to the next curriculum stage
                 if coinflip(pop) and self.curriculum_stage < self.max_stage:
                     self.curriculum_stage += 1
