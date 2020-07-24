@@ -15,21 +15,22 @@ starting_region: null
 later_regions: main
 
 agent_types:
-  cyan:
-    color: cyan
+  magenta:
+    color: magenta
     flags:
       - preserving    # live cells next to the agent do not die
       - inhibiting    # dead cells next to the agent do not become alive
     points_table:
       #   k   r   g   y   b   m   c   w   empty
-      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # black / no goal
+      - [ 0, -1,  0,  0,  0,  0,  0,  0,  0]  # black / no goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # red goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # green goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # yellow goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # blue goal
-      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # magenta goal
-      - [ 0,  0,  0,  0,  0,  0, +3,  0,  0]  # cyan goal
+      - [ 0,  0,  0,  0,  0, +1,  0,  0,  0]  # magenta goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # cyan goal
       - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # white goal
+
 
 named_regions:
   main:
