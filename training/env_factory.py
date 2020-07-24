@@ -99,9 +99,9 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
             filename = self.logger.last_game.file_name
             if reward.size > 0:
                 performance = np.average(reward / reward_possible)
-                if np.isnan(performance):
+                if np.isnan(performance) or np.isinf(performance):
                     performance = 0
-                    logger.info("perf was nan")
+                    logger.info("perf was nan-y")
                 logstring = "Scoring from result {}".format(performance)
                 self.perf_records[filename].append(performance)
                 if performance > self.best[filename]:
