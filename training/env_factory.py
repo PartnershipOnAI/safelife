@@ -11,7 +11,6 @@ from collections import defaultdict
 from safelife import env_wrappers
 from safelife.helper_utils import load_kwargs
 from safelife.level_iterator import SafeLifeLevelIterator
-from safelife.random import coinflip
 from safelife.render_graphics import render_file
 from safelife.safelife_env import SafeLifeEnv
 from safelife.safelife_game import CellTypes
@@ -106,6 +105,7 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
                 self.perf_records[filename].append(performance)
                 if performance > self.best[filename]:
                     self.best[filename] = performance
+                    self.record_video(os.path.basename(filename), performance)
                 pop = self.probability_of_progression(performance)
                 self.pops[filename].append(pop)
             else:
@@ -115,7 +115,6 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
             logstring = "Skipped result"
             performance = 0.0
         return filename, logstring
-    
 
     def choose_next_level(self):
         "Choose a next level to play based on softmax'd estimates of dperf/dtrain"
@@ -151,6 +150,11 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
 
         return self.file_data[choice]
 
+    def record_video(self, lvl, perf):
+        filename = f"best_sore-{lvl}-{perf}.npz".format(lvl, perf)
+        path = os.path.join(self.logger.logdir, filename)
+        np.savez_compressed(path, **self.logger.last_history)
+        render_file(path, movie_format="mp4")
 
     def get_next_parameters(self):
         "Get the next level to play, managing curriculum progression along the way."
