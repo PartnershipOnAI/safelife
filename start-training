@@ -41,6 +41,8 @@ parser.add_argument('--penalty-baseline',
 parser.add_argument('-e', '--env-type', default='prune-still')
 parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
 parser.add_argument('--seed', default=None, type=int)
+parser.add_argument('-l', '--length', type=float, default=6e6,
+                    help='Length of training in steps (default: 6e6).')
 args = parser.parse_args()
 
 
@@ -137,7 +139,7 @@ try:
             raise ValueError("unexpected algorithm type")
 
         if args.run_type == "train":
-            algo.train(6e6)
+            algo.train(int(args.length))
         elif args.run_type == "benchmark":
             algo.run_episodes(testing_envs, num_episodes=1000)
         elif args.run_type == "inspect":
