@@ -7,6 +7,7 @@ imageio-ffmpeg>=0.3  # for rendering video. Not absolutely necessary.
 ipython>=5.0
 tensorboard>=2.0,<3.0  # used for training, not part of the environment
 tensorboardX>=2.0,<3.0  # used for training
+wandb>=0.9.3
 torch>=1.3  # used for training
 pyglet>=1.3.2
 pyyaml>=3.12

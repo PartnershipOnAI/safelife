@@ -53,6 +53,7 @@ with open('tmp_files_list', 'w') as f:
         'start-training\n'
         'training/\n'
         'safelife/\n'
+        'wandb/settings\n'
     )
 with open('tmp_exclude_list', 'w') as f:
     f.write(
