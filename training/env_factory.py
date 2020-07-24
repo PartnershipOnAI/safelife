@@ -211,6 +211,18 @@ task_types = {
         'test_levels': 'benchmarks/v1.0/append-still.npz',
         'schedule': [1e6, 2e6],
     },
+    'asym1': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['random/multi-agent/asym1'],
+        'schedule': [1e6, 2e6],
+    },
+    'curriculum-asym1': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['random/multi-agent/asym1',
+        'random/multi-agent/asym1-pretrain-cyanonly',
+        'random/multi-agent/asym1-pretrain-redonly'],
+        'schedule': [1e6, 2e6],
+    },
     'multi-build-coop': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/multi-agent/build-coop'],
@@ -263,6 +275,7 @@ task_types = {
         'test_levels': 'benchmarks/v1.0/navigation.npz',
         'schedule': [1e6, 2e6],
     },
+
 }
 
 
