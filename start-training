@@ -101,9 +101,23 @@ try:
     for penalty in args.impact_penalty or [None]:
         if penalty is None:
             subdir = data_dir
+            subjob_name = job_name
         else:
             subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
+            subjob_name = "{}-p{:0.2f}".format(job_name, penalty)
+
         data_logger = setup_data_logger(subdir, args.run_type)
+
+        use_wandb = False
+        if (os.path.exists(os.path.join(safety_dir, 'wandb/settings'))
+                and args.run_type != 'inspect'):
+            import wandb
+            if wandb.login():
+                wandb.init(reinit=True, name=subjob_name, config=args,
+                           sync_tensorboard=True)
+                wandb.config.penalty = penalty
+                use_wandb = True
+
         training_envs, testing_envs = build_environments(
             args.env_type, args.run_type, seed2, data_logger,
             penalty, args.penalty_baseline)
@@ -144,6 +158,10 @@ try:
             from IPython import embed
             print('')
             embed()
+
+        if use_wandb:
+            wandb.join()
+
 
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
