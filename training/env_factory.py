@@ -120,9 +120,9 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         record = {}
         for i, entry in enumerate(self.file_data):
             level = entry[0]
-            record["normalised_progress_entry{}".format(i)] = training_progress[i]
-            record["probability_entry{}".format(i)] = probabilities[i]
-            record["best_perf_entry{}".format(i)] = self.best[level]
+            record["normalised_progress_lvl{}".format(i)] = training_progress[i]
+            record["probability_lvl{}".format(i)] = probabilities[i]
+            record["best_perf_lvl{}".format(i)] = self.best[level]
             recent = self.perf_records[level][-self.lookback:]
             rperf = np.average(recent) if len(recent) > 0 else 0.0
             record["recent{}_perf_lvl{}".format(self.lookback, i)] = rperf
@@ -131,7 +131,7 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         return self.file_data[choice]
 
     def record_video(self, lvl, perf):
-        filename = "best_sore-{}-{}.npz".format(lvl, perf)
+        filename = "best_score-{}-{}.npz".format(lvl, perf)
         path = os.path.join(self.logger.logdir, filename)
         np.savez_compressed(path, **self.logger.last_history)
         render_file(path, movie_format="mp4")
