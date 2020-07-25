@@ -110,7 +110,8 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
                 m, c = np.polyfit(dom, self.perf_records[level][-self.lookback:], 1)
                 training_progress[i] = 10 * m
 
-        scale = np.min(np.abs(training_progress))
+        logger.info("Progress: %s", training_progress)
+        scale = np.min(np.clip(training_progress, 0.001, None))
         training_progress = training_progress.clip(0, None)
         training_progress = training_progress / scale
         probabilities = softmax(training_progress)
