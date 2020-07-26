@@ -43,6 +43,10 @@ parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
 parser.add_argument('--seed', default=None, type=int)
 parser.add_argument('-l', '--length', type=float, default=6e6,
                     help='Length of training in steps (default: 6e6).')
+
+parser.add_argument('--ensure-gpu', action='store_true',
+                    help="Check that the machine we're running on has CUDA"
+                    " support")
 args = parser.parse_args()
 
 
@@ -99,6 +103,10 @@ try:
     logger.info("COMMAND ARGUMENTS: %s", ' '.join(sys.argv))
     logger.info("SETTING GLOBAL SEED: %i", seed1.entropy)
     set_rng(np.random.default_rng(seed1))
+
+    if args.ensure_gpu:
+        import torch
+        assert torch.cuda.is_available(), "CUDA support required but not available!"
 
     for penalty in args.impact_penalty or [None]:
         if penalty is None:
