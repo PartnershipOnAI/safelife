@@ -111,9 +111,12 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
                 training_progress[i] = 10 * m
 
         logger.info("Progress: %s", training_progress)
-        scale = np.min(np.clip(training_progress, 0.001, None))
+        scale = np.min(np.abs(training_progress))
         training_progress = training_progress.clip(0, None)
         training_progress = training_progress / scale
+        exploding = np.isnan(training_progress) | np.isinf(training_progress)
+        training_progress[exploding] = 0.0
+        logger.info("Corrected: %s", training_progress)
         probabilities = softmax(training_progress)
         choice = npr.choice(self.max_stage + 1, p=probabilities)
         logger.info("Probabilities: %s, chose %s", probabilities, choice)
