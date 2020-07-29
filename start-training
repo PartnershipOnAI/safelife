@@ -43,6 +43,8 @@ parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
 parser.add_argument('--seed', default=None, type=int)
 parser.add_argument('-l', '--length', type=float, default=6e6,
                     help='Length of training in steps (default: 6e6).')
+parser.add_argument('-w', '--wandb', action='store_true',
+                    help='Use wandb for analytics.')
 
 parser.add_argument('--ensure-gpu', action='store_true',
                     help="Check that the machine we're running on has CUDA"
@@ -118,15 +120,12 @@ try:
 
         data_logger = setup_data_logger(subdir, args.run_type)
 
-        use_wandb = False
-        if (os.path.exists(os.path.join(safety_dir, 'wandb/settings'))
-                and args.run_type != 'inspect'):
+        if args.wandb:
             import wandb
             if wandb.login():
                 wandb.init(reinit=True, name=subjob_name, config=args,
                            sync_tensorboard=True)
                 wandb.config.penalty = penalty
-                use_wandb = True
 
         training_envs, testing_envs = build_environments(
             args.env_type, args.run_type, seed2, data_logger,
@@ -169,7 +168,7 @@ try:
             print('')
             embed()
 
-        if use_wandb:
+        if args.wandb:
             wandb.join()
 
 
