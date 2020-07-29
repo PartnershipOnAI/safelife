@@ -56,6 +56,7 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
     eval_lookback = 10
     eval_nth_best = 3
     lookback = 100  # base performance estimates on the last 100 episodes of each level
+    curriculum_distribution = "progress-estimate"  # or "uniform"
 
     def progression_statistic(self, results):
         n = self.eval_lookback
@@ -98,9 +99,10 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         training_progress = training_progress / scale
         exploding = np.isnan(training_progress) | np.isinf(training_progress)
         training_progress[exploding] = 0.0
-        #logger.info("Corrected: %s", training_progress)
-        probabilities = softmax(training_progress)
-        #probabilities = np.ones(self.max_stage + 1) / (self.max_stage + 1)
+        if self.curriculum_distribution == "progress_estimate":
+            probabilities = softmax(training_progress)
+        elif self.curriculum_distribution == "uniform":
+            probabilities = np.ones(self.max_stage + 1) / (self.max_stage + 1)
         choice = npr.choice(self.max_stage + 1, p=probabilities)
         logger.info("Probabilities: %s, chose %s", probabilities, choice)
 
