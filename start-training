@@ -4,12 +4,13 @@
 Main entry point for starting a training job.
 """
 
-import os
-import sys
 import argparse
-import subprocess
-import shutil
 import logging
+import os
+import platform
+import shutil
+import subprocess
+import sys
 
 from training.logging_setup import setup_logging, setup_data_logger
 
@@ -102,6 +103,8 @@ try:
     from safelife.random import set_rng
 
     seed1, seed2 = np.random.SeedSequence(args.seed).spawn(2)
+    logger.info("TRAINING RUN: %s", job_name)
+    logger.info("ON HOST: %s", platform.node())
     logger.info("COMMAND ARGUMENTS: %s", ' '.join(sys.argv))
     logger.info("SETTING GLOBAL SEED: %i", seed1.entropy)
     set_rng(np.random.default_rng(seed1))
