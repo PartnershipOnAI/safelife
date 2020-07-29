@@ -111,7 +111,7 @@ try:
 
     if args.ensure_gpu:
         import torch
-        assert torch.cuda.is_available(), "CUDA support required but not available!"
+        assert torch.cuda.is_available(), "CUDA support requested but not available!"
 
     for penalty in args.impact_penalty or [None]:
         if penalty is None:
