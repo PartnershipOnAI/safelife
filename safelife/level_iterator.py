@@ -4,6 +4,7 @@ import queue
 import warnings
 import multiprocessing
 from multiprocessing.pool import Pool, ApplyResult
+from collections import defaultdict
 
 import yaml
 import numpy as np
@@ -173,7 +174,8 @@ class SafeLifeLevelIterator(object):
         self.results = None
         self.pool = None
         self.idx = 0
-
+        self.perf_records = defaultdict(lambda: [0.0])  # map level to history of performance
+        self.best = defaultdict(lambda: 0)
         self.seed(seed)
 
     def seed(self, seed):
@@ -189,6 +191,24 @@ class SafeLifeLevelIterator(object):
         dynamically change with time or some other metric.
         """
         return self.file_data[self.idx % len(self.file_data)]
+
+    def update_result_records(self):
+        "Housekeeping with results of the most recently completed episode."
+        results = self.logger.last_data if hasattr(self, "logger") else None
+        if results is None:
+            return
+        reward = np.array(results['reward'])
+        reward_possible = np.array(results['reward_possible'])
+        filename = self.logger.last_game.file_name
+        if reward.size > 0:
+            performance = np.average(reward / reward_possible)
+            if np.isnan(performance) or np.isinf(performance):
+                performance = 0
+                logger.info("perf was nan-y")
+            self.perf_records[filename].append(performance)
+            if performance > self.best[filename]:
+                self.best[filename] = performance
+                self.record_video(os.path.basename(filename), performance)
 
     def fill_queue(self):
         if self.results is None:
@@ -214,6 +234,16 @@ class SafeLifeLevelIterator(object):
                 result = _game_from_data(*data, **kwargs)
             self.results.append((data, result))
 
+    def log_performance(self):
+        record = {}
+        for i, entry in enumerate(self.file_data):
+            level = entry[0]
+            record["best_perf_lvl{}".format(i)] = self.best[level]
+            recent = self.perf_records[level][-self.lookback:]
+            rperf = np.average(recent) if len(recent) > 0 else 0.0
+            record["recent{}_perf_lvl{}".format(self.lookback, i)] = rperf
+        self.logger.log_scalars(record)
+
     def __getstate__(self):
         state = self.__dict__.copy()
         if self.num_workers > 0:
@@ -233,6 +263,7 @@ class SafeLifeLevelIterator(object):
         return self
 
     def __next__(self):
+        self.log_performance()
         self.fill_queue()
 
         if not self.results and self.distinct_levels is not None:

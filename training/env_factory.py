@@ -72,27 +72,9 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         self.max_stage = len(levels) - 1
         self.curr_currently_playing = 0
         self.just_advanced = False
-        self.perf_records = defaultdict(lambda: [0.0])  # map level to history of performance
-        self.best = defaultdict(lambda: 0)
         load_kwargs(self, curriculum_params)
 
-    def update_result_records(self):
-        "Housekeeping with results of the most recently completed episode."
-        results = self.logger.last_data
-        filename = None
-        if results is not None:
-            reward = np.array(results['reward'])
-            reward_possible = np.array(results['reward_possible'])
-            filename = self.logger.last_game.file_name
-            if reward.size > 0:
-                performance = np.average(reward / reward_possible)
-                if np.isnan(performance) or np.isinf(performance):
-                    performance = 0
-                    logger.info("perf was nan-y")
-                self.perf_records[filename].append(performance)
-                if performance > self.best[filename]:
-                    self.best[filename] = performance
-                    self.record_video(os.path.basename(filename), performance)
+
 
     def get_next_parameters(self):
         "Choose a next level to play based on softmax'd estimates of dperf/dtrain"
@@ -116,8 +98,9 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         training_progress = training_progress / scale
         exploding = np.isnan(training_progress) | np.isinf(training_progress)
         training_progress[exploding] = 0.0
-        logger.info("Corrected: %s", training_progress)
+        #logger.info("Corrected: %s", training_progress)
         probabilities = softmax(training_progress)
+        #probabilities = np.ones(self.max_stage + 1) / (self.max_stage + 1)
         choice = npr.choice(self.max_stage + 1, p=probabilities)
         logger.info("Probabilities: %s, chose %s", probabilities, choice)
 
@@ -126,10 +109,6 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
             level = entry[0]
             record["normalised_progress_lvl{}".format(i)] = training_progress[i]
             record["probability_lvl{}".format(i)] = probabilities[i]
-            record["best_perf_lvl{}".format(i)] = self.best[level]
-            recent = self.perf_records[level][-self.lookback:]
-            rperf = np.average(recent) if len(recent) > 0 else 0.0
-            record["recent{}_perf_lvl{}".format(self.lookback, i)] = rperf
         self.logger.log_scalars(record)
 
         return self.file_data[choice]
