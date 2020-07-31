@@ -271,9 +271,13 @@ def build_environments(
         impact_penalty=None, penalty_baseline='starting-state'):
     assert task in task_types, "'%s' is not a recognized task" % (task,)
 
+    if not isinstance(seed, np.random.SeedSequence):
+        seed = np.random.SeedSequence(seed)
+    train_seed, test_seed = seed.spawn(2)
+
     task_data = task_types[task]
     iter_class = task_data.get('iter_class', SafeLifeLevelIterator)
-    iter_args = {'seed': seed}
+    iter_args = {'seed': train_seed}
     if iter_class is SwitchingLevelIterator:
         iter_args['t_switch'] = task_data['t_switch']
         iter_args['logger'] = data_logger
@@ -295,13 +299,13 @@ def build_environments(
         testing_envs = safelife_env_factory(
             data_logger=data_logger, num_envs=20, testing=True,
             level_iterator=SafeLifeLevelIterator(
-                test_levels, repeat_levels=True)
+                test_levels, repeat_levels=True, seed=test_seed)
         )
     elif test_levels:
         testing_envs = safelife_env_factory(
             data_logger=data_logger, num_envs=5, testing=True,
             level_iterator=SafeLifeLevelIterator(
-                test_levels, distinct_levels=5, repeat_levels=True)
+                test_levels, distinct_levels=5, repeat_levels=True, seed=test_seed)
         )
     else:
         testing_envs = None

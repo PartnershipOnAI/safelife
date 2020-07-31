@@ -93,10 +93,10 @@ try:
     from training.env_factory import build_environments
     from safelife.random import set_rng
 
-    seed1, seed2 = np.random.SeedSequence(args.seed).spawn(2)
+    main_seed = np.random.SeedSequence(args.seed)
     logger.info("COMMAND ARGUMENTS: %s", ' '.join(sys.argv))
-    logger.info("SETTING GLOBAL SEED: %i", seed1.entropy)
-    set_rng(np.random.default_rng(seed1))
+    logger.info("SETTING GLOBAL SEED: %i", main_seed.entropy)
+    set_rng(np.random.default_rng(main_seed))
 
     for penalty in args.impact_penalty or [None]:
         if penalty is None:
@@ -119,7 +119,7 @@ try:
                 use_wandb = True
 
         training_envs, testing_envs = build_environments(
-            args.env_type, args.run_type, seed2, data_logger,
+            args.env_type, args.run_type, main_seed, data_logger,
             penalty, args.penalty_baseline)
 
         if args.algo == 'ppo':
