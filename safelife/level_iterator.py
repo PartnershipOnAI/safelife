@@ -108,6 +108,7 @@ def _game_from_data(file_name, data_type, data, seed=None):
     else:
         game = SafeLifeGame.loaddata(data)
     game.file_name = file_name
+    game.seed = seed
     return game
 
 

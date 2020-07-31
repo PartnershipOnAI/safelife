@@ -7,7 +7,6 @@ import numpy as np
 from .level_iterator import SafeLifeLevelIterator
 from .safelife_game import CellTypes
 from .helper_utils import recenter_view, load_kwargs
-from .random import set_rng
 
 
 class SafeLifeEnv(gym.Env):
@@ -79,7 +78,6 @@ class SafeLifeEnv(gym.Env):
                 shape=self.view_shape + (len(self.output_channels),),
                 dtype=np.uint8,
             )
-        self.seed()
 
     @property
     def state(self):
@@ -88,14 +86,6 @@ class SafeLifeEnv(gym.Env):
             "'SafeLifeEnv.game'",
             DeprecationWarning, stacklevel=2)
         return self.game
-
-    def seed(self, seed=None):
-        if not isinstance(seed, np.random.SeedSequence):
-            seed = np.random.SeedSequence(seed)
-        self.rng = np.random.default_rng(seed)
-        if hasattr(self.level_iterator, 'seed'):
-            self.level_iterator.seed(seed.spawn(1)[0])
-        return [seed.entropy]
 
     def get_obs(self, board=None, goals=None, agent_locs=None):
         if board is None:
@@ -144,8 +134,7 @@ class SafeLifeEnv(gym.Env):
         assert self.game is not None, "Game state is not initialized."
 
         self.game.execute_actions(actions)
-        with set_rng(self.rng):
-            self.game.advance_board()
+        self.game.advance_board()
         self.game.update_exit_colors()
 
         self.episode_length += 1

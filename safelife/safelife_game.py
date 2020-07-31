@@ -13,6 +13,7 @@ three things:
 
 import os
 from importlib import import_module
+from functools import wraps
 
 import numpy as np
 
@@ -20,7 +21,7 @@ from .helper_utils import (
     wrapping_array,
     wrapped_convolution as convolve2d,
 )
-from .random import coinflip, get_rng
+from .random import coinflip, get_rng, set_rng
 from .speedups import advance_board, alive_counts, execute_actions
 
 
@@ -143,6 +144,8 @@ class GameState(object):
         Flag to indicate that the current game has ended.
     num_steps : int
         Number of steps taken since last reset.
+    seed : np.random.SeedSequence
+        Seed used for stochastic dynamics
     """
     spawn_prob = 0.3
     edit_loc = (0, 0)
@@ -152,6 +155,8 @@ class GameState(object):
     game_over = False
     points_on_level_exit = +1
     num_steps = 0
+    _seed = None
+    _rng = None
 
     def __init__(self, board_size=(10,10)):
         self.exit_locs = (np.array([], dtype=int), np.array([], dtype=int))
@@ -162,6 +167,29 @@ class GameState(object):
         else:
             self.make_default_board(board_size)
             self._init_data = self.serialize()
+
+    @property
+    def seed(self):
+        return self._seed
+
+    @seed.setter
+    def seed(self, seed):
+        if not isinstance(seed, np.random.SeedSequence):
+            seed = np.random.SeedSequence(seed)
+        self._seed = seed
+        self._rng = np.random.default_rng(seed)
+
+    @property
+    def rng(self):
+        return self._rng if self._rng is not None else get_rng()
+
+    @staticmethod
+    def use_rng(f):
+        @wraps(f)
+        def wrapper(self, *args, **kwargs):
+            with set_rng(self.rng):
+                return f(self, *args, **kwargs)
+        return wrapper
 
     def make_default_board(self, board_size):
         self.board = np.zeros(board_size, dtype=np.uint16)
@@ -262,7 +290,12 @@ class GameState(object):
             return None
         else:
             fname = os.path.split(self.file_name)[-1]
-            return '.'.join(fname.split('.')[:-1])
+            fname, *ext = fname.rsplit('.', 1)
+            procgen = ext and ext[0] in ('json', 'yaml')
+            if procgen and self._seed and self._seed.spawn_key:
+                # Append the spawn key as the episode number
+                fname += '-e' + str(self._seed.spawn_key[-1])
+            return fname
 
     @property
     def edit_color_name(self):
@@ -695,6 +728,7 @@ class SafeLifeGame(GameWithGoals):
     and the actions that the player can take.
     """
 
+    @GameState.use_rng
     def advance_board(self):
         self.num_steps += 1
         self._needs_new_counts = True
@@ -736,6 +770,7 @@ class GameOfLife(GameWithGoals):
     survive_rule = (2, 3)
     born_rule = (3,)
 
+    @GameState.use_rng
     def advance_board(self):
         """
         Apply one timestep of physics using Game of Life rules.
@@ -843,6 +878,7 @@ class AsyncGame(GameWithGoals):
         super().deserialize(data, *args, **kw)
         self.energy_rules = data['energy_rules']
 
+    @GameState.use_rng
     def advance_board(self):
         """
         Apply one timestep of physics using an asynchronous update.

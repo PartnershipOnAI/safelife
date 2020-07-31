@@ -143,8 +143,8 @@ class SafeLifeLogger(BaseLogger):
     cumulative_stats = None
     summary_writer = None
 
-    training_video_name = "training-e{training_episodes}-s{training_steps}"
-    testing_video_name = "testing-s{training_steps}-{level_name}"
+    training_video_name = "train-s{training_steps}-{level_name}"
+    testing_video_name = "test-s{training_steps}-{level_name}"
     training_video_interval = 100
     testing_video_interval = 1
 
