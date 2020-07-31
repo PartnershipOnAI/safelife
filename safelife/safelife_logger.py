@@ -137,6 +137,10 @@ class SafeLifeLogger(BaseLogger):
     summary_writer : tensorboardX.SummaryWriter
         Writes data to tensorboard. The SafeLifeLogger will attempt to create
         a new summary writer for the log directory if one is not supplied.
+    wandb : module or None
+        If set, weights and biases ("wandb") will be used to log data.
+        Note that it's possible to set both the summary writer and wandb, but
+        it's a bit redundant.
     """
 
     logdir = None
@@ -155,7 +159,8 @@ class SafeLifeLogger(BaseLogger):
 
     _testing_log = None
     _training_log = None
-    summary_writer = None
+    summary_writer = 'new'
+    wandb = None
 
     console_training_msg = textwrap.dedent("""
         Training episode completed.
@@ -195,6 +200,12 @@ class SafeLifeLogger(BaseLogger):
                 self._training_log = StreamingJSONWriter(
                     os.path.join(self.logdir, self.training_log))
             if self.summary_writer is None:
+                self.summary_writer = 'new'
+                logger.info(
+                    "Using old interface for SafeLifeLogger. "
+                    "Instead of `summary_writer=None`, use "
+                    "`summary_writer='new'` to build one automatically.")
+            if self.summary_writer == 'new':
                 try:
                     from tensorboardX import SummaryWriter
                     self.summary_writer = SummaryWriter(self.logdir)
@@ -202,6 +213,7 @@ class SafeLifeLogger(BaseLogger):
                     logger.error(
                         "Could not import tensorboardX. "
                         "SafeLifeLogger will not write data to tensorboard.")
+                    self.summary_writer = False
         self._has_init = True
 
     def log_episode(self, game, info={}, history=None, training=True):
@@ -283,8 +295,6 @@ class SafeLifeLogger(BaseLogger):
         if self.record_side_effects and 'life-green' in side_effects:
             amount, total = side_effects['life-green']
             tb_data['side_effects'] = amount / max(total, 1)
-        tag = "training_runs" if training else "testing_runs"
-        self.log_scalars(tb_data, tag=tag)
 
         # Finally, save a recording of the trajectory.
         if history is not None and self.logdir is not None and history_name:
@@ -293,6 +303,11 @@ class SafeLifeLogger(BaseLogger):
             if not os.path.exists(history_name):
                 np.savez_compressed(history_name, **history)
                 render_file(history_name, movie_format="mp4")
+            if self.wandb is not None:
+                tb_data['video'] = self.wandb.Video(history_name[:-3] + 'mp4')
+
+        tag = "training_runs" if training else "testing_runs"
+        self.log_scalars(tb_data, tag=tag)
 
     def log_scalars(self, data, global_step=None, tag=None):
         """
@@ -307,15 +322,22 @@ class SafeLifeLogger(BaseLogger):
         """
         self.init_logdir()  # init if needed
 
-        if not self.summary_writer:
-            return
         tag = "" if tag is None else tag + '/'
         if global_step is None:
             global_step = self.cumulative_stats['training_steps']
-        for key, val in data.items():
-            if np.isreal(val) and np.isscalar(val):
-                self.summary_writer.add_scalar(tag + key, val, global_step)
-        self.summary_writer.flush()
+        if self.summary_writer:
+            for key, val in data.items():
+                if np.isreal(val) and np.isscalar(val):
+                    self.summary_writer.add_scalar(tag + key, val, global_step)
+            self.summary_writer.flush()
+        if self.wandb:
+            data = {
+                tag+key: val for key, val in data.items()
+                if np.isreal(val) and np.isscalar(val) or
+                isinstance(val, self.wandb.Video)
+            }
+            data['global_step'] = global_step
+            self.wandb.log(data)
 
 
 class RemoteSafeLifeLogger(BaseLogger):

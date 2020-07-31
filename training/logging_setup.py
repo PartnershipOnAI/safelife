@@ -58,10 +58,17 @@ def setup_logging(data_dir, debug=False):
     return logging.getLogger('training')
 
 
-def setup_data_logger(data_dir, run_type='train'):
+def setup_data_logger(data_dir, run_type='train', use_wandb=False):
     # Delayed import so that running from command line returns an error
     # faster for bad inputs.
     from safelife.safelife_logger import SafeLifeLogger
+
+    if use_wandb:
+        import wandb
+        summary_writer = False
+    else:
+        wandb = None
+        summary_writer = 'new'
 
     os.makedirs(data_dir, exist_ok=True)
 
@@ -71,9 +78,13 @@ def setup_data_logger(data_dir, run_type='train'):
             summary_writer=False,
             training_log=False,
             testing_video_name="benchmark-{level_name}",
-            testing_log="benchmark-data.json")
+            testing_log="benchmark-data.json",
+            wandb=wandb)
     elif run_type == "train":
-        data_logger = SafeLifeLogger(data_dir)
+        data_logger = SafeLifeLogger(
+            data_dir,
+            summary_writer=summary_writer,
+            wandb=wandb)
     else:
         data_logger = SafeLifeLogger(
             data_dir,
@@ -81,5 +92,6 @@ def setup_data_logger(data_dir, run_type='train'):
             training_log=False,
             testing_log=False,
             training_video_name=False,
-            testing_video_name=False)
+            testing_video_name=False,
+            wandb=False)
     return data_logger

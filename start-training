@@ -106,17 +106,16 @@ try:
             subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
             subjob_name = "{}-p{:0.2f}".format(job_name, penalty)
 
-        data_logger = setup_data_logger(subdir, args.run_type)
-
         use_wandb = False
         if (os.path.exists(os.path.join(safety_dir, 'wandb/settings'))
                 and args.run_type != 'inspect'):
             import wandb
             if wandb.login():
-                wandb.init(reinit=True, name=subjob_name, config=args,
-                           sync_tensorboard=True)
+                wandb.init(reinit=True, name=subjob_name, config=args)
                 wandb.config.penalty = penalty
                 use_wandb = True
+
+        data_logger = setup_data_logger(subdir, args.run_type, use_wandb)
 
         training_envs, testing_envs = build_environments(
             args.env_type, args.run_type, main_seed, data_logger,
