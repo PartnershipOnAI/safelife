@@ -1,3 +1,18 @@
+# Version 1.1.1
+
+SafeLife v1.1.1 adds a few minor features and fixes a major performance bug in the training algorithms.
+
+- Fixed a bug in which `torch.tensor()` was being passed python lists instead of numpy arrays during training. The former is much slower than the latter, even when the lists can easily be converted to numpy arrays. After the fix training runs several times faster. See [PyTorch issue #13918](https://github.com/pytorch/pytorch/issues/13918) for more details.
+
+- Created an 'inaction baseline' option for the `env_wrappers.SimpleSideEffectPenalty` class. If `baseline='inaction'`, the side effect penalty will be relative to the counterfactual in which the agent took no actions rather than relative to the fixed starting state.
+
+- Added a convenience method to load data from SafeLife log (json) files. See `safelife_logger.load_safelife_log()` for more details.
+
+- Added a command to go back to previous levels when in interactive mode. Use the `<` and `>` keys to navigate to previous and next levels.
+
+- Tweaked the package requirements to avoid conflicts between later versions of pyglet and gym.
+
+
 # Version 1.1
 
 SafeLife v1.1 introduces many changes to make it easier to run SafeLife agents in a variety of settings. Some of these changes are backwards incompatible, so please read this carefully if you are upgrading from a previous version.
