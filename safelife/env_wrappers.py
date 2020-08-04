@@ -5,6 +5,7 @@ import numpy as np
 from gym import Wrapper
 from .safelife_game import CellTypes
 from .helper_utils import load_kwargs
+from .speedups import advance_board
 
 logger = logging.getLogger(__name__)
 
@@ -141,36 +142,43 @@ class MinPerformanceScheduler(BaseWrapper):
 
 class SimpleSideEffectPenalty(BaseWrapper):
     """
-    Penalize departures from starting state.
+    Penalize departures from starting or inaction state.
     """
     penalty_coef = 0.0
+    baseline = "starting-state"  # or "inaction"
 
     def reset(self):
         obs = self.env.reset()
         self.last_side_effect = 0
+        self.baseline_board = self.game.board.copy()
         return obs
 
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
+        if self.baseline == 'inaction':
+            self.baseline_board = advance_board(self.baseline_board, self.game.spawn_prob)
+
         # Ignore the player's attributes so that moving around doesn't result
         # in a penalty. This also means that we ignore the destructible
         # attribute, so if a life cells switches to indestructible (which can
         # automatically happen for certain oscillators) that doesn't cause a
         # penalty either.
         board = self.game.board & ~CellTypes.player
-        start_board = self.game._init_data['board'] & ~CellTypes.player
+        baseline_board = self.baseline_board & ~CellTypes.player
+
         # Also ignore exit locations (they change color when they open up)
         i1, i2 = self.game.exit_locs
-        board[i1,i2] = start_board[i1,i2]
+        board[i1,i2] = baseline_board[i1,i2]
+
         # Finally, ignore any cells that are part of the reward.
         # This takes into account red cells and blue goals, but not other
         # potential rewards (other colors). Suitable for most training levels.
         red_life = CellTypes.alive | CellTypes.color_r
-        start_red = start_board & red_life == red_life
+        start_red = baseline_board & red_life == red_life
         end_red = board & red_life == red_life
         goal_cell = self.game.goals & CellTypes.rainbow_color == CellTypes.color_b
         end_alive = board & red_life == CellTypes.alive
-        unchanged = board == start_board
+        unchanged = board == baseline_board
         non_effects = unchanged | (start_red & ~end_red) | (goal_cell & end_alive)
 
         side_effect = np.sum(~non_effects)

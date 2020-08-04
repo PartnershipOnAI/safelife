@@ -22,7 +22,7 @@ with open(os.path.join(base_dir, "README.md"), "rt", encoding="utf-8") as fh:
 
 setuptools.setup(
     name='safelife',
-    version='1.1',
+    version='1.1.1',
     author="Carroll L. Wainwright",
     author_email="carroll@partnershiponai.org",
     description="Safety benchmarks for reinforcement learning",
@@ -37,7 +37,7 @@ setuptools.setup(
         "scipy>=1.0.0",
         "gym>=0.12.5",
         "imageio>=2.5.0",
-        "pyglet==1.3.2",
+        "pyglet>=1.3.2,<=1.5.0",
         "pyyaml>=3.12",
     ],
     ext_modules=[

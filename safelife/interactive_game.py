@@ -25,6 +25,8 @@ COMMAND_KEYS = {
     ' ': "NULL",
     'c': "TOGGLE",
     'R': "RESTART",
+    '>': "NEXT LEVEL",
+    '<': "PREV LEVEL",
 }
 
 EDIT_KEYS = {
@@ -57,6 +59,8 @@ EDIT_KEYS = {
     'S': "SAVE AS",
     'R': "REVERT",
     'Q': "ABORT LEVEL",
+    '>': "NEXT LEVEL",
+    '<': "PREV LEVEL",
 }
 
 TOGGLE_EDIT = ('~', '`')
@@ -82,6 +86,7 @@ class GameLoop(object):
 
     def __init__(self, level_generator):
         self.level_generator = level_generator
+        self.loaded_levels = []
         self.state = SimpleNamespace(
             screen="INTRO",
             game=None,
@@ -100,9 +105,14 @@ class GameLoop(object):
             level_num=0,
         )
 
-    def load_next_level(self):
-        self.state.level_num += 1
-        self.state.game = next(self.level_generator)
+    def load_next_level(self, incr=1):
+        self.state.level_num = max(1, self.state.level_num + incr)
+        if self.state.level_num <= len(self.loaded_levels):
+            self.state.game = self.loaded_levels[self.state.level_num-1]
+            self.state.game.revert()
+        else:
+            self.state.game = next(self.level_generator)
+            self.loaded_levels.append(self.state.game)
         self.state.game.edit_loc = self.state.game.agent_loc
         self.state.level_start_points = self.state.total_points
         self.state.level_start_steps = self.state.total_steps
@@ -302,7 +312,7 @@ class GameLoop(object):
                     self.record_frame()
             elif not state.edit_mode and key in COMMAND_KEYS:
                 command = COMMAND_KEYS[key]
-                needs_board_advance = True
+                needs_board_advance = command not in ("NEXT LEVEL", "PREV LEVEL")
                 if command in ("LEFT", "RIGHT", "UP", "DOWN"):
                     command_orientation = ORIENTATION[command]
                     if self.relative_controls and command in ("LEFT", "RIGHT"):
@@ -335,12 +345,14 @@ class GameLoop(object):
                 state.total_points = state.level_start_points
                 state.total_steps = state.level_start_steps
                 self.record_frame(restart=True)
-            elif game.game_over == "ABORT LEVEL":
+            elif game.game_over in ("ABORT LEVEL", "NEXT LEVEL"):
                 try:
                     self.load_next_level()
                 except StopIteration:
                     state.game = None
                     state.screen = "GAMEOVER"
+            elif game.game_over == "PREV LEVEL":
+                self.load_next_level(-1)
             elif game.game_over:
                 state.screen = "LEVEL SUMMARY"
                 state.side_effects = {
@@ -422,9 +434,9 @@ class GameLoop(object):
     e:  add exit                 s:  save
     i:  add icecube              S:  save as (in terminal)
     t:  add plant                R:  revert level
-    T:  add tree                 Q:  abort level
-    p:  add parasite             \:  enter shell
-    f:  add fountain
+    T:  add tree                 >:  skip to next level
+    p:  add parasite             <:  back to previous level
+    f:  add fountain             \\:  enter shell
     n:  add spawner
 
                 (hit any key to continue)
