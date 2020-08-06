@@ -189,6 +189,7 @@ class SafeLifeLogger(BaseLogger):
         }
         self._has_init = False
         self.last_game = None
+        self.last_data = None
         self.last_history = None
 
     def init_logdir(self):
@@ -268,7 +269,8 @@ class SafeLifeLogger(BaseLogger):
         log_data['reward_possible'] = reward_possible.tolist()
         log_data['reward_needed'] = required_points.tolist()
         log_data['time'] = datetime.utcnow().isoformat()
-        self.last_game = log_data
+        self.last_game = game
+        self.last_data = log_data
         self.last_history = history
         logger.info(console_msg.format(**log_data, **self.cumulative_stats))
 

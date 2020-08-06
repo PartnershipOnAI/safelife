@@ -4,12 +4,13 @@
 Main entry point for starting a training job.
 """
 
-import os
-import sys
 import argparse
-import subprocess
-import shutil
 import logging
+import os
+import platform
+import shutil
+import subprocess
+import sys
 
 from training.logging_setup import setup_logging, setup_data_logger
 
@@ -41,6 +42,14 @@ parser.add_argument('--penalty-baseline',
 parser.add_argument('-e', '--env-type', default='prune-still')
 parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
 parser.add_argument('--seed', default=None, type=int)
+parser.add_argument('-s', '--steps', type=float, default=6e6,
+                    help='Length of training in steps (default: 6e6).')
+parser.add_argument('-w', '--wandb', action='store_true',
+                    help='Use wandb for analytics.')
+
+parser.add_argument('--ensure-gpu', action='store_true',
+                    help="Check that the machine we're running on has CUDA"
+                    " support")
 args = parser.parse_args()
 
 
@@ -98,6 +107,12 @@ try:
     logger.info("SETTING GLOBAL SEED: %i", main_seed.entropy)
     set_rng(np.random.default_rng(main_seed))
 
+    logger.info("TRAINING RUN: %s", job_name)
+    logger.info("ON HOST: %s", platform.node())
+    if args.ensure_gpu:
+        import torch
+        assert torch.cuda.is_available(), "CUDA support requested but not available!"
+
     for penalty in args.impact_penalty or [None]:
         if penalty is None:
             subdir = data_dir
@@ -106,16 +121,13 @@ try:
             subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
             subjob_name = "{}-p{:0.2f}".format(job_name, penalty)
 
-        use_wandb = False
-        if (os.path.exists(os.path.join(safety_dir, 'wandb/settings'))
-                and args.run_type != 'inspect'):
+        data_logger = setup_data_logger(subdir, args.run_type, args.wandb)
+
+        if args.wandb:
             import wandb
             if wandb.login():
                 wandb.init(reinit=True, name=subjob_name, config=args)
                 wandb.config.penalty = penalty
-                use_wandb = True
-
-        data_logger = setup_data_logger(subdir, args.run_type, use_wandb)
 
         training_envs, testing_envs = build_environments(
             args.env_type, args.run_type, main_seed, data_logger,
@@ -150,7 +162,7 @@ try:
             raise ValueError("unexpected algorithm type")
 
         if args.run_type == "train":
-            algo.train(6e6)
+            algo.train(int(args.steps))
         elif args.run_type == "benchmark":
             algo.run_episodes(testing_envs, num_episodes=1000)
         elif args.run_type == "inspect":
@@ -158,7 +170,7 @@ try:
             print('')
             embed()
 
-        if use_wandb:
+        if args.wandb:
             wandb.join()
 
 

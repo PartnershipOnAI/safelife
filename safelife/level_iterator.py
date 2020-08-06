@@ -2,6 +2,7 @@ import os
 import glob
 import queue
 import warnings
+import multiprocessing
 from multiprocessing.pool import Pool, ApplyResult
 
 import yaml
@@ -156,7 +157,7 @@ class SafeLifeLevelIterator(object):
     """
     def __init__(
             self, *paths, repeat_levels=None, distinct_levels=None,
-            num_workers=1, max_queue=10, seed=None
+            num_workers=multiprocessing.cpu_count(), max_queue=10, seed=None
     ):
         self.file_data = _load_files(paths)
         self.level_cache = []

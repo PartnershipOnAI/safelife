@@ -1,15 +1,17 @@
 from scipy import interpolate
+from scipy.special import softmax
 
 import numpy as np
 import numpy.random as npr
 
 import logging
 import os
+from collections import defaultdict
 
 from safelife import env_wrappers
 from safelife.helper_utils import load_kwargs
 from safelife.level_iterator import SafeLifeLevelIterator
-from safelife.random import coinflip
+
 from safelife.render_graphics import render_file
 from safelife.safelife_env import SafeLifeEnv
 from safelife.safelife_game import CellTypes
@@ -52,6 +54,18 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
     curr_progression_span = 0.25
     progression_lottery_ticket = 0.9  # max chance of progression per epoch
     revision_param = 2.0              # pareto param, lower -> more revision of past curriculum grades
+    eval_lookback = 10
+    eval_nth_best = 3
+    lookback = 100  # base performance estimates on the last 100 episodes of each level
+    curriculum_distribution = "progress_estimate"  # or "uniform"
+
+    def progression_statistic(self, results):
+        n = self.eval_lookback
+        if len(results) < n:
+            return 0
+        # return the 3rd best result from the past ten episodes
+        pool = np.array(results[-n:])
+        return np.quantile(pool, 1 - (self.eval_nth_best / n))
 
     def __init__(self, *levels, logger, curriculum_params={}, **kwargs):
         super().__init__(*levels, repeat_levels=True, **kwargs)
@@ -60,79 +74,78 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         self.max_stage = len(levels) - 1
         self.curr_currently_playing = 0
         self.just_advanced = False
+        self.perf_records = defaultdict(lambda: [0.0])  # map level to history of performance
+        self.best = defaultdict(lambda: 0)
         load_kwargs(self, curriculum_params)
 
-    def get_last_results(self):
-        """
-        Extract results of the most recently completed episode
-
-        Returns
-        -------
-        results: dict
-            log_data for the run
-        performance: float
-            proportion of maximum possible reward
-        logstring: str
-            brief description of whether a score was obtained
-        """
-        results = self.logger.last_game
+    def update_result_records(self):
+        "Housekeeping with results of the most recently completed episode."
+        results = self.logger.last_data
+        filename = None
         if results is not None:
             reward = np.array(results['reward'])
             reward_possible = np.array(results['reward_possible'])
+            filename = self.logger.last_game.file_name
             if reward.size > 0:
                 performance = np.average(reward / reward_possible)
-                logstring = "Scoring from result {}".format(performance)
-            else:
-                performance = 0.0
-                logstring = "Null score, using {}".format(performance)
-        else:
-            logstring = "Skipped result"
-            performance = 0.0
-        return results, performance, logstring
+                if np.isnan(performance) or np.isinf(performance):
+                    performance = 0
+                    logger.info("perf was nan-y")
+                self.perf_records[filename].append(performance)
+                if performance > self.best[filename]:
+                    self.best[filename] = performance
+                    self.record_video(os.path.basename(filename), performance)
 
     def get_next_parameters(self):
-        "Get the next level to play, managing curriculum progression along the way."
-        results, performance, scorelog = self.get_last_results()
+        "Choose a next level to play based on softmax'd estimates of dperf/dtrain"
 
-        self.just_advanced = False  # watch out for timing between this and self.results.append()
-        pop = self.probability_of_progression(performance)
-        if results:
-            # if we played at the curriculum frontier
-            if results["level_name"] in self.file_data[self.curriculum_stage][0]:
-                # and we scored high enough, progress to the next curriculum stage
-                if coinflip(pop) and self.curriculum_stage < self.max_stage:
-                    self.curriculum_stage += 1
-                    self.just_advanced = True
+        self.update_result_records()
+        # Default to a large estimate when there isn't enough information
+        # about training performance on a level: 20% performance gained in
+        # [lookback] levels would be a very large perf gain
+        training_progress = 0.2 * np.ones(self.max_stage + 1) / self.lookback
 
-        if self.just_advanced:
-            # create a video of the episode that caused curriculum progression
-            assert self.logger.last_game, "Mysterious advancement"
-            assert self.logger.last_history, "Historical amnesia"
-            filename = "curricular_advancement{}.npz".format(self.curriculum_stage - 1)
-            path = os.path.join(self.logger.logdir, filename)
-            np.savez_compressed(path, **self.logger.last_history)
-            render_file(path, movie_format="mp4")
-            logger.info("{}; Curriculum advanced to stage {} on POP {:0%}".format(
-                        scorelog, self.curriculum_stage, pop))
+        for i, entry in enumerate(self.file_data):
+            level = entry[0]
+            if len(self.perf_records[level]) >= self.lookback:
+                dom = np.arange(self.lookback)
+                m, c = np.polyfit(dom, self.perf_records[level][-self.lookback:], 1)
+                training_progress[i] = 10 * m
+
+        logger.info("Progress: %s", training_progress)
+        scale = np.min(np.abs(training_progress))
+        training_progress = training_progress.clip(0, None)
+        training_progress = training_progress / scale
+        exploding = np.isnan(training_progress) | np.isinf(training_progress)
+        training_progress[exploding] = 0.0
+        if self.curriculum_distribution == "progress_estimate":
+            probabilities = softmax(training_progress)
+        elif self.curriculum_distribution == "uniform":
+            probabilities = np.ones(self.max_stage + 1) / (self.max_stage + 1)
         else:
-            logger.info("{}; No curriculum advance; POP is {:.0%}".format(scorelog, pop))
+            raise ValueError("invalid curriculum_distribution")
+        choice = npr.choice(self.max_stage + 1, p=probabilities)
+        logger.info("Probabilities: %s, chose %s", probabilities, choice)
 
-        revision = int(np.clip(npr.pareto(self.revision_param), 0, self.curriculum_stage))
-        self.curr_currently_playing = self.curriculum_stage - revision  # pick next stage; current = next
-        return self.file_data[self.curr_currently_playing]
+        record = {}
+        for i, entry in enumerate(self.file_data):
+            print("Enumerated logging", i)
+            level = entry[0]
+            record["normalised_progress_lvl{}".format(i)] = training_progress[i]
+            record["probability_lvl{}".format(i)] = probabilities[i]
+            record["best_perf_lvl{}".format(i)] = self.best[level]
+            recent = self.perf_records[level][-self.lookback:]
+            rperf = np.average(recent) if len(recent) > 0 else 0.0
+            record["recent{}_perf_lvl{}".format(self.lookback, i)] = rperf
+        self.logger.log_scalars(record)
 
-    def probability_of_progression(self, score):
-        """
-        The probability of graduating to the next curriculum stage is a sigmoid over peformance
-        on the current one, active between curr_progression_mid +/- span.
-        """
-        # XXX Maybe switch to a beta distribution for finite support?
-        def sigmoid(x):
-            return 1.0 / (1 + np.exp(-x))
+        return self.file_data[choice]
 
-        rel_score = (score - self.curr_progression_mid) * 6.0 / (self.curr_progression_span)
-
-        return sigmoid(rel_score) * self.progression_lottery_ticket
+    def record_video(self, lvl, perf):
+        filename = "best_score-{}-{}.npz".format(lvl, perf)
+        path = os.path.join(self.logger.logdir, filename)
+        np.savez_compressed(path, **self.logger.last_history)
+        render_file(path, movie_format="mp4")
 
 
 class SwitchingLevelIterator(SafeLifeLevelIterator):
@@ -209,6 +222,19 @@ task_types = {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/append-still-easy'],
         'test_levels': 'benchmarks/v1.0/append-still.npz',
+        'schedule': [1e6, 2e6],
+    },
+    'asym1': {
+        'iter_class': CurricularLevelIterator,
+        'train_levels': ['random/multi-agent/asym1'],
+        'schedule': [1e6, 2e6],
+    },
+    'curriculum-asym1': {
+        'iter_class': CurricularLevelIterator,
+        'train_levels': [
+            'random/multi-agent/asym1',
+            'random/multi-agent/asym1-pretrain-cyanonly',
+            'random/multi-agent/asym1-pretrain-redonly'],
         'schedule': [1e6, 2e6],
     },
     'multi-build-coop': {
