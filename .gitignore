@@ -9,3 +9,6 @@ build
 run-info.txt
 plays
 *.so
+.*.swp
+wandb/
+./tmp/
