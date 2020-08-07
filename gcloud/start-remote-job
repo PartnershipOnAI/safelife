@@ -66,22 +66,16 @@ else:
 
     if sp.run("git status -s", shell=True, stdout=sp.PIPE).stdout:
         # There are changes in the working directory.
-        # Stash changes, apply the stash, commit and tag, rollback, then
-        # unstash the changes such that the working directory is left in the
-        # exact same condition as it started in.
+        # Commit them, then reset to where we were.
         print("adding uncommitted changes...")
-        print(f"adding tag {git_tag}...")
+        result = sp.run("git rev-parse HEAD", shell=True, stdout=sp.PIPE)
+        HEAD = result.stdout.decode()
         sp.run(f"""
-            git stash push -ku
-            git stash push
-            git stash apply 1
             git add .
             git commit -m "job {args.job_name}"
             git tag {git_tag}
-            git reset --hard HEAD~1
-            git stash pop
-            git add .
-            git stash pop
+            git reset --soft {HEAD}
+            git restore --staged .
             """, shell=True, **quiet)
     else:
         # No changes to be committed. Just add a tag.
@@ -94,7 +88,7 @@ ssh_cmd = os.path.abspath(os.path.join(__file__, '../ssh'))
 
 print("cloning temporary repo...")
 result = sp.run(
-    f"git clone --no-local --depth 1 --branch {git_tag} . ./tmp-repo",
+    f"git clone --no-local --single-branch --branch {git_tag} . ./tmp-repo",
     shell=True, **quiet)
 if result.returncode != 0:
     print("Error cloning the repo.")
