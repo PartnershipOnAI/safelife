@@ -185,5 +185,7 @@ finally:
         # Shutdown in 3 minutes.
         # Enough time to recover if it crashed at the start.
         subprocess.run("sudo shutdown +3".split())
-        logging.critical("Shutdown commenced. Exiting to bash.")
+        logging.critical("Shutdown commenced, but keeping ssh available...")
+        subprocess.run(["sudo rm -f /run/nologin"].split())
+        logging.critical("Exiting to bash.")
         subprocess.run(["bash", "-il"])
