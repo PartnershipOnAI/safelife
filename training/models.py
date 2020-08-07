@@ -75,17 +75,18 @@ class SafeLifeQNetwork(nn.Module):
 
 
 class SafeLifePolicyNetwork(nn.Module):
-    def __init__(self, input_shape):
+    def __init__(self, input_shape, dense_depth=1):
         super().__init__()
 
         self.cnn, cnn_out_shape = safelife_cnn(input_shape)
         num_features = np.product(cnn_out_shape)
         num_actions = 9
 
-        self.dense = nn.Sequential(
-            nn.Linear(num_features, 512),
-            nn.ReLU(),
-        )
+        dense = [nn.Sequential(nn.Linear(num_features, 512), nn.ReLU())]
+        for n in range(dense_depth - 1):
+            dense.append(nn.Sequential(nn.Linear(512, 512), nn.ReLU()))
+        self.dense = nn.Sequential(*dense)
+
         self.logits = nn.Linear(512, num_actions)
         self.value_func = nn.Linear(512, 1)
 
@@ -93,7 +94,8 @@ class SafeLifePolicyNetwork(nn.Module):
         # Switch observation to (c, w, h) instead of (h, w, c)
         obs = obs.transpose(-1, -3)
         x = self.cnn(obs).flatten(start_dim=1)
-        x = self.dense(x)
+        for layer in self.dense:
+            x = layer(x)
         value = self.value_func(x)[...,0]
         policy = F.softmax(self.logits(x), dim=-1)
         return value, policy
