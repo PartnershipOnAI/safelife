@@ -92,9 +92,11 @@ subprocess.run([
 
 # Start tensorboard
 
-if args.port:
+if args.port and not args.wandb:
     tb_proc = subprocess.Popen([
         "tensorboard", "--logdir_spec", job_name + ':' + data_dir, '--port', str(args.port)])
+else:
+    tb_proc = None
 
 
 # Start training!
@@ -179,7 +181,7 @@ try:
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
 finally:
-    if args.port:
+    if tb_proc is not None:
         tb_proc.kill()
     if args.shutdown:
         # Shutdown in 3 minutes.
