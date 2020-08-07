@@ -218,7 +218,7 @@ class PPO_MultiAgent(PPO):
     Similar the PPO class, but the environments are expected to return arrays
     of observations, rewards, and done flags for each agent.
     """
-    @named_output('states actions rewards done obs active policies values agent_ids')
+    @named_output('obs actions rewards done next_obs agent_ids policies values')
     def take_one_step(self, envs):
         """
         Take a single step in each of the environments.
@@ -234,57 +234,20 @@ class PPO_MultiAgent(PPO):
         for each env:
             get list of observations
             get list of active agents
-        calculte all policies / actions
+        calculate all policies / actions
         split action for each env
         """
-        states = []
-        active = []
-        env_indices = [0]
-        for env in envs:
-            if hasattr(env, 'last_obs'):
-                obs = env.last_obs
-                done = env.last_done
-            else:
-                obs = env.reset()
-                done = np.tile(False, len(obs))
-                env.num_resets = 0
-            states.append(obs)
-            active.append(~done)
-            env_indices.append(env_indices[-1] + len(obs))
+        obs, agent_ids = self.obs_for_envs(envs)
 
-        states = np.concatenate(states)
-        active = np.concatenate(active)
-
-        tensor_states = self.tensor(states, torch.float32)
-        values, policies = self.model(tensor_states)
+        tensor_obs = self.tensor(obs, torch.float32)
+        values, policies = self.model(tensor_obs)
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
         actions = [get_rng().choice(len(policy), p=policy) for policy in policies]
 
-        rewards = []
-        dones = []
-        agent_id = []
-        next_obs = []
+        next_obs, rewards, done = self.act_on_envs(envs, actions)
 
-        for i, env in enumerate(envs):
-            k1, k2 = env_indices[i], env_indices[i+1]
-            obs, reward, done, info = env.step(actions[k1:k2])
-            next_obs += list(obs)
-            rewards += list(reward)
-            dones += list(done)
-            agent_id += [(i, env.num_resets, j) for j in range(len(obs))]
-
-            if np.all(done):
-                obs = env.reset()
-                done = np.tile(False, len(obs))
-                env.num_resets += 1
-            env.last_obs = obs
-            env.last_done = done
-
-        return (
-            states, actions, rewards, dones,
-            next_obs, active, policies, values, agent_id
-        )
+        return obs, actions, rewards, done, next_obs, agent_ids, policies, values
 
     @named_output('states actions action_prob returns advantages values')
     def gen_training_batch(self, steps_per_env):
@@ -307,7 +270,7 @@ class PPO_MultiAgent(PPO):
         assert steps_per_env > 0
 
         trajectories = defaultdict(lambda: {
-            'states': [],
+            'obs': [],
             'actions': [],
             'action_prob': [],
             'rewards': [],
@@ -320,23 +283,21 @@ class PPO_MultiAgent(PPO):
         for _ in range(steps_per_env):
             step = self.take_one_step(self.training_envs)
             for k, agent_id in enumerate(step.agent_ids):
-                if step.active[k]:
-                    t = trajectories[agent_id]
-                    action = step.actions[k]
-                    t['states'].append(step.states[k])
-                    t['actions'].append(action)
-                    t['action_prob'].append(step.policies[k, action])
-                    t['rewards'].append(step.rewards[k])
-                    t['values'].append(step.values[k])
+                t = trajectories[agent_id]
+                action = step.actions[k]
+                t['obs'].append(step.obs[k])
+                t['actions'].append(action)
+                t['action_prob'].append(step.policies[k, action])
+                t['rewards'].append(step.rewards[k])
+                t['values'].append(step.values[k])
 
         # For the final step in each environment, also calculate the value
         # function associated with the next observation
-        tensor_states = self.tensor(step.obs, torch.float32)
-        vals = self.model(tensor_states)[0].detach().cpu().numpy()
+        tensor_obs = self.tensor(step.next_obs, torch.float32)
+        vals = self.model(tensor_obs)[0].detach().cpu().numpy()
         for k, agent_id in enumerate(step.agent_ids):
             if not step.done[k]:
-                t = trajectories[agent_id]
-                t['final_value'] = vals[k]
+                trajectories[agent_id]['final_value'] = vals[k]
 
         # Calculate the discounted rewards for each trajectory
         gamma = self.gamma
@@ -360,6 +321,6 @@ class PPO_MultiAgent(PPO):
             return torch.as_tensor(x, device=self.compute_device, dtype=dtype)
 
         return (
-            t('states'), t('actions', torch.int64), t('action_prob'),
+            t('obs'), t('actions', torch.int64), t('action_prob'),
             t('returns'), t('advantages'), t('values')
         )
