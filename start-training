@@ -128,7 +128,7 @@ try:
         if args.wandb:
             import wandb
             if wandb.login():
-                wandb.init(reinit=True, name=subjob_name, config=args)
+                wandb.init(reinit=True, name=subjob_name, config=args, entity="safelife")
                 wandb.config.penalty = penalty
 
         training_envs, testing_envs = build_environments(
