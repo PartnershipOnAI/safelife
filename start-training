@@ -46,6 +46,8 @@ parser.add_argument('-s', '--steps', type=float, default=6e6,
                     help='Length of training in steps (default: 6e6).')
 parser.add_argument('-w', '--wandb', action='store_true',
                     help='Use wandb for analytics.')
+parser.add_argument('-d', '--depth', default=1, type=int,
+                    help='Depth of dense layers (may not be supported everywhere).')
 
 parser.add_argument('--ensure-gpu', action='store_true',
                     help="Check that the machine we're running on has CUDA"
