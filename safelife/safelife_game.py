@@ -194,6 +194,7 @@ class GameState(object):
     def make_default_board(self, board_size):
         self.board = np.zeros(board_size, dtype=np.uint16)
         self.agent_locs = np.array(board_size).reshape(1,2) // 2
+        self.agent_names = np.array(['agent0'])
         self.board[self.agent_locs_idx] = CellTypes.player
 
     def serialize(self):
@@ -202,6 +203,7 @@ class GameState(object):
         return {
             "spawn_prob": self.spawn_prob,
             "agent_locs": self.agent_locs.copy(),
+            "agent_names": self.agent_names.copy(),
             "board": self.board.copy(),
             "class": "%s.%s" % (cls.__module__, cls.__name__),
         }
@@ -218,7 +220,13 @@ class GameState(object):
             # Old single agent setting
             self.agent_locs = np.array(data['agent_loc'])[None,::-1]
         elif 'agent_locs' in keys:
-            self.agent_locs = data['agent_locs'].copy()
+            self.agent_locs = np.array(data['agent_locs'])
+        if 'agent_names' in keys:
+            self.agent_names = np.array(data['agent_names'])
+        else:
+            self.agent_names = np.array([
+                'agent%i' % i for i in range(len(self.agent_locs))
+            ])
         if 'orientation' in keys:
             self.orientation = int(data['orientation'])
         self.update_exit_locs()
@@ -556,6 +564,13 @@ class GameState(object):
             new_locs[~np.any(compare, axis=0)],
             axis=0)
 
+        # but for now, don't do the same gymnastics with agent names
+        # (this should be fixed later)
+        if len(old_locs) != len(new_locs):
+            self.agent_names = np.array([
+                'agent%i' % i for i in range(len(self.agent_locs))
+            ])
+
 
 class GameWithGoals(GameState):
     """
@@ -671,7 +686,7 @@ class GameWithGoals(GameState):
         points = points.reshape(-1,72)  # unravel the points for easier sum
         return np.sum(points, axis=1) + super().current_points()
 
-    def points_earned(self, counts=None):
+    def points_earned(self):
         """Number of points that have been earned."""
         delta_counts = self.alive_counts - self.initial_counts
         points = self.points_table * delta_counts
