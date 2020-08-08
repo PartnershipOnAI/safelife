@@ -1,6 +1,6 @@
 pyemd==0.5.1
 numpy>=1.18.0
-scipy>=1.0.0
+scipy>=1.2.0
 gym>=0.12.5
 imageio>=2.5.0
 imageio-ffmpeg>=0.3  # for rendering video. Not absolutely necessary.
