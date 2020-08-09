@@ -112,7 +112,7 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
                 m, c = np.polyfit(dom, self.perf_records[level][-self.lookback:], 1)
                 training_progress[i] = 10 * m
 
-        logger.info("Progress: %s", training_progress)
+        logger.debug("Progress: %s", training_progress)
         scale = np.min(np.abs(training_progress))
         training_progress = training_progress.clip(0, None)
         training_progress = training_progress / scale
@@ -125,11 +125,10 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         else:
             raise ValueError("invalid curriculum_distribution")
         choice = npr.choice(self.max_stage + 1, p=probabilities)
-        logger.info("Probabilities: %s, chose %s", probabilities, choice)
+        logger.debug("Probabilities: %s, chose %s", probabilities, choice)
 
         record = {}
         for i, entry in enumerate(self.file_data):
-            print("Enumerated logging", i)
             level = entry[0]
             record["normalised_progress_lvl{}".format(i)] = training_progress[i]
             record["probability_lvl{}".format(i)] = probabilities[i]
