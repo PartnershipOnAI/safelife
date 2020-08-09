@@ -92,9 +92,11 @@ subprocess.run([
 
 # Start tensorboard
 
-if args.port:
+if args.port and not args.wandb:
     tb_proc = subprocess.Popen([
         "tensorboard", "--logdir_spec", job_name + ':' + data_dir, '--port', str(args.port)])
+else:
+    tb_proc = None
 
 
 # Start training!
@@ -179,13 +181,15 @@ try:
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
 finally:
-    if args.port:
+    if tb_proc is not None:
         tb_proc.kill()
+    if args.wandb:
+        wandb.join()
     if args.shutdown:
         # Shutdown in 3 minutes.
         # Enough time to recover if it crashed at the start.
-        subprocess.run("sudo shutdown +8".split())
+        subprocess.run("sudo shutdown +3", shell=True)
         logging.critical("Shutdown commenced, but keeping ssh available...")
-        subprocess.run(["sudo rm -f /run/nologin"].split())
+        subprocess.run("sudo rm -f /run/nologin", shell=True)
         logging.critical("Exiting to bash.")
-        subprocess.run(["bash", "-il"])
+        subprocess.run("bash -il", shell=True)
