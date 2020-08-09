@@ -236,7 +236,7 @@ class SafeLifeLogger(BaseLogger):
 
         if training:
             self.cumulative_stats['training_episodes'] += 1
-            self.cumulative_stats['training_steps'] += info.get('length', 0)
+            self.cumulative_stats['training_steps'] += np.max(info.get('length', 0))
             num_episodes = self.cumulative_stats['training_episodes']
             history_name = (
                 self.training_video_interval > 0 and
@@ -256,22 +256,24 @@ class SafeLifeLogger(BaseLogger):
 
         # First, log to screen.
         log_data = info.copy()
-        log_data.setdefault('length', 0)
+        length = np.array(log_data.get('length', 0))
         reward = np.array(log_data.get('reward', 0.0))
         reward_possible = game.initial_available_points()
         required_points = game.required_points()
-        if not reward.shape:
+        if reward.shape:
+            # Multi-agent. Record names.
+            log_data['agents'] = game.agent_names.tolist()
+        else:
             # convert to scalars
             reward_possible = np.sum(reward_possible[:1])
             required_points = np.sum(required_points[:1])
+            length = np.sum(length[:1])
         log_data['level_name'] = game.title
+        log_data['length'] = length.tolist()
         log_data['reward'] = reward.tolist()
         log_data['reward_possible'] = reward_possible.tolist()
         log_data['reward_needed'] = required_points.tolist()
         log_data['time'] = datetime.utcnow().isoformat()
-        self.last_game = game
-        self.last_data = log_data
-        self.last_history = history
         logger.info(console_msg.format(**log_data, **self.cumulative_stats))
 
         # Then log to file.
@@ -287,13 +289,24 @@ class SafeLifeLogger(BaseLogger):
 
         # Log to tensorboard.
         tb_data = info.copy()
+        tb_data.pop('reward', None)
+        tb_data.pop('length', None)
         # Use a normalized reward
-        tb_data.pop('reward')
-        tb_data['reward_frac'] = (
-            np.sum(reward) / np.maximum(np.sum(reward_possible), 1))
+        reward_frac = reward / np.maximum(reward_possible, 1)
+        if reward.shape:
+            for i in range(len(reward)):
+                # Note that if agent names are not unique, only the last
+                # agent will actually get recorded to tensorboard/wandb.
+                # All data is logged to file though.
+                name = game.agent_names[i]
+                tb_data[name+'-length'] = length[i]
+                tb_data[name+'-reward_frac'] = reward_frac[i]
+        else:
+            tb_data['length'] = length
+            tb_data['reward_frac'] = reward_frac
         if training:
             tb_data['total_episodes'] = self.cumulative_stats['training_episodes']
-            tb_data['reward_frac_needed'] = game.min_performance
+            tb_data['reward_frac_needed'] = np.sum(game.min_performance)
         if self.record_side_effects and 'life-green' in side_effects:
             amount, total = side_effects['life-green']
             tb_data['side_effects'] = amount / max(total, 1)
@@ -310,6 +323,11 @@ class SafeLifeLogger(BaseLogger):
 
         tag = "training_runs" if training else "testing_runs"
         self.log_scalars(tb_data, tag=tag)
+
+        # Save some data which can be retrieved by e.g. the level iterator.
+        self.last_game = game
+        self.last_data = log_data
+        self.last_history = history
 
     def log_scalars(self, data, global_step=None, tag=None):
         """
@@ -457,16 +475,15 @@ class SafeLifeLogWrapper(gym.Wrapper):
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
 
-        if self.record_history and not self._did_log_episode:
-            game = self.env.game
+        game = self.env.game
+        if self._episode_history is not None and not self._did_log_episode:
             self._episode_history['board'].append(game.board)
             self._episode_history['goals'].append(game.goals)
 
         if np.all(done) and not self._did_log_episode and self.logger is not None:
             self._did_log_episode = True
             self.logger.log_episode(
-                game, info.get('episode', {}),
-                self._episode_history if self.record_history else None,
+                game, info.get('episode', {}), self._episode_history,
                 self.is_training)
 
         return observation, reward, done, info
@@ -478,7 +495,7 @@ class SafeLifeLogWrapper(gym.Wrapper):
         self._episode_history = {
             'board': [],
             'goals': [],
-        }
+        } if self.record_history else None
 
         return observation
 
