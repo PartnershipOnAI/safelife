@@ -355,7 +355,7 @@ class SafeLifeLogger(BaseLogger):
                 if np.isreal(val) and np.isscalar(val) or
                 isinstance(val, self.wandb.Video)
             }
-            data['global_step'] = global_step
+            data['training_steps'] = global_step
             self.wandb.log(data)
 
 
