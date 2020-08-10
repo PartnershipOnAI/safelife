@@ -40,6 +40,8 @@ parser.add_argument('-p', '--impact-penalty', action='append', type=float)
 parser.add_argument('--penalty-baseline',
     choices=('starting-state', 'inaction'), default='starting-state')
 parser.add_argument('-e', '--env-type', default='prune-still')
+parser.add_argument('--curriculum', default="progress_estimate", type=str,
+                    help='Curriculum type ("uniform" or "progress_estimate")')
 parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
 parser.add_argument('--seed', default=None, type=int)
 parser.add_argument('-s', '--steps', type=float, default=6e6,
@@ -134,8 +136,7 @@ try:
                 wandb.config.penalty = penalty
 
         training_envs, testing_envs = build_environments(
-            args.env_type, args.run_type, main_seed, data_logger,
-            penalty, args.penalty_baseline)
+            args, main_seed, data_logger, penalty)
 
         if args.algo == 'ppo':
             from training.models import SafeLifePolicyNetwork
