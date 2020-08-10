@@ -95,12 +95,14 @@ ssh_cmd = os.path.abspath(os.path.join(__file__, '../ssh'))
 print("Cloning temporary repo...")
 result = sp.run(
     f"git clone --no-local --single-branch --branch {git_tag} . ./tmp-repo",
-    shell=True, **quiet)
+    shell=True, capture_output=True)
 if not args.tag:
     print("Removing temporary tag...")
     sp.run(f"git tag -d {git_tag}", shell=True, **quiet)
 if result.returncode != 0:
     print("Error cloning the repo.")
+    print(result.stdout)
+    print(result.stderr)
     exit(1)
 
 print("Syncing repo to the cloud...")
