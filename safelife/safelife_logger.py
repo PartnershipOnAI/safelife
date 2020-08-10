@@ -236,7 +236,6 @@ class SafeLifeLogger(BaseLogger):
 
         if training:
             self.cumulative_stats['training_episodes'] += 1
-            self.cumulative_stats['training_steps'] += np.max(info.get('length', 0))
             num_episodes = self.cumulative_stats['training_episodes']
             history_name = (
                 self.training_video_interval > 0 and
@@ -394,12 +393,15 @@ class RemoteSafeLifeLogger(BaseLogger):
             if config_dict is not None:
                 logging.config.dictConfig(config_dict)
 
-        def log_episode(self, game, info, history, training):
+        def log_episode(self, game, info, history, training, delta_steps):
+            self.logger.cumulative_stats['training_steps'] += delta_steps
             self.logger.log_episode(game, info, history, training)
             return self.logger.cumulative_stats
 
-        def log_scalars(self, data, step, tag):
+        def log_scalars(self, data, step, tag, delta_steps):
+            self.logger.cumulative_stats['training_steps'] += delta_steps
             self.logger.log_scalars(data, step, tag)
+            return self.logger.cumulative_stats
 
         def update_stats(self, cstats):
             self.logger.cumulative_stats = cstats
@@ -411,6 +413,7 @@ class RemoteSafeLifeLogger(BaseLogger):
         self.logdir = logdir
         self.actor = self.SafeLifeLoggingActor.remote(logger, config_dict)
         self._cstats = logger.cumulative_stats.copy()
+        self._old_steps = self._cstats['training_steps']
 
         # _promises stores references to remote updates to cumulative_stats
         # that will be received in response to having sent a log item. There
@@ -429,21 +432,29 @@ class RemoteSafeLifeLogger(BaseLogger):
             ready, self._promises = ray.wait(
                 self._promises, len(self._promises), timeout=timeout)
             if ready:
+                delta = self._cstats['training_steps'] - self._old_steps
                 self._cstats = ray.get(ready[-1])
+                self._cstats['training_steps'] += delta
             self._last_update = time.time()
         return self._cstats
 
     @cumulative_stats.setter
     def cumulative_stats(self, stats):
         self._cstats = stats.copy()
+        self._old_steps = self._cstats['training_steps']
         self.actor.update_stats.remote(stats)
 
     def log_episode(self, game, info, history=None, training=True):
-        self._promises.append(
-            self.actor.log_episode.remote(game, info, history, training))
+        delta_steps = self._cstats['training_steps'] - self._old_steps
+        self._old_steps = self._cstats['training_steps']
+        self._promises.append(self.actor.log_episode.remote(
+            game, info, history, training, delta_steps))
 
     def log_scalars(self, data, step=None, tag=None):
-        self.actor.log_scalars.remote(data, step, tag)
+        delta_steps = self._cstats['training_steps'] - self._old_steps
+        self._old_steps = self._cstats['training_steps']
+        self._promises.append(self.actor.log_scalars.remote(
+            data, step, tag, delta_steps))
 
 
 class SafeLifeLogWrapper(gym.Wrapper):
@@ -475,12 +486,19 @@ class SafeLifeLogWrapper(gym.Wrapper):
     def step(self, action):
         observation, reward, done, info = self.env.step(action)
 
+        if self.logger is None:
+            # Nothing to log. Return early.
+            return observation, reward, done, info
+
         game = self.env.game
         if self._episode_history is not None and not self._did_log_episode:
             self._episode_history['board'].append(game.board)
             self._episode_history['goals'].append(game.goals)
 
-        if np.all(done) and not self._did_log_episode and self.logger is not None:
+        if self.is_training and not self._did_log_episode:
+            self.logger.cumulative_stats['training_steps'] += 1
+
+        if np.all(done) and not self._did_log_episode:
             self._did_log_episode = True
             self.logger.log_episode(
                 game, info.get('episode', {}), self._episode_history,
