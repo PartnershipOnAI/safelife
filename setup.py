@@ -1,6 +1,7 @@
 import os
 import glob
 import setuptools
+import platform
 
 
 class get_numpy_include(object):
@@ -53,7 +54,8 @@ setuptools.setup(
                 '-O3',
                 '-Wno-shorten-64-to-32',
                 '-Wno-c++11-extensions',
-            ]
+                '-Wvla',
+            ] if platform.system() != 'Windows' else []
         ),
     ],
     entry_points={
