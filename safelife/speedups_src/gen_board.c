@@ -326,9 +326,9 @@ int gen_pattern(
     int last_layer_idx = board_size - layer_size;
     int total_area = 0;
 
-    int neighbors[board_size];
-    int oscillations[layer_size];
-    int violations[layer_size];
+    int *neighbors = malloc((board_size + 2*layer_size) * sizeof(int));
+    int *oscillations = neighbors + board_size;
+    int *violations = oscillations + layer_size;
     int totals[4] = {0, 0, 0, 0};
     iset bad_idx = iset_alloc(layer_size);
     iset unmasked_idx = iset_alloc(layer_size);
@@ -337,7 +337,7 @@ int gen_pattern(
     for (int i=0; i < board_size; i++) {
         neighbors[i] = board[i] & ALIVE;
     }
-    memset(oscillations, 0, sizeof(oscillations));
+    memset(oscillations, 0, layer_size * sizeof(int));
     for (int i=0; i < shape.depth; i++) {
         for (int k=0; k < layer_size; k++) {
             oscillations[k] |= (board[k + i*layer_size] & ALIVE) + ALIVE;
@@ -345,8 +345,10 @@ int gen_pattern(
     }
 
     for (int i=0; i < shape.depth; i++) {
-        int temp[layer_size];
-        wrapped_convolve(neighbors + i*layer_size, temp, shape.rows, shape.cols);
+        // Note that `violations` is used as a temporary array here for the
+        // convolution. It doesn't actually represent the number of violations
+        // here, and will get overridden later.
+        wrapped_convolve(neighbors + i*layer_size, violations, shape.rows, shape.cols);
     }
 
     for (int i=0; i < layer_size; i++) {
@@ -383,6 +385,10 @@ int gen_pattern(
     // And start the loop!
     int num_iter;
     int not_empty = 0;
+    int neighborhood_size = (2*shape.depth+1) * (2*shape.depth+1);
+    double *log_probs = malloc(4 * neighborhood_size * sizeof(double));
+    uint16_t *cell_types = malloc(4 * neighborhood_size * sizeof(uint16_t));
+    int *switched_idx = malloc(4 * neighborhood_size * sizeof(int));
     for (num_iter=0; num_iter < max_iter; num_iter++) {
         not_empty = total_area - totals[EMPTY_IDX];
         if (bad_idx.size == 0 && not_empty >= min_fill) {
@@ -418,10 +424,6 @@ int gen_pattern(
         }
 
         double beta = 1.0 / temperature;
-        int neighborhood_size = (2*shape.depth+1) * (2*shape.depth+1);
-        double log_probs[4 * neighborhood_size];
-        uint16_t cell_types[4 * neighborhood_size];
-        int switched_idx[4 * neighborhood_size];
         double max_log_prob = -1e100;
 
         // Try switching each cell in the target's extended neighborhood.
@@ -498,6 +500,10 @@ int gen_pattern(
     iset_free(&bad_idx);
     iset_free(&unmasked_idx);
     iset_free(&seeds_idx);
+    free(neighbors);
+    free(log_probs);
+    free(cell_types);
+    free(switched_idx);
     PRINT("Iterations: %i/%i\n", num_iter, max_iter);
     PRINT("Num alive: %i/%i\n", totals[ALIVE_IDX], total_area);
     return num_iter == max_iter ? MAX_ITER_ERROR : 0;
