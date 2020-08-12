@@ -35,8 +35,8 @@ void advance_board(
         uint16_t *b1, uint16_t *b2, int nrow, int ncol, float spawn_prob) {
     int size = nrow*ncol;
     int i, j, start_of_row, end_of_row, end_of_col;
-    uint16_t c1[size];
-    memset(c1, 0, sizeof(c1));
+    uint16_t *c1 = malloc(size * sizeof(uint16_t));
+    memset(c1, 0, size * sizeof(uint16_t));
 
     // Adjust all of the bits in b2 so that the destructible bit overwrites
     // the exit bit. This allows us to treat destructibility and colors at
@@ -84,6 +84,8 @@ void advance_board(
         combine_neighbors2(c1[i], b2 + end_of_col);
         combine_neighbors2(c1[end_of_col-ncol], b2 + end_of_col);
     }
+
+    free(c1);
 
     // Now loop over the board and advance it.
     for (i = 0; i < size; i++) {
