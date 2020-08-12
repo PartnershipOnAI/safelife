@@ -128,7 +128,12 @@ try:
         if args.wandb:
             import wandb
             if wandb.login():
-                wandb.init(reinit=True, name=subjob_name, config=args)
+                run_notes = os.path.join(safety_dir, 'run-notes.txt')
+                if os.path.exists(run_notes):
+                    run_notes = open(run_notes).read()
+                else:
+                    run_notes = None
+                wandb.init(reinit=True, name=subjob_name, config=args, notes=run_notes)
                 wandb.config.penalty = penalty
 
         training_envs, testing_envs = build_environments(

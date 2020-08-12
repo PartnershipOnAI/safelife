@@ -50,19 +50,11 @@ quiet = {'stdout': sp.DEVNULL, 'stderr': sp.DEVNULL}
 
 # There are a couple files which we typically want to keep out of git(hub),
 # but we do want to add them to the remote machine if they're available.
-extra_files = [
-    'run-info.md',
-    'wandb',
-]
 
 if args.commit_id:
     commit_id = args.commit_id
 else:
-    sp.run('; '.join([f"git add {f}" for f in extra_files]),
-        shell=True, **quiet)
     result = sp.run("git stash create", shell=True, stdout=sp.PIPE, check=True)
-    sp.run('; '.join([f"git restore --staged {f}" for f in extra_files]),
-        shell=True, **quiet)
     commit_id = result.stdout.decode()
     if not commit_id:
         # means there were no stashed chages. Use HEAD instead.
@@ -88,6 +80,7 @@ elif result.returncode != 0:
 else:
     print(f"Adding tag '{git_tag}'...")
 
+
 # Copy over the data
 safety_dir = os.path.abspath(os.path.join(__file__, '../../'))
 ssh_cmd = os.path.abspath(os.path.join(__file__, '../ssh'))
@@ -102,6 +95,20 @@ if not args.tag:
 if result.returncode != 0:
     print("Error cloning the repo.")
     exit(1)
+
+# Also copy over some files that are not (necessarily) in source control.
+extra_files = [
+    'run-info.md',
+    'run-notes.txt',
+    'wandb/settings',
+]
+for extra_file in extra_files:
+    src_file = os.path.join(safety_dir, extra_file)
+    dst_file = os.path.join(safety_dir, 'tmp-repo', extra_file)
+    if os.path.exists(src_file):
+        os.makedirs(os.path.dirname(dst_file), exist_ok=True)
+        shutil.copyfile(src_file, dst_file)
+
 
 print("Syncing repo to the cloud...")
 result = sp.run([
