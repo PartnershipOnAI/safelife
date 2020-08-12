@@ -515,9 +515,12 @@ def add_agents_and_exit(board, regions, agents, agent_types):
         Location of agents placed on the board.
     points_table : ndarray
         Points table for this agent.
+    agent_names : [str]
+        Names associated with agents.
     """
     agent_vals = []
     point_tables = []
+    agent_names = []
     agent_types = {'default': DEFAULT_AGENT, **agent_types}
     for agent_type in _fix_random_values(agents):
         agent_type = _fix_random_values(agent_type)
@@ -536,6 +539,7 @@ def add_agents_and_exit(board, regions, agents, agent_types):
                 logger.error("Invalid agent property '%s'", flag)
         agent_vals.append(agent_val)
         point_tables.append(agent['points_table'])
+        agent_names.append(agent_type)
 
     if not agent_vals:
         return np.zeros((0,2), dtype=int), np.zeros((0,8,9), dtype=int)
@@ -566,7 +570,7 @@ def add_agents_and_exit(board, regions, agents, agent_types):
     new_locs = (all_locs[:,np.newaxis] + n).reshape(-1, 2) % board.shape
     regions[tuple(new_locs.T)] = -1
 
-    return agent_locs, point_tables
+    return agent_locs, point_tables, agent_names
 
 
 def gen_game(
@@ -640,7 +644,7 @@ def gen_game(
     goals = np.zeros(board_shape, dtype=np.uint16)
 
     # Create locations for the player and the exit
-    agent_locs, points_table = add_agents_and_exit(
+    agent_locs, points_table, agent_names = add_agents_and_exit(
         board, regions, agents, agent_types)
 
     # and fill in the regions...
@@ -675,6 +679,7 @@ def gen_game(
         'board': board,
         'goals': goals,
         'agent_locs': agent_locs,
+        'agent_names': agent_names,
         'min_performance': min_performance,
         'points_table': points_table,
         'orientation': 1,

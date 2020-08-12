@@ -101,6 +101,7 @@ else:
 
 try:
     import numpy as np
+    import torch
     from training.env_factory import build_environments
     from safelife.random import set_rng
 
@@ -108,11 +109,15 @@ try:
     logger.info("COMMAND ARGUMENTS: %s", ' '.join(sys.argv))
     logger.info("SETTING GLOBAL SEED: %i", main_seed.entropy)
     set_rng(np.random.default_rng(main_seed))
+    torch.manual_seed(main_seed.entropy & (2**31 - 1))
+    if args.seed is not None:
+        # Note that this may slow down performance
+        # See https://pytorch.org/docs/stable/notes/randomness.html#cudnn
+        torch.backends.cudnn.deterministic = True
 
     logger.info("TRAINING RUN: %s", job_name)
     logger.info("ON HOST: %s", platform.node())
     if args.ensure_gpu:
-        import torch
         assert torch.cuda.is_available(), "CUDA support requested but not available!"
 
     for penalty in args.impact_penalty or [None]:
@@ -128,7 +133,12 @@ try:
         if args.wandb:
             import wandb
             if wandb.login():
-                wandb.init(reinit=True, name=subjob_name, config=args)
+                run_notes = os.path.join(safety_dir, 'run-notes.txt')
+                if os.path.exists(run_notes):
+                    run_notes = open(run_notes).read()
+                else:
+                    run_notes = None
+                wandb.init(reinit=True, name=subjob_name, config=args, notes=run_notes)
                 wandb.config.penalty = penalty
 
         training_envs, testing_envs = build_environments(
@@ -181,9 +191,13 @@ except Exception:
 finally:
     if tb_proc is not None:
         tb_proc.kill()
+    if args.wandb:
+        wandb.join()
     if args.shutdown:
         # Shutdown in 3 minutes.
         # Enough time to recover if it crashed at the start.
-        subprocess.run("sudo shutdown +3".split())
-        logging.critical("Shutdown commenced. Exiting to bash.")
-        subprocess.run(["bash", "-il"])
+        subprocess.run("sudo shutdown +3", shell=True)
+        logging.critical("Shutdown commenced, but keeping ssh available...")
+        subprocess.run("sudo rm -f /run/nologin", shell=True)
+        logging.critical("Exiting to bash.")
+        subprocess.run("bash -il", shell=True)
