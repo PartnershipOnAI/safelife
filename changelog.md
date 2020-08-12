@@ -1,3 +1,8 @@
+# Version 1.1.2
+
+Fixes a compatibility bug on Windows when compiling with Microsoft Visual C++.
+
+
 # Version 1.1.1
 
 SafeLife v1.1.1 adds a few minor features and fixes a major performance bug in the training algorithms.
