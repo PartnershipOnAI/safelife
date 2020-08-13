@@ -243,19 +243,30 @@ class BaseAlgo(object):
             np.concatenate(done_list),
         )
 
-    @named_output('obs actions rewards done agent_ids')
+    @named_output('obs actions rewards done next_obs agent_ids')
     def take_one_step(self, envs):
         """
         Take one step in each of the environments.
+
+        This returns a set of arrays, with one value for each agent.
+        Environments can contain more than one agent (or no agents at all),
+        so the number of items in each array won't generally match the number
+        of environments.
+
+        This function should be implemented by subclasses to execute the
+        subclass's policy.
 
         Returns
         -------
         obs : list
         actions : list
         rewards : list
-        next_obs : list
         done : list
             Whether or not each environment reached its end this step.
+        next_obs : list
+        agent_ids : list
+            A unique identifier for each agent. This can be used to string
+            multiple steps together.
         """
         # Example:
         # obs, agent_ids = self.obs_for_envs(envs)

@@ -61,15 +61,6 @@ class PPO(BaseAlgo):
 
     @named_output('obs actions rewards done next_obs agent_ids policies values')
     def take_one_step(self, envs):
-        """
-        Take a single step in each of the environments.
-
-        Note that when you have multiple agents, the number of observations
-        won't match the number of environments. There won't even be the same
-        number of observations per environment, since different environments
-        can have different numbers of agents and some agents can leave an
-        environment before others.
-        """
         obs, agent_ids = self.obs_for_envs(envs)
 
         tensor_obs = self.tensor(obs, torch.float32)
