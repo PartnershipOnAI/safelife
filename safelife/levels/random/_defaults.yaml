@@ -8,7 +8,7 @@ board_shape: [26,26]
 min_performance:
   uniform: [-0.5, 0.5]
 
-agents: ['default']
+agents: ['agent0']
 
 partitioning:
   # The board is partitioned into distinct regions.
@@ -63,7 +63,7 @@ buffer_region: null
 
 
 agent_types:
-  default:
+  agent0:
     color: black
     flags:
       - preserving    # live cells next to the agent do not die
