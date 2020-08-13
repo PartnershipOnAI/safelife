@@ -266,7 +266,6 @@ class SafeLifeLogger(BaseLogger):
             # convert to scalars
             reward_possible = np.sum(reward_possible[:1])
             required_points = np.sum(required_points[:1])
-            length = np.sum(length[:1])
         log_data['level_name'] = game.title
         log_data['length'] = length.tolist()
         log_data['reward'] = reward.tolist()
@@ -301,8 +300,8 @@ class SafeLifeLogger(BaseLogger):
                 tb_data[name+'-length'] = length[i]
                 tb_data[name+'-reward_frac'] = reward_frac[i]
         else:
-            tb_data['length'] = length
-            tb_data['reward_frac'] = reward_frac
+            tb_data['length'] = int(length)
+            tb_data['reward_frac'] = float(reward_frac)
         if training:
             tb_data['total_episodes'] = self.cumulative_stats['training_episodes']
             tb_data['reward_frac_needed'] = np.sum(game.min_performance)

@@ -172,9 +172,15 @@ class SafeLifeEnv(gym.Env):
         self.game.revert()
         self.game.update_exit_colors()
         self._old_game_value = self.game.current_points()
-        self._is_active = True
-        self.episode_length = 0
-        self.episode_reward = 0
+        if self.single_agent:
+            self._is_active = True
+            self.episode_length = 0
+            self.episode_reward = 0
+        else:
+            num_agents = len(self.game.agent_locs)
+            self._is_active = np.ones(num_agents, dtype=bool)
+            self.episode_length = np.zeros(num_agents, dtype=int)
+            self.episode_reward = np.zeros(num_agents, dtype=np.float32)
         return self.get_obs()
 
     def render(self, mode='ansi'):
