@@ -109,31 +109,27 @@ class DQN(BaseAlgo):
         """
         Add a step from 'take_one_step' to the replay buffer.
         """
-        gamma = self.gamma**(1 + np.arange(self.multi_step_learning))
+        gamma = self.gamma**np.arange(1, self.multi_step_learning)
         for obs, act, reward, done, next_obs, agent_id in zip(*step):
-            if self.multi_step_learning < 2:
-                # Simple 1-step q-learning. Add directly to the buffer.
-                self.replay_buffer.push(obs, act, reward, next_obs, done)
-            else:
-                # Multi-step q-learning. Calculated discounted reward.
-                trajectory = self.agent_trajectories[agent_id]
-                trajectory['reward'] += reward * gamma
-                obs0, act0, reward0 = trajectory[-1]
-                # shift the trajectory forward
-                trajectory[1:] = trajectory[:-1]
-                trajectory[0] = obs, act, reward
-                if obs0 is not None:
-                    self.replay_buffer.push(obs0, act0, reward0, next_obs, done)
-                if done:
-                    # Add the rest of the trajectory to replay buffer, since
-                    # the state is terminal and no other discounted rewards
-                    # get added.
-                    for obs, act, reward in trajectory:
-                        if obs is None:
-                            break
-                        self.replay_buffer.push(obs, act, reward, next_obs, done)
-                    # Remove the trajectory to free up memory.
-                    del self.agent_trajectories[agent_id]
+            trajectory = self.agent_trajectories[agent_id]
+            # shift the trajectory forward
+            obs0, act0, reward0 = trajectory[-1]
+            trajectory[1:] = trajectory[:-1]
+            trajectory[0] = obs, act, reward
+            # Calculated discounted reward.
+            trajectory['reward'][1:] += reward * gamma
+            if obs0 is not None:
+                self.replay_buffer.push(obs0, act0, reward0, obs, done)
+            if done:
+                # Add the rest of the trajectory to replay buffer, since
+                # the state is terminal and no other discounted rewards
+                # get added.
+                for obs, act, reward in trajectory:
+                    if obs is None:
+                        break
+                    self.replay_buffer.push(obs, act, reward, next_obs, done)
+                # Remove the trajectory to free up memory.
+                del self.agent_trajectories[agent_id]
 
     def optimize(self, report=False):
         if len(self.replay_buffer) < self.replay_initial:
