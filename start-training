@@ -41,19 +41,19 @@ parser.add_argument('--penalty-baseline',
     choices=('starting-state', 'inaction'), default='starting-state')
 parser.add_argument('-e', '--env-type', default='prune-still')
 parser.add_argument('--curriculum', default="progress_estimate", type=str,
-                    help='Curriculum type ("uniform" or "progress_estimate")')
+    help='Curriculum type ("uniform" or "progress_estimate")')
 parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
 parser.add_argument('--seed', default=None, type=int)
 parser.add_argument('-s', '--steps', type=float, default=6e6,
-                    help='Length of training in steps (default: 6e6).')
+    help='Length of training in steps (default: 6e6).')
 parser.add_argument('-w', '--wandb', action='store_true',
-                    help='Use wandb for analytics.')
+    help='Use wandb for analytics.')
+parser.add_argument('--project', default=None,
+    help='[Entity and] project for wandb. Eg: "safelife/multiagent" or "multiagent"')
 parser.add_argument('-d', '--depth', default=1, type=int,
-                    help='Depth of dense layers (may not be supported everywhere).')
-
+    help='Depth of dense layers (may not be supported everywhere).')
 parser.add_argument('--ensure-gpu', action='store_true',
-                    help="Check that the machine we're running on has CUDA"
-                    " support")
+    help="Check that the machine we're running on has CUDA support")
 args = parser.parse_args()
 
 
@@ -132,7 +132,16 @@ try:
         if args.wandb:
             import wandb
             if wandb.login():
-                wandb.init(reinit=True, name=subjob_name, config=args, entity="safelife")
+                entity = "safelife"
+                if args.project is None:
+                    project = args.env_type.replace("curriculum-", "")
+                elif "/" in args.project:
+                    entity, _slash, project = args.project.partition("/")
+                else:
+                    project = args.project
+
+                wandb.init(reinit=True, name=subjob_name, config=args,
+                           entity=entity, project=project)
                 wandb.config.penalty = penalty
 
         training_envs, testing_envs = build_environments(
