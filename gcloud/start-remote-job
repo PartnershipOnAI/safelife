@@ -3,6 +3,7 @@
 import os
 import argparse
 import subprocess as sp
+import shutil
 import tempfile
 import textwrap
 import uuid
@@ -104,7 +105,7 @@ try:
     ]
     for extra_file in extra_files:
         src_file = os.path.join(safety_dir, extra_file)
-        dst_file = os.path.join(safety_dir, tmp_repo.name, extra_file)
+        dst_file = os.path.join(tmp_repo.name, extra_file)
         if os.path.exists(src_file):
             os.makedirs(os.path.dirname(dst_file), exist_ok=True)
             shutil.copyfile(src_file, dst_file)
@@ -112,7 +113,7 @@ try:
     print("Syncing repo to the cloud...")
     result = sp.run([
         'rsync', '--rsh', ssh_cmd, '-ra',
-        './tmp-repo/', args.instance_name + ':' + src_dir])
+        tmp_repo.name, args.instance_name + ':' + src_dir])
     if result.returncode != 0:
         exit(1)
 finally:
