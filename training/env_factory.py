@@ -325,13 +325,15 @@ def build_environments(
         testing_envs = safelife_env_factory(
             data_logger=data_logger, num_envs=20, testing=True,
             level_iterator=SafeLifeLevelIterator(
-                test_levels, repeat_levels=True, seed=test_seed)
+                test_levels, repeat_levels=True,
+                seed=test_seed, num_workers=0)
         )
     elif test_levels:
         testing_envs = safelife_env_factory(
             data_logger=data_logger, num_envs=5, testing=True,
             level_iterator=SafeLifeLevelIterator(
-                test_levels, distinct_levels=5, repeat_levels=True, seed=test_seed)
+                test_levels, distinct_levels=5, repeat_levels=True,
+                seed=test_seed, num_workers=0)
         )
     else:
         testing_envs = None
