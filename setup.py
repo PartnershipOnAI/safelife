@@ -1,6 +1,7 @@
 import os
 import glob
 import setuptools
+import platform
 
 
 class get_numpy_include(object):
@@ -22,7 +23,7 @@ with open(os.path.join(base_dir, "README.md"), "rt", encoding="utf-8") as fh:
 
 setuptools.setup(
     name='safelife',
-    version='1.1.1',
+    version='1.1.2',
     author="Carroll L. Wainwright",
     author_email="carroll@partnershiponai.org",
     description="Safety benchmarks for reinforcement learning",
@@ -53,7 +54,8 @@ setuptools.setup(
                 '-O3',
                 '-Wno-shorten-64-to-32',
                 '-Wno-c++11-extensions',
-            ]
+                '-Wvla',
+            ] if platform.system() != 'Windows' else []
         ),
     ],
     entry_points={
