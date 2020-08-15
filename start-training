@@ -50,8 +50,6 @@ parser.add_argument('-w', '--wandb', action='store_true',
     help='Use wandb for analytics.')
 parser.add_argument('--project', default=None,
     help='[Entity and] project for wandb. Eg: "safelife/multiagent" or "multiagent"')
-parser.add_argument('-d', '--depth', default=1, type=int,
-    help='Depth of dense layers (may not be supported everywhere).')
 parser.add_argument('--ensure-gpu', action='store_true',
     help="Check that the machine we're running on has CUDA support")
 args = parser.parse_args()
