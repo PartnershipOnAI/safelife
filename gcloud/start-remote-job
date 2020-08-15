@@ -116,7 +116,7 @@ try:
     print("Syncing repo to the cloud...")
     result = sp.run([
         'rsync', '--rsh', ssh_cmd, '-ra',
-        tmp_repo.name, args.instance_name + ':' + src_dir])
+        tmp_repo.name + '/', args.instance_name + ':' + src_dir])
     if result.returncode != 0:
         exit(1)
 finally:
