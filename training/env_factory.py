@@ -291,12 +291,11 @@ task_types = {
 }
 
 
-def build_environments(
-        config, seed=None, data_logger=None,
-        impact_penalty=None):
+def build_environments(config, seed=None, data_logger=None):
     task = config.env_type
     run_type = config.run_type
     penalty_baseline = config.penalty_baseline
+    impact_penalty = config.penalty
     assert task in task_types, "'%s' is not a recognized task" % (task,)
 
     if not isinstance(seed, np.random.SeedSequence):

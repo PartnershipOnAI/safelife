@@ -52,7 +52,6 @@ parser.add_argument('--ensure-gpu', action='store_true',
     help="Check that the machine we're running on has CUDA support")
 args = parser.parse_args()
 
-
 # Setup the directories
 
 safety_dir = os.path.realpath(os.path.join(__file__, '../'))
@@ -121,6 +120,7 @@ try:
         assert torch.cuda.is_available(), "CUDA support requested but not available!"
 
     for penalty in args.impact_penalty or [None]:
+        args.penalty = penalty
         if penalty is None:
             subdir = data_dir
             subjob_name = job_name
@@ -140,10 +140,8 @@ try:
                     run_notes = None
 
                 wandb.init(reinit=True, name=subjob_name, config=args, notes=run_notes)
-                wandb.config.penalty = penalty
 
-        training_envs, testing_envs = build_environments(
-            args, main_seed, data_logger, penalty)
+        training_envs, testing_envs = build_environments(args, main_seed, data_logger)
 
         if args.algo == 'ppo':
             from training.models import SafeLifePolicyNetwork
