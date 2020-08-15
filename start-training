@@ -161,7 +161,7 @@ try:
             from training.ppo import PPO_MultiAgent
 
             obs_shape = training_envs[0].observation_space.shape
-            model = SafeLifePolicyNetwork(obs_shape, dense_depth=1)
+            model = SafeLifePolicyNetwork(obs_shape)
             algo = PPO_MultiAgent(
                 model,
                 training_envs=training_envs,
