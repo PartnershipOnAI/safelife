@@ -117,13 +117,11 @@ try:
     if result.returncode != 0:
         exit(1)
 finally:
-    try:
-        if not args.tag:
-            print("Removing temporary tag...")
-            sp.run(f"git tag -d {git_tag}", shell=True, **quiet)
-    finally:
-        print("Cleaning temporary repo...")
-        tmp_repo.cleanup()
+    if not args.tag:
+        print("Removing temporary tag...")
+        sp.run(f"git tag -d {git_tag}", shell=True, **quiet)
+    print("Cleaning temporary repo...")
+    tmp_repo.cleanup()
 
 print("Starting job...")
 # Run the script, tunneling tensorboard to the specified port.
