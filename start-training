@@ -40,18 +40,17 @@ parser.add_argument('-p', '--impact-penalty', action='append', type=float)
 parser.add_argument('--penalty-baseline',
     choices=('starting-state', 'inaction'), default='starting-state')
 parser.add_argument('-e', '--env-type', default='prune-still')
+parser.add_argument('--curriculum', default="progress_estimate", type=str,
+    help='Curriculum type ("uniform" or "progress_estimate")')
 parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
 parser.add_argument('--seed', default=None, type=int)
 parser.add_argument('-s', '--steps', type=float, default=6e6,
-                    help='Length of training in steps (default: 6e6).')
+    help='Length of training in steps (default: 6e6).')
 parser.add_argument('-w', '--wandb', action='store_true',
-                    help='Use wandb for analytics.')
-
+    help='Use wandb for analytics.')
 parser.add_argument('--ensure-gpu', action='store_true',
-                    help="Check that the machine we're running on has CUDA"
-                    " support")
+    help="Check that the machine we're running on has CUDA support")
 args = parser.parse_args()
-
 
 # Setup the directories
 
@@ -121,6 +120,7 @@ try:
         assert torch.cuda.is_available(), "CUDA support requested but not available!"
 
     for penalty in args.impact_penalty or [None]:
+        args.penalty = penalty
         if penalty is None:
             subdir = data_dir
             subjob_name = job_name
@@ -138,12 +138,10 @@ try:
                     run_notes = open(run_notes).read()
                 else:
                     run_notes = None
-                wandb.init(reinit=True, name=subjob_name, config=args, notes=run_notes)
-                wandb.config.penalty = penalty
 
-        training_envs, testing_envs = build_environments(
-            args.env_type, args.run_type, main_seed, data_logger,
-            penalty, args.penalty_baseline)
+                wandb.init(reinit=True, name=subjob_name, config=args, notes=run_notes)
+
+        training_envs, testing_envs = build_environments(args, main_seed, data_logger)
 
         if args.algo == 'ppo':
             from training.models import SafeLifePolicyNetwork
@@ -199,5 +197,3 @@ finally:
         subprocess.run("sudo shutdown +3", shell=True)
         logging.critical("Shutdown commenced, but keeping ssh available...")
         subprocess.run("sudo rm -f /run/nologin", shell=True)
-        logging.critical("Exiting to bash.")
-        subprocess.run("bash -il", shell=True)

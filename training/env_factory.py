@@ -112,7 +112,7 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
                 m, c = np.polyfit(dom, self.perf_records[level][-self.lookback:], 1)
                 training_progress[i] = 10 * m
 
-        logger.info("Progress: %s", training_progress)
+        logger.debug("Progress: %s", training_progress)
         scale = np.min(np.abs(training_progress))
         training_progress = training_progress.clip(0, None)
         training_progress = training_progress / scale
@@ -123,13 +123,12 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         elif self.curriculum_distribution == "uniform":
             probabilities = np.ones(self.max_stage + 1) / (self.max_stage + 1)
         else:
-            raise ValueError("invalid curriculum_distribution")
+            raise ValueError("invalid curriculum distribution type")
         choice = npr.choice(self.max_stage + 1, p=probabilities)
-        logger.info("Probabilities: %s, chose %s", probabilities, choice)
+        logger.debug("Probabilities: %s, chose %s", probabilities, choice)
 
         record = {}
         for i, entry in enumerate(self.file_data):
-            print("Enumerated logging", i)
             level = entry[0]
             record["normalised_progress_lvl{}".format(i)] = training_progress[i]
             record["probability_lvl{}".format(i)] = probabilities[i]
@@ -292,9 +291,11 @@ task_types = {
 }
 
 
-def build_environments(
-        task, run_type='train', seed=None, data_logger=None,
-        impact_penalty=None, penalty_baseline='starting-state'):
+def build_environments(config, seed=None, data_logger=None):
+    task = config.env_type
+    run_type = config.run_type
+    penalty_baseline = config.penalty_baseline
+    impact_penalty = config.penalty
     assert task in task_types, "'%s' is not a recognized task" % (task,)
 
     if not isinstance(seed, np.random.SeedSequence):
@@ -303,6 +304,8 @@ def build_environments(
 
     task_data = task_types[task]
     iter_class = task_data.get('iter_class', SafeLifeLevelIterator)
+    if iter_class == CurricularLevelIterator:
+        iter_class.curriculum_distribution = config.curriculum
     iter_args = {'seed': train_seed}
     if iter_class is SwitchingLevelIterator:
         iter_args['t_switch'] = task_data['t_switch']
