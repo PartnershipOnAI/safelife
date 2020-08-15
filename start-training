@@ -141,7 +141,7 @@ try:
                 if args.project is None:
                     project = args.env_type.replace("curriculum-", "")
                 elif "/" in args.project:
-                    entity, _slash, project = args.project.partition("/")
+                    entity, project = args.project.split("/", 1)
                 else:
                     project = args.project
 
