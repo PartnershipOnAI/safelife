@@ -36,7 +36,7 @@ parser.add_argument('--run-type', choices=('train', 'benchmark', 'inspect'),
     "If 'train', train the model. If 'benchmark', run the model on testing "
     "environments. If 'inspect', load an ipython prompt for interactive "
     "debugging.")
-parser.add_argument('-p', '--impact-penalty', action='append', type=float)
+parser.add_argument('-p', '--impact-penalty', type=float)
 parser.add_argument('--penalty-baseline',
     choices=('starting-state', 'inaction'), default='starting-state')
 parser.add_argument('-e', '--env-type', default='prune-still')
@@ -51,6 +51,7 @@ parser.add_argument('-w', '--wandb', action='store_true',
 parser.add_argument('--ensure-gpu', action='store_true',
     help="Check that the machine we're running on has CUDA support")
 args = parser.parse_args()
+
 
 # Setup the directories
 
@@ -119,69 +120,57 @@ try:
     if args.ensure_gpu:
         assert torch.cuda.is_available(), "CUDA support requested but not available!"
 
-    for penalty in args.impact_penalty or [None]:
-        args.penalty = penalty
-        if penalty is None:
-            subdir = data_dir
-            subjob_name = job_name
-        else:
-            subdir = os.path.join(data_dir, "penalty_{:0.2f}".format(penalty))
-            subjob_name = "{}-p{:0.2f}".format(job_name, penalty)
+    data_logger = setup_data_logger(data_dir, args.run_type, args.wandb)
 
-        data_logger = setup_data_logger(subdir, args.run_type, args.wandb)
+    if args.wandb:
+        import wandb
+        if wandb.login():
+            run_notes = os.path.join(safety_dir, 'run-notes.txt')
+            if os.path.exists(run_notes):
+                run_notes = open(run_notes).read()
+            else:
+                run_notes = None
 
-        if args.wandb:
-            import wandb
-            if wandb.login():
-                run_notes = os.path.join(safety_dir, 'run-notes.txt')
-                if os.path.exists(run_notes):
-                    run_notes = open(run_notes).read()
-                else:
-                    run_notes = None
+            wandb.init(reinit=True, name=job_name, config=args, notes=run_notes)
 
-                wandb.init(reinit=True, name=subjob_name, config=args, notes=run_notes)
+    training_envs, testing_envs = build_environments(args, main_seed, data_logger)
 
-        training_envs, testing_envs = build_environments(args, main_seed, data_logger)
+    if args.algo == 'ppo':
+        from training.models import SafeLifePolicyNetwork
+        from training.ppo import PPO
 
-        if args.algo == 'ppo':
-            from training.models import SafeLifePolicyNetwork
-            from training.ppo import PPO
+        obs_shape = training_envs[0].observation_space.shape
+        model = SafeLifePolicyNetwork(obs_shape)
+        algo = PPO(
+            model,
+            training_envs=training_envs,
+            testing_envs=testing_envs,
+            data_logger=data_logger)
 
-            obs_shape = training_envs[0].observation_space.shape
-            model = SafeLifePolicyNetwork(obs_shape)
-            algo = PPO(
-                model,
-                training_envs=training_envs,
-                testing_envs=testing_envs,
-                data_logger=data_logger)
+    elif args.algo == 'dqn':
+        from training.models import SafeLifeQNetwork
+        from training.dqn import DQN
 
-        elif args.algo == 'dqn':
-            from training.models import SafeLifeQNetwork
-            from training.dqn import DQN
+        obs_shape = training_envs[0].observation_space.shape
+        train_model = SafeLifeQNetwork(obs_shape)
+        target_model = SafeLifeQNetwork(obs_shape)
+        algo = DQN(
+            train_model, target_model,
+            training_envs=training_envs,
+            testing_envs=testing_envs,
+            data_logger=data_logger)
+    else:
+        logging.error("Unexpected algorithm type '%s'", args.algo)
+        raise ValueError("unexpected algorithm type")
 
-            obs_shape = training_envs[0].observation_space.shape
-            train_model = SafeLifeQNetwork(obs_shape)
-            target_model = SafeLifeQNetwork(obs_shape)
-            algo = DQN(
-                train_model, target_model,
-                training_envs=training_envs,
-                testing_envs=testing_envs,
-                data_logger=data_logger)
-        else:
-            logging.error("Unexpected algorithm type '%s'", args.algo)
-            raise ValueError("unexpected algorithm type")
-
-        if args.run_type == "train":
-            algo.train(int(args.steps))
-        elif args.run_type == "benchmark":
-            algo.run_episodes(testing_envs, num_episodes=1000)
-        elif args.run_type == "inspect":
-            from IPython import embed
-            print('')
-            embed()
-
-        if args.wandb:
-            wandb.join()
+    if args.run_type == "train":
+        algo.train(int(args.steps))
+    elif args.run_type == "benchmark":
+        algo.run_episodes(testing_envs, num_episodes=1000)
+    elif args.run_type == "inspect":
+        from IPython import embed
+        print('')
+        embed()
 
 
 except Exception:
