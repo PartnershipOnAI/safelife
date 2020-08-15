@@ -48,8 +48,6 @@ parser.add_argument('-s', '--steps', type=float, default=6e6,
     help='Length of training in steps (default: 6e6).')
 parser.add_argument('-w', '--wandb', action='store_true',
     help='Use wandb for analytics.')
-parser.add_argument('--project', default=None,
-    help='[Entity and] project for wandb. Eg: "safelife/multiagent" or "multiagent"')
 parser.add_argument('--ensure-gpu', action='store_true',
     help="Check that the machine we're running on has CUDA support")
 args = parser.parse_args()
@@ -135,22 +133,13 @@ try:
         if args.wandb:
             import wandb
             if wandb.login():
-                entity = "safelife"
-                if args.project is None:
-                    project = args.env_type.replace("curriculum-", "")
-                elif "/" in args.project:
-                    entity, project = args.project.split("/", 1)
-                else:
-                    project = args.project
-
                 run_notes = os.path.join(safety_dir, 'run-notes.txt')
                 if os.path.exists(run_notes):
                     run_notes = open(run_notes).read()
                 else:
                     run_notes = None
 
-                wandb.init(reinit=True, name=subjob_name, config=args,
-                           entity=entity, project=project, notes=run_notes)
+                wandb.init(reinit=True, name=subjob_name, config=args, notes=run_notes)
                 wandb.config.penalty = penalty
 
         training_envs, testing_envs = build_environments(
