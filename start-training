@@ -42,7 +42,7 @@ parser.add_argument('--penalty-baseline',
 parser.add_argument('-e', '--env-type', default='prune-still')
 parser.add_argument('--curriculum', default="progress_estimate", type=str,
     help='Curriculum type ("uniform" or "progress_estimate")')
-parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
+parser.add_argument('--algo', choices=('ppo', 'dqn', 'sac'), default='ppo')
 parser.add_argument('--seed', default=None, type=int)
 parser.add_argument('-s', '--steps', type=float, default=6e6,
     help='Length of training in steps (default: 6e6).')
@@ -103,6 +103,7 @@ try:
     import numpy as np
     import torch
     from training.env_factory import build_environments
+    from training import models
     from safelife.random import set_rng
 
     main_seed = np.random.SeedSequence(args.seed)
@@ -134,34 +135,30 @@ try:
             wandb.init(reinit=True, name=job_name, config=args, notes=run_notes)
 
     training_envs, testing_envs = build_environments(args, main_seed, data_logger)
+    obs_shape = training_envs[0].observation_space.shape
+
+    algo_args = {
+        'training_envs': training_envs,
+        'testing_envs': testing_envs,
+        'data_logger': data_logger,
+    }
 
     if args.algo == 'ppo':
-        from training.models import SafeLifePolicyNetwork
-        from training.ppo import PPO
-
-        obs_shape = training_envs[0].observation_space.shape
-        model = SafeLifePolicyNetwork(obs_shape)
-        algo = PPO(
-            model,
-            training_envs=training_envs,
-            testing_envs=testing_envs,
-            data_logger=data_logger)
-
+        from training.ppo import PPO as algo_cls
+        algo_args['model'] = models.SafeLifeValuePolicyNetwork(obs_shape)
     elif args.algo == 'dqn':
-        from training.models import SafeLifeQNetwork
-        from training.dqn import DQN
-
-        obs_shape = training_envs[0].observation_space.shape
-        train_model = SafeLifeQNetwork(obs_shape)
-        target_model = SafeLifeQNetwork(obs_shape)
-        algo = DQN(
-            train_model, target_model,
-            training_envs=training_envs,
-            testing_envs=testing_envs,
-            data_logger=data_logger)
+        from training.dqn import DQN as algo_cls
+        algo_args['training_model'] = models.SafeLifeQNetwork(obs_shape)
+        algo_args['target_model'] = models.SafeLifeQNetwork(obs_shape)
+    elif args.algo == 'sac':
+        from training.sac import SAC as algo_cls
+        algo_args['policy_network'] = models.SafeLifePolicyNetwork(obs_shape)
+        algo_args['q_network'] = lambda: models.SafeLifeQNetwork(obs_shape)
     else:
         logging.error("Unexpected algorithm type '%s'", args.algo)
         raise ValueError("unexpected algorithm type")
+
+    algo = algo_cls(**algo_args)
 
     if args.run_type == "train":
         algo.train(int(args.steps))
