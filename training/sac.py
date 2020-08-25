@@ -35,18 +35,33 @@ class ReplayBuffer(object):
         return min(self.idx, self.capacity)
 
 
+def entropy_k(pi, k, offset=False):
+    if k == 0:
+        y = -pi * torch.log(pi)
+    elif k >= -1 and offset:
+        y = -pi * (pi**k - 1) / k
+    elif offset:
+        y = pi * (pi**k - 1) / k
+    elif k >= -1:
+        y = -pi**(k+1) / k
+    else:
+        y = pi**(k+1) / k
+    return torch.sum(y, axis=-1)
+
+
 class SAC(BaseAlgo):
     data_logger = None
 
     num_steps = 0
 
     gamma = 0.97
-    entropy_coef = 0.1
+    entropy_coef = 0.001
+    k_entropy = -2
     polyak = 0.995
 
-    multi_step_learning = 5
-    training_batch_size = 64
-    optimize_interval = 64
+    multi_step_learning = 1
+    training_batch_size = 96
+    optimize_interval = 32
     learning_rate = 3e-4
 
     replay_initial = 40000
@@ -159,7 +174,7 @@ class SAC(BaseAlgo):
         qmin_t = torch.min(q1_t, q2_t)
         pi_t = self.policy(next_obs).detach()
         V_t = torch.sum(pi_t * qmin_t, axis=-1)
-        entropy_t = -torch.sum(pi_t * torch.log(pi_t + 1e-10), axis=-1)
+        entropy_t = entropy_k(pi_t, self.k_entropy)
         discount = self.gamma**self.multi_step_learning * (1 - done)
         target = reward + discount * (V_t + self.entropy_coef * entropy_t)
 
@@ -176,7 +191,7 @@ class SAC(BaseAlgo):
         qmin = torch.min(q1, q2).detach()
         pi = self.policy(obs)
         V_mean = torch.mean(torch.sum(pi * qmin, axis=-1))
-        entropy = -torch.mean(torch.sum(pi * torch.log(pi + 1e-10), axis=-1))
+        entropy = torch.mean(entropy_k(pi, self.k_entropy))
         pi_loss = -(V_mean + self.entropy_coef * entropy)
 
         # Run the optimizer. Not that each of the losses is independent of
@@ -203,7 +218,7 @@ class SAC(BaseAlgo):
             data = {
                 "q1_loss": q1_loss.item(),
                 "q2_loss": q2_loss.item(),
-                "entropy": entropy.item(),
+                "entropy": torch.mean(entropy_k(pi, 0)).item(),
                 "value_func": V_mean.item(),
             }
             logger.info(
