@@ -55,9 +55,16 @@ class SAC(BaseAlgo):
     num_steps = 0
 
     gamma = 0.97
+    polyak = 0.995
+
     entropy_coef = 0.001
     k_entropy = -2
-    polyak = 0.995
+
+    #entropy_coef = 0.01
+    #k_entropy = -0.5
+
+    #entropy_coef = 0.1
+    #k_entropy = 0
 
     multi_step_learning = 1
     training_batch_size = 96
@@ -169,8 +176,8 @@ class SAC(BaseAlgo):
         done = self.tensor(done, torch.float32)
 
         # Calculate the target for the q functions
-        q1_t = self.qnet1(next_obs).detach()
-        q2_t = self.qnet2(next_obs).detach()
+        q1_t = self.qnet1_t(next_obs).detach()
+        q2_t = self.qnet2_t(next_obs).detach()
         qmin_t = torch.min(q1_t, q2_t)
         pi_t = self.policy(next_obs).detach()
         V_t = torch.sum(pi_t * qmin_t, axis=-1)
