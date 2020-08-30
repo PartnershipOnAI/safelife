@@ -13,8 +13,6 @@ from .base_algo import BaseAlgo
 
 
 logger = logging.getLogger(__name__)
-USE_CUDA = torch.cuda.is_available()
-
 
 class PPO(BaseAlgo):
     data_logger = None  # SafeLifeLogger instance
@@ -67,6 +65,9 @@ class PPO(BaseAlgo):
         values, policies = self.model(tensor_obs)
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
+        if self.compute_device == "tpu":
+            # correct after low precision #floatlife
+            policies = numpy.softmax(policies)
         actions = []
         for policy in policies:
             try:
