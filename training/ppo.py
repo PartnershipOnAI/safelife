@@ -65,9 +65,9 @@ class PPO(BaseAlgo):
         values, policies = self.model(tensor_obs)
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
-        if self.compute_device.type == "tpu":
+        if self.compute_device.type == "xla":
             # correct after low precision #floatlife
-            policies = numpy.softmax(policies)
+            policies = policies.astype("float16")
         actions = []
         for policy in policies:
             try:
