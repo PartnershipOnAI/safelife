@@ -11,8 +11,15 @@ from safelife.random import get_rng
 from .utils import named_output, round_up, get_compute_device
 from .base_algo import BaseAlgo
 
+try:
+    import torch_xla.core.xla_model as xm
+    import torch_xla
+    assert torch_xla
+except ImportError:
+    pass  # no TPU
 
 logger = logging.getLogger(__name__)
+
 
 class PPO(BaseAlgo):
     data_logger = None  # SafeLifeLogger instance
@@ -189,6 +196,8 @@ class PPO(BaseAlgo):
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
+                if self.compute_device.type == "xla":
+                    xm.mark_step()
 
     def train(self, steps):
         max_steps = self.num_steps + steps
