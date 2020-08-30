@@ -355,6 +355,7 @@ class SafeLifeLogger(BaseLogger):
                 isinstance(val, self.wandb.Video)
             }
             data['training_steps'] = global_step
+            data['global_step'] = global_step  # wandb backwards compatibility
             self.wandb.log(data)
 
 
