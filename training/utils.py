@@ -125,11 +125,11 @@ def get_compute_device():
     try:
         # TPU
         import torch_xla.core.xla_model as xm
-        import os
-        os.environ["XLA_USE_BF16"] = "1"
+        # import os
+        # os.environ["XLA_USE_BF16"] = "1"
         return xm.xla_device()
     except:
         if torch.cuda.is_available():
-            return "gpu"
+            return torch.device("cuda")
         else:
-            return "cpu"
+            return torch.device("cpu")
