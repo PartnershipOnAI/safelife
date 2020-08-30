@@ -118,3 +118,18 @@ def nested_setattr(obj, key, val):
     if obj_key:
         obj = nested_getattr(obj, obj_key)
     setattr(obj, set_key, val)
+
+
+def get_compute_device():
+    import torch
+    try:
+        # TPU
+        import torch_xla.core.xla_model as xm
+        import os
+        os.environ["XLA_USE_BF16"] = "1"
+        return xm.xla_device()
+    except:
+        if torch.cuda.is_available():
+            return "gpu"
+        else:
+            return "cpu"

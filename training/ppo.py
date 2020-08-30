@@ -8,7 +8,7 @@ import torch.optim as optim
 from safelife.helper_utils import load_kwargs
 from safelife.random import get_rng
 
-from .utils import named_output, round_up
+from .utils import named_output, round_up, get_compute_device
 from .base_algo import BaseAlgo
 
 
@@ -42,7 +42,8 @@ class PPO(BaseAlgo):
     report_interval = 960
     test_interval = 100000
 
-    compute_device = torch.device('cuda' if USE_CUDA else 'cpu')
+    compute_device = get_compute_device()
+    #compute_device = torch.device('cuda' if USE_CUDA else 'cpu')
 
     training_envs = None
     testing_envs = None
