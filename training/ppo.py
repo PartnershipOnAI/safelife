@@ -43,7 +43,6 @@ class PPO(BaseAlgo):
     test_interval = 100000
 
     compute_device = get_compute_device()
-    #compute_device = torch.device('cuda' if USE_CUDA else 'cpu')
 
     training_envs = None
     testing_envs = None
@@ -68,7 +67,13 @@ class PPO(BaseAlgo):
         values, policies = self.model(tensor_obs)
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
-        actions = [get_rng().choice(len(policy), p=policy) for policy in policies]
+        actions = []
+        for policy in policies:
+            try:
+                actions.append(get_rng().choice(len(policy), p=policy))
+            except ValueError:
+                print("Logits:", policy, "sum to", np.sum(policy))
+                raise
 
         next_obs, rewards, done = self.act_on_envs(envs, actions)
 
