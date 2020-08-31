@@ -44,7 +44,7 @@ class PPO(BaseAlgo):
     reward_clip = 0.0
     policy_rectifier = 'relu'  # or 'elu' or ...more to come
 
-    report_interval = 960 * 16
+    report_interval = 960
     test_interval = 100000
 
     compute_device = get_compute_device()
