@@ -32,8 +32,7 @@ parser = argparse.ArgumentParser(description=textwrap.dedent("""
     """), formatter_class=argparse.RawDescriptionHelpFormatter)
 parser.add_argument('instance_name', help="name of the gcloud instance")
 parser.add_argument('job_name', help="a unique name for this training job")
-parser.add_argument('--port', default='6006',
-    help="local port used to monitor tensorboard")
+parser.add_argument('--port', help="local port used to monitor tensorboard")
 parser.add_argument('--commit-id',
     help="If supplied, the job is run from the specified commit id (or tag or "
     "branch). Otherwise, changes in the working tree are stashed and the "
@@ -154,7 +153,8 @@ tmux_cmds = [
 # Run the script remotely, tunneling tensorboard to the specified port.
 # Use tmux to prevent it from dying on hangup. Note that if this session is
 # already running, tmux should prevent us from running it again.
-sp.run([
-    ssh_cmd, args.instance_name, '-L', args.port + ':localhost:6006',
-    f"tmux new-session -s {args.job_name} \"{'; '.join(tmux_cmds)}\""
-])
+sp.run(
+    [ssh_cmd, args.instance_name] +
+    (['-L', args.port + ':localhost:6006'] if args.port else []) +
+    [f"tmux new-session -s {args.job_name} \"{'; '.join(tmux_cmds)}\""]
+)
