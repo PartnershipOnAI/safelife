@@ -167,7 +167,7 @@ class SwitchingLevelIterator(SafeLifeLevelIterator):
 def safelife_env_factory(
         level_iterator, *,
         num_envs=1,
-        min_performance=None,
+        min_performance_fraction=None,
         data_logger=None,
         multiagent=False,
         impact_penalty=None,
@@ -208,9 +208,9 @@ def safelife_env_factory(
         if impact_penalty is not None:
             env = env_wrappers.SimpleSideEffectPenalty(
                 env, penalty_coef=impact_penalty, baseline=penalty_baseline)
-        if min_performance is not None:
+        if min_performance_fraction is not None:
             env = env_wrappers.MinPerformanceScheduler(
-                env, min_performance=min_performance)
+                env, min_performance_fraction=min_performance_fraction)
         env = SafeLifeLogWrapper(
             env, logger=data_logger, is_training=not testing)
         envs.append(env)
@@ -335,7 +335,7 @@ def build_environments(config, seed=None, data_logger=None):
     training_envs = safelife_env_factory(
         training_iter, data_logger=data_logger, num_envs=16, multiagent=multiagent,
         impact_penalty=impact_penalty, penalty_baseline=penalty_baseline,
-        min_performance=LinearSchedule(data_logger, schedule, [0.01, 0.5]),
+        min_performance_fraction=LinearSchedule(data_logger, schedule, [0.001, 1]),
     )
 
     test_levels = task_data.get('test_levels')

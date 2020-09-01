@@ -137,11 +137,11 @@ class MinPerformanceScheduler(BaseWrapper):
     The benchmark levels typically have `min_performance = 0.5`, but it can
     be helpful to start learning at a much lower value.
     """
-    min_performance = 0.01
+    min_performance_fraction = 1
 
     def reset(self):
         obs = self.env.reset()
-        self.game.min_performance = call(self.min_performance)
+        self.game.min_performance *= call(self.min_performance_fraction)
         return obs
 
 
