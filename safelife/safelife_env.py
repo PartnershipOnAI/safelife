@@ -54,7 +54,7 @@ class SafeLifeEnv(gym.Env):
 
     # The following are default parameters that can be overridden during
     # initialization.
-    single_agent = False
+    single_agent = True
     time_limit = 1000
     remove_white_goals = True
     view_shape = (15, 15)

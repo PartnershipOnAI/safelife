@@ -59,14 +59,6 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
     lookback = 100  # base performance estimates on the last 100 episodes of each level
     curriculum_distribution = "progress_estimate"  # or "uniform"
 
-    def progression_statistic(self, results):
-        n = self.eval_lookback
-        if len(results) < n:
-            return 0
-        # return the 3rd best result from the past ten episodes
-        pool = np.array(results[-n:])
-        return np.quantile(pool, 1 - (self.eval_nth_best / n))
-
     def __init__(self, *levels, logger, curriculum_params={}, **kwargs):
         super().__init__(*levels, repeat_levels=True, **kwargs)
         self.logger = logger
@@ -77,6 +69,14 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
         self.perf_records = defaultdict(lambda: [0.0])  # map level to history of performance
         self.best = defaultdict(lambda: 0)
         load_kwargs(self, curriculum_params)
+
+    def progression_statistic(self, results):
+        n = self.eval_lookback
+        if len(results) < n:
+            return 0
+        # return the 3rd best result from the past ten episodes
+        pool = np.array(results[-n:])
+        return np.quantile(pool, 1 - (self.eval_nth_best / n))
 
     def update_result_records(self):
         "Housekeeping with results of the most recently completed episode."
@@ -169,6 +169,7 @@ def safelife_env_factory(
         num_envs=1,
         min_performance=None,
         data_logger=None,
+        multiagent=False,
         impact_penalty=None,
         penalty_baseline='starting-state',
         testing=False):
@@ -180,6 +181,7 @@ def safelife_env_factory(
         env = SafeLifeEnv(
             level_iterator,
             view_shape=(25,25),
+            single_agent=not multiagent,
             # This is a minor optimization, but a few of the output channels
             # are redundant or unused for normal safelife training levels.
             output_channels=(
@@ -217,50 +219,18 @@ def safelife_env_factory(
 
 
 task_types = {
+    # Single-agent tasks:
     'append-still': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/append-still-easy'],
         'test_levels': 'benchmarks/v1.0/append-still.npz',
         'schedule': [1e6, 2e6],
     },
-    'asym1': {
-        'iter_class': CurricularLevelIterator,
-        'train_levels': ['random/multi-agent/asym1'],
-        'schedule': [1e6, 2e6],
-    },
-    'curriculum-asym1': {
-        'iter_class': CurricularLevelIterator,
-        'train_levels': [
-            'random/multi-agent/asym1',
-            'random/multi-agent/asym1-pretrain-cyanonly',
-            'random/multi-agent/asym1-pretrain-redonly'],
-        'schedule': [1e6, 2e6],
-    },
-    'multi-build-coop': {
-        'iter_class': SafeLifeLevelIterator,
-        'train_levels': ['random/multi-agent/build-coop'],
-        'schedule': [1.5e6, 3e6],
-    },
-    'multi-build-compete': {
-        'iter_class': SafeLifeLevelIterator,
-        'train_levels': ['random/multi-agent/build-compete'],
-        'schedule': [1.5e6, 3e6],
-    },
-    'multi-build-parallel': {
-        'iter_class': SafeLifeLevelIterator,
-        'train_levels': ['random/multi-agent/build-parallel'],
-        'schedule': [1.5e6, 3e6],
-    },
     'prune-still': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/prune-still-easy'],
         'test_levels': 'benchmarks/v1.0/prune-still.npz',
         'schedule': [0.5e6, 1.5e6],
-    },
-    'multi-prune': {
-        'iter_class': SafeLifeLevelIterator,
-        'train_levels': ['random/prune-still', 'random/multi-agent/prune-still'],
-        'schedule': [1.5e6, 3e6],
     },
     'append-spawn': {
         'iter_class': SwitchingLevelIterator,
@@ -288,6 +258,47 @@ task_types = {
         'test_levels': 'benchmarks/v1.0/navigation.npz',
         'schedule': [1e6, 2e6],
     },
+
+    # Multi-agent tasks:
+    'asym1': {
+        'iter_class': CurricularLevelIterator,
+        'train_levels': ['random/multi-agent/asym1'],
+        'multiagent': True,
+        'schedule': [1e6, 2e6],
+    },
+    'curriculum-asym1': {
+        'iter_class': CurricularLevelIterator,
+        'train_levels': [
+            'random/multi-agent/asym1',
+            'random/multi-agent/asym1-pretrain-cyanonly',
+            'random/multi-agent/asym1-pretrain-redonly'],
+        'multiagent': True,
+        'schedule': [1e6, 2e6],
+    },
+    'multi-build-coop': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['random/multi-agent/build-coop'],
+        'multiagent': True,
+        'schedule': [1.5e6, 3e6],
+    },
+    'multi-build-compete': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['random/multi-agent/build-compete'],
+        'multiagent': True,
+        'schedule': [1.5e6, 3e6],
+    },
+    'multi-build-parallel': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['random/multi-agent/build-parallel'],
+        'multiagent': True,
+        'schedule': [1.5e6, 3e6],
+    },
+    'multi-prune': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['random/prune-still', 'random/multi-agent/prune-still'],
+        'multiagent': True,
+        'schedule': [1.5e6, 3e6],
+    },
 }
 
 
@@ -304,21 +315,25 @@ def build_environments(config, seed=None, data_logger=None):
 
     task_data = task_types[task]
     iter_class = task_data.get('iter_class', SafeLifeLevelIterator)
-    if iter_class == CurricularLevelIterator:
-        iter_class.curriculum_distribution = config.curriculum
     iter_args = {'seed': train_seed}
-    if iter_class is SwitchingLevelIterator:
-        iter_args['t_switch'] = task_data['t_switch']
+
+    if iter_class is CurricularLevelIterator:
         iter_args['logger'] = data_logger
-    elif iter_class is CurricularLevelIterator:
+        iter_args['curriculum_params'] = {
+            'curriculum_distribution': config.curriculum
+        }
+    elif iter_class is SwitchingLevelIterator:
+        iter_args['t_switch'] = task_data['t_switch']
         iter_args['logger'] = data_logger
 
     training_iter = iter_class(*task_data['train_levels'], **iter_args)
+
     schedule = task_data['schedule']
+    multiagent = task_data.get('multiagent', False)
     if impact_penalty is not None:
         impact_penalty = LinearSchedule(data_logger, schedule, [0, impact_penalty])
     training_envs = safelife_env_factory(
-        training_iter, data_logger=data_logger, num_envs=16,
+        training_iter, data_logger=data_logger, num_envs=16, multiagent=multiagent,
         impact_penalty=impact_penalty, penalty_baseline=penalty_baseline,
         min_performance=LinearSchedule(data_logger, schedule, [0.01, 0.5]),
     )
@@ -326,14 +341,14 @@ def build_environments(config, seed=None, data_logger=None):
     test_levels = task_data.get('test_levels')
     if run_type == "benchmark" and test_levels:
         testing_envs = safelife_env_factory(
-            data_logger=data_logger, num_envs=20, testing=True,
+            data_logger=data_logger, num_envs=20, testing=True, multiagent=multiagent,
             level_iterator=SafeLifeLevelIterator(
                 test_levels, repeat_levels=True,
                 seed=test_seed, num_workers=0)
         )
     elif test_levels:
         testing_envs = safelife_env_factory(
-            data_logger=data_logger, num_envs=5, testing=True,
+            data_logger=data_logger, num_envs=5, testing=True, multiagent=multiagent,
             level_iterator=SafeLifeLevelIterator(
                 test_levels, distinct_levels=5, repeat_levels=True,
                 seed=test_seed, num_workers=0)
