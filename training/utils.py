@@ -1,5 +1,6 @@
 from collections import namedtuple
 from functools import wraps
+from types import SimpleNamespace
 
 import numpy as np
 
@@ -118,3 +119,31 @@ def nested_setattr(obj, key, val):
     if obj_key:
         obj = nested_getattr(obj, obj_key)
     setattr(obj, set_key, val)
+
+
+def build_nested_config(config):
+    """
+    Convert a configuration object with dotted keys into configuration object
+    with nested dictionaries.
+    """
+    config_dict = vars(config)
+    if '_items' in config_dict:  # wandb style config
+        config_dict = config_dict['_items']
+
+    root = {}
+
+    for key, val in config_dict.items():
+        head, _, tail = key.partition('.')
+        obj = root
+        while tail:
+            obj = obj.setdefault(head, {})
+            if not isinstance(obj, dict):
+                raise AttributeError("Key '%s' conflicts with prior keys." % key)
+            head, _, tail = tail.partition('.')
+        if head in obj:
+            raise AttributeError("Key '%s' conflicts with prior keys." % key)
+        obj[head] = val
+
+    out = SimpleNamespace()
+    out.__dict__.update(root)
+    return out

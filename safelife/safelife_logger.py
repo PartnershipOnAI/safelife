@@ -357,6 +357,10 @@ class SafeLifeLogger(BaseLogger):
             data['training_steps'] = global_step
             self.wandb.log(data)
 
+    def save_hyperparameters(self, params):
+        if self.wandb is not None:
+            self.wandb.config.update(params)
+
 
 class RemoteSafeLifeLogger(BaseLogger):
     """

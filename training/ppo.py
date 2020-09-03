@@ -31,13 +31,8 @@ class PPO(BaseAlgo):
     entropy_reg = 0.01
     entropy_clip = 1.0  # don't start regularization until it drops below this
     vf_coef = 0.5
-    max_gradient_norm = 5.0
     eps_policy = 0.2  # PPO clipping for policy loss
     eps_value = 0.2  # PPO clipping for value loss
-    rescale_policy_eps = False
-    min_eps_rescale = 1e-3  # Only relevant if rescale_policy_eps = True
-    reward_clip = 0.0
-    policy_rectifier = 'relu'  # or 'elu' or ...more to come
 
     report_interval = 960
     test_interval = 100000
@@ -58,6 +53,15 @@ class PPO(BaseAlgo):
             self.model.parameters(), lr=self.learning_rate)
 
         self.load_checkpoint()
+
+        hyperparams = {
+            p: getattr(self, p) for p in (
+                'gamma lmda learning_rate entropy_reg entropy_clip '
+                'vf_coef eps_policy eps_value steps_per_env '
+                'num_minibatches epochs_per_batch').split()
+        }
+        if self.data_logger is not None:
+            self.data_logger.save_hyperparameters({'ppo': hyperparams})
 
     @named_output('obs actions rewards done next_obs agent_ids policies values')
     def take_one_step(self, envs):
