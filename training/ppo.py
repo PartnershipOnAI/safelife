@@ -9,7 +9,7 @@ from safelife.helper_utils import load_kwargs
 from safelife.random import get_rng
 
 from .utils import named_output, round_up
-from .base_algo import BaseAlgo
+from .base_algo import BaseAlgo, HyperParam
 
 
 logger = logging.getLogger(__name__)
@@ -21,18 +21,19 @@ class PPO(BaseAlgo):
 
     num_steps = 0
 
-    steps_per_env = 20
-    num_minibatches = 4
-    epochs_per_batch = 3
+    steps_per_env: HyperParam = 20
+    num_minibatches: HyperParam = 4
+    epochs_per_batch: HyperParam = 3
 
-    gamma = 0.97
-    lmda = 0.95
-    learning_rate = 3e-4
-    entropy_reg = 0.01
-    entropy_clip = 1.0  # don't start regularization until it drops below this
-    vf_coef = 0.5
-    eps_policy = 0.2  # PPO clipping for policy loss
-    eps_value = 0.2  # PPO clipping for value loss
+    gamma: HyperParam = 0.97
+    lmda: HyperParam = 0.95
+    learning_rate: HyperParam = 3e-4
+    entropy_reg: HyperParam = 0.01
+    # don't start regularization until entropy < entropy_clip
+    entropy_clip: HyperParam = 1.0
+    vf_coef: HyperParam = 0.5
+    eps_policy: HyperParam = 0.2  # PPO clipping for policy loss
+    eps_value: HyperParam = 0.2  # PPO clipping for value loss
 
     report_interval = 960
     test_interval = 100000
@@ -54,14 +55,8 @@ class PPO(BaseAlgo):
 
         self.load_checkpoint()
 
-        hyperparams = {
-            p: getattr(self, p) for p in (
-                'gamma lmda learning_rate entropy_reg entropy_clip '
-                'vf_coef eps_policy eps_value steps_per_env '
-                'num_minibatches epochs_per_batch').split()
-        }
         if self.data_logger is not None:
-            self.data_logger.save_hyperparameters({'ppo': hyperparams})
+            self.data_logger.save_hyperparameters({'ppo': self.hyperparams})
 
     @named_output('obs actions rewards done next_obs agent_ids policies values')
     def take_one_step(self, envs):
