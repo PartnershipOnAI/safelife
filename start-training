@@ -160,6 +160,8 @@ def main(args):
                                entity=entity, project=project, notes=run_notes)
 
                     args = wandb.config
+        else:
+            print("Not using wandb")
 
         training_envs, testing_envs = build_environments(args, main_seed, data_logger)
 
