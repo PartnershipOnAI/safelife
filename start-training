@@ -73,7 +73,6 @@ def parse_args():
 def main(args):
     # Setup the directories
     data_dir = os.path.realpath(args.data_dir)
-    logger = setup_logging(data_dir, debug=(args.run_type == 'inspect'))
 
     safety_dir = os.path.realpath(os.path.join(__file__, '../'))
 # Build the safelife C extensions.
@@ -107,6 +106,7 @@ def main(args):
 
     os.makedirs(data_dir, exist_ok=True)
 
+    logger = setup_logging(data_dir, debug=(args.run_type == 'inspect'))
 
     if args.port and not args.wandb:
         tb_proc = subprocess.Popen([
@@ -158,6 +158,8 @@ def main(args):
 
                     wandb.init(reinit=True, name=job_name, config=args,
                                entity=entity, project=project, notes=run_notes)
+
+                    args = wandb.config
 
         training_envs, testing_envs = build_environments(args, main_seed, data_logger)
 
@@ -218,4 +220,5 @@ if __name__ == "__main__":
     if args.profile:
         cProfile.run("main(args, logger)")
     else:
+        print(args)
         main(args)
