@@ -61,13 +61,35 @@ def parse_args():
     args = parser.parse_args()
 
 
+
+# Start tensorboard
+
+
+    return args
+
+
+# Start training!
+
+def main(args):
     # Setup the directories
+    data_dir = os.path.realpath(args.data_dir)
+    logger = setup_logging(data_dir, debug=(args.run_type == 'inspect'))
 
     safety_dir = os.path.realpath(os.path.join(__file__, '../'))
-    data_dir = os.path.realpath(args.data_dir)
+# Build the safelife C extensions.
+# By making the build lib the same as the base folder, the extension
+# should just get built into the source directory.
+    subprocess.run([
+        "python3", os.path.join(safety_dir, "setup.py"),
+        "build_ext", "--build-lib", safety_dir
+    ])
+
+
+
     job_name = os.path.basename(data_dir)
     sys.path.insert(1, safety_dir)  # ensure current directory is on the path
     os.chdir(safety_dir)
+
 
     if os.path.exists(data_dir) and args.data_dir is not None and args.run_type == 'train':
         print("The directory '%s' already exists. "
@@ -86,35 +108,19 @@ def parse_args():
     os.makedirs(data_dir, exist_ok=True)
 
 
-# Build the safelife C extensions.
-# By making the build lib the same as the base folder, the extension
-# should just get built into the source directory.
-    subprocess.run([
-        "python3", os.path.join(safety_dir, "setup.py"),
-        "build_ext", "--build-lib", safety_dir
-    ])
-
-
-# Start tensorboard
-
     if args.port and not args.wandb:
         tb_proc = subprocess.Popen([
             "tensorboard", "--logdir_spec", job_name + ':' + data_dir, '--port', str(args.port)])
     else:
         tb_proc = None
 
-    return args
 
-
-# Start training!
-
-def main(args):
-    logger = setup_logging(data_dir, debug=(args.run_type == 'inspect'))
     try:
         import numpy as np
         import torch
         from training.env_factory import build_environments
         from safelife.random import set_rng
+
 
         main_seed = np.random.SeedSequence(args.seed)
         logger.info("COMMAND ARGUMENTS: %s", ' '.join(sys.argv))
@@ -208,7 +214,8 @@ def main(args):
             subprocess.run("sudo rm -f /run/nologin", shell=True)
 
 if __name__ == "__main__":
+    args = parse_args()
     if args.profile:
         cProfile.run("main(args, logger)")
     else:
-        main(args, logger)
+        main(args)
