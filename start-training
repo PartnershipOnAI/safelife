@@ -139,6 +139,7 @@ def main(args):
 
         data_logger = setup_data_logger(data_dir, args.run_type, args.wandb)
 
+        print("Args.wandb is", args.wandb)
         if args.wandb:
             import wandb
             if wandb.login():
