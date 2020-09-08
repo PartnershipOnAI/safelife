@@ -459,6 +459,9 @@ class RemoteSafeLifeLogger(BaseLogger):
         self._promises.append(self.actor.log_scalars.remote(
             data, step, tag, delta_steps))
 
+    def save_hyperparameters(self, params):
+        logger.error("Hyperparameter saving not supported with RemoteSafeLifeLogger")
+
 
 class SafeLifeLogWrapper(gym.Wrapper):
     """
