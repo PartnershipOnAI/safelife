@@ -131,17 +131,18 @@ training_cmd += remaining_args
 if not args.no_shutdown:
     training_cmd.append('--shutdown')
 tmux_cmds = [
-    # Set the path variable to include conda, which contains the latest
-    # versions of python, torch, etc.
-    # This is very specific to our particular gcloud setup.
-    "PATH=/usr/local/cuda/bin:/opt/conda/bin:/opt/conda/condabin:$PATH",
+    # Load all of the environment variables as if we were running from a
+    # login shell. Importantly, this uses the Anaconda versions of the
+    # python environment.
+    "source /etc/profile",
+    "source ~/.bashrc",
 
     # Create a "current_job" directory. This is handy for re-entering the job.
     f"ln -nsf {src_dir} ~/current_job",
 
     # Install dependencies.
     "sudo apt-get install ffmpeg --yes",
-    f"pip install -r {src_dir}/requirements.txt",
+    f"pip install --user -r {src_dir}/requirements.txt",
 
     # Run the training script!
     f"cd {src_dir}", ' '.join(training_cmd),
