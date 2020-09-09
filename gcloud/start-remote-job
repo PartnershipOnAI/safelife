@@ -130,6 +130,8 @@ training_cmd = ['./start-training', data_dir, '--ensure-gpu']
 training_cmd += remaining_args
 if not args.no_shutdown:
     training_cmd.append('--shutdown')
+if args.port:
+    training_cmd.append('--port=6006')
 tmux_cmds = [
     # Load all of the environment variables as if we were running from a
     # login shell. Importantly, this uses the Anaconda versions of the
