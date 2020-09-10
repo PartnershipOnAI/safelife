@@ -15,12 +15,6 @@ import sys
 import numpy as np
 import torch
 
-from safelife.random import set_rng
-from training.logging_setup import setup_logging, setup_data_logger
-from training.env_factory import build_environments
-from training.global_config import config
-from training import models
-
 
 parser = argparse.ArgumentParser(description="""
     Run agent training using proximal policy optimization.
@@ -65,6 +59,7 @@ parser.add_argument('--ensure-gpu', action='store_true',
     help="Check that the machine we're running on has CUDA support")
 args = parser.parse_args()
 
+
 if args.seed is None:
     # Make sure the seed can be represented by floating point exactly.
     # This is just because we may want to pass it over the web, and javascript
@@ -77,6 +72,22 @@ assert args.wandb or args.data_dir, ("Either a data directory must be set or "
 
 if args.ensure_gpu:
     assert torch.cuda.is_available(), "CUDA support requested but not available!"
+
+
+# Build the C extensions and only _then_ import safelife modules.
+
+safety_dir = os.path.realpath(os.path.dirname(__file__))
+sys.path.insert(1, safety_dir)  # ensure current directory is on the path
+subprocess.run([
+    "python3", os.path.join(safety_dir, "setup.py"),
+    "build_ext", "--inplace"
+])
+
+from safelife.random import set_rng  # noqa
+from training.logging_setup import setup_logging, setup_data_logger  # noqa
+from training.env_factory import build_environments  # noqa
+from training.global_config import config  # noqa
+from training import models  # noqa
 
 
 # Check to see if the data directory is already in use
@@ -98,16 +109,6 @@ if args.data_dir is not None:
             exit()
 else:
     data_dir = job_name = None
-
-
-# Build the C extensions
-
-safety_dir = os.path.realpath(os.path.dirname(__file__))
-sys.path.insert(1, safety_dir)  # ensure current directory is on the path
-subprocess.run([
-    "python3", os.path.join(safety_dir, "setup.py"),
-    "build_ext", "--inplace"
-])
 
 
 # Setup wandb and initialize logging
