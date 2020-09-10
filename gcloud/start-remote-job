@@ -126,7 +126,7 @@ finally:
     tmp_repo.cleanup()
 
 print("Starting job...")
-training_cmd = ['./start-training', data_dir, '--ensure-gpu']
+training_cmd = ['python3', 'start-training.py', data_dir, '--ensure-gpu']
 training_cmd += remaining_args
 if not args.no_shutdown:
     training_cmd.append('--shutdown')
