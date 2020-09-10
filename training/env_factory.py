@@ -303,10 +303,10 @@ task_types = {
 
 
 def build_environments(config, seed=None, data_logger=None):
-    task = config.env_type
-    run_type = config.run_type
-    penalty_baseline = config.penalty_baseline
-    impact_penalty = config.impact_penalty
+    task = config['env_type']
+    run_type = config['run_type']
+    penalty_baseline = config['penalty_baseline']
+    impact_penalty = config['impact_penalty']
     assert task in task_types, "'%s' is not a recognized task" % (task,)
 
     if not isinstance(seed, np.random.SeedSequence):
@@ -320,7 +320,7 @@ def build_environments(config, seed=None, data_logger=None):
     if iter_class is CurricularLevelIterator:
         iter_args['logger'] = data_logger
         iter_args['curriculum_params'] = {
-            'curriculum_distribution': config.curriculum
+            'curriculum_distribution': config['curriculum']
         }
     elif iter_class is SwitchingLevelIterator:
         iter_args['t_switch'] = task_data['t_switch']

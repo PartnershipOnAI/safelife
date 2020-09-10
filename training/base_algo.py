@@ -1,7 +1,6 @@
 import os
 import glob
 import logging
-from typing import Generic, TypeVar
 
 import torch
 import numpy as np
@@ -9,15 +8,6 @@ import numpy as np
 from .utils import nested_getattr, nested_setattr, named_output
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar('T')
-
-
-class HyperParam(Generic[T]):
-    """
-    Simple type to indicate that a class variable counts as a hyperparameter.
-    """
-    pass
 
 
 class BaseAlgo(object):
@@ -53,13 +43,6 @@ class BaseAlgo(object):
 
     _last_checkpoint = -1
     _checkpoint_directory = None
-
-    @property
-    def hyperparams(self):
-        return {
-            k: getattr(self, k) for k, v in self.__annotations__.items()
-            if issubclass(v, HyperParam)
-        }
 
     @property
     def checkpoint_directory(self):

@@ -17,8 +17,8 @@ import torch
 
 from safelife.random import set_rng
 from training.logging_setup import setup_logging, setup_data_logger
-from training.utils import build_nested_config
 from training.env_factory import build_environments
+from training.global_config import config
 from training import models
 
 
@@ -66,8 +66,10 @@ parser.add_argument('--ensure-gpu', action='store_true',
 args = parser.parse_args()
 
 if args.seed is None:
-    args.seed = np.random.randint(2**63)
-
+    # Make sure the seed can be represented by floating point exactly.
+    # This is just because we may want to pass it over the web, and javascript
+    # doesn't have 64 bit integers.
+    args.seed = np.random.randint(2**53)
 
 assert args.wandb or args.data_dir, ("Either a data directory must be set or "
     "the wandb flag must be set. If wandb is set but there is no data "
@@ -128,30 +130,30 @@ if args.wandb:
         # Note that wandb config can contain different and/or new keys that
         # aren't in the command-line arguments. This is especially true for
         # wandb sweeps.
-        config = build_nested_config(wandb.config)
+        config.update(wandb.config._items)
 
         if job_name is None:
             job_name = wandb.run.name
             data_dir = os.path.join(wandb.run.dir, 'data')
 else:
-    config = build_nested_config(args)
+    config.update(vars(args))
 
 os.makedirs(data_dir, exist_ok=True)
-logger = setup_logging(data_dir, debug=(config.run_type == 'inspect'))
+logger = setup_logging(data_dir, debug=(config['run_type'] == 'inspect'))
 logger.info("COMMAND ARGUMENTS: %s", ' '.join(sys.argv))
 logger.info("TRAINING RUN: %s", job_name)
 logger.info("ON HOST: %s", platform.node())
 
-data_logger = setup_data_logger(data_dir, config.run_type, args.wandb)
+data_logger = setup_data_logger(data_dir, config['run_type'], args.wandb)
 
 
 # Set the global seed
 
-main_seed = np.random.SeedSequence(config.seed)
+main_seed = np.random.SeedSequence(config['seed'])
 logger.info("SETTING GLOBAL SEED: %i", main_seed.entropy)
 set_rng(np.random.default_rng(main_seed))
 torch.manual_seed(main_seed.entropy & (2**31 - 1))
-if config.deterministic:
+if config['deterministic']:
     # Note that this may slow down performance
     # See https://pytorch.org/docs/stable/notes/randomness.html#cudnn
     torch.backends.cudnn.deterministic = True
@@ -179,26 +181,30 @@ try:
         'data_logger': data_logger,
     }
 
-    if config.algo == 'ppo':
+    if config['algo'] == 'ppo':
         from training.ppo import PPO as algo_cls
         algo_args['model'] = models.SafeLifePolicyNetwork(obs_shape)
-        algo_args.update(getattr(config, 'ppo', {}))
-    elif config.algo == 'dqn':
+    elif config['algo'] == 'dqn':
         from training.dqn import DQN as algo_cls
         algo_args['training_model'] = models.SafeLifeQNetwork(obs_shape)
         algo_args['target_model'] = models.SafeLifeQNetwork(obs_shape)
-        algo_args.update(getattr(config, 'dqn', {}))
     else:
-        logging.error("Unexpected algorithm type '%s'", config.algo)
+        logging.error("Unexpected algorithm type '%s'", config['algo'])
         raise ValueError("unexpected algorithm type")
 
     algo = algo_cls(**algo_args)
 
-    if config.run_type == "train":
-        algo.train(int(config.steps))
-    elif config.run_type == "benchmark":
+    if args.wandb:
+        # Before we start running things, save the config object back to wandb.
+        config2 = config.copy()
+        config2.pop('_wandb', None)
+        wandb.config.update(config2)
+
+    if config['run_type'] == "train":
+        algo.train(int(config['steps']))
+    elif config['run_type'] == "benchmark":
         algo.run_episodes(testing_envs, num_episodes=1000)
-    elif config.run_type == "inspect":
+    elif config['run_type'] == "inspect":
         from IPython import embed
         print('')
         embed()

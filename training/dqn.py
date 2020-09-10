@@ -9,7 +9,8 @@ import torch.optim as optim
 from safelife.helper_utils import load_kwargs
 from safelife.random import get_rng
 
-from .base_algo import BaseAlgo, HyperParam
+from .base_algo import BaseAlgo
+from .global_config import HyperParam, update_hyperparams
 from .utils import named_output, round_up
 
 
@@ -36,6 +37,7 @@ class ReplayBuffer(object):
         return min(self.idx, self.capacity)
 
 
+@update_hyperparams
 class DQN(BaseAlgo):
     data_logger = None
 
@@ -84,9 +86,6 @@ class DQN(BaseAlgo):
 
         self.load_checkpoint()
         self.epsilon = self.epsilon_schedule(self.num_steps)
-
-        if self.data_logger is not None:
-            self.data_logger.save_hyperparameters({'dqn': self.hyperparams})
 
     def update_target(self):
         self.target_model.load_state_dict(self.training_model.state_dict())

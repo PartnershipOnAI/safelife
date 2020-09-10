@@ -357,10 +357,6 @@ class SafeLifeLogger(BaseLogger):
             data['training_steps'] = global_step
             self.wandb.log(data)
 
-    def save_hyperparameters(self, params):
-        if self.wandb is not None:
-            self.wandb.config.update(params)
-
 
 class RemoteSafeLifeLogger(BaseLogger):
     """
@@ -458,9 +454,6 @@ class RemoteSafeLifeLogger(BaseLogger):
         self._old_steps = self._cstats['training_steps']
         self._promises.append(self.actor.log_scalars.remote(
             data, step, tag, delta_steps))
-
-    def save_hyperparameters(self, params):
-        logger.error("Hyperparameter saving not supported with RemoteSafeLifeLogger")
 
 
 class SafeLifeLogWrapper(gym.Wrapper):

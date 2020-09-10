@@ -8,14 +8,16 @@ import torch.optim as optim
 from safelife.helper_utils import load_kwargs
 from safelife.random import get_rng
 
+from .base_algo import BaseAlgo
+from .global_config import HyperParam, update_hyperparams
 from .utils import named_output, round_up
-from .base_algo import BaseAlgo, HyperParam
 
 
 logger = logging.getLogger(__name__)
 USE_CUDA = torch.cuda.is_available()
 
 
+@update_hyperparams
 class PPO(BaseAlgo):
     data_logger = None  # SafeLifeLogger instance
 
@@ -54,9 +56,6 @@ class PPO(BaseAlgo):
             self.model.parameters(), lr=self.learning_rate)
 
         self.load_checkpoint()
-
-        if self.data_logger is not None:
-            self.data_logger.save_hyperparameters({'ppo': self.hyperparams})
 
     @named_output('obs actions rewards done next_obs agent_ids policies values')
     def take_one_step(self, envs):
