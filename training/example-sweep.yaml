@@ -1,0 +1,37 @@
+# Use this file to run a parameter sweep on wandb.
+#
+# First, initialize the sweep by running
+#
+#     wandb sweep training/example-sweep.yaml
+#
+# This will print out a sweep id. Then just run
+#
+#     wandb agent <sweep-id>
+#
+# or
+#
+#     gcloud/start-remote-job <remote> <sweep-id> --sweep
+#
+# and that should be it! You can start as many concurrent agents as you want.
+# More details can be found at https://docs.wandb.com/sweeps/quickstart.
+
+---
+
+program: start-training.py
+method: grid
+
+parameters:
+
+  env_type:
+    values:
+      - append-still
+      - prune-still
+  steps:
+    value: 1_000_000
+  algo:
+    value: ppo
+
+command:
+  - python3
+  - start-training.py
+  - --wandb

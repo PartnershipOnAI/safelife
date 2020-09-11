@@ -44,8 +44,14 @@ parser.add_argument('--tag', nargs='?', const="auto",
 parser.add_argument('--no-shutdown', action="store_true",
     help="By default, the remote machine will shutdown when the job is "
     "complete. This flag prevents that from happening.")
+parser.add_argument('--sweep', action="store_true",
+    help="Specifies that the job is part of a wandb sweep. "
+    "The job name should correspond to the sweep id.")
 args, remaining_args = parser.parse_known_args()
 
+if args.sweep:
+    sweep_id = args.job_name
+    args.job_name = 'sweep-' + sweep_id
 src_dir = '~/' + args.job_name
 data_dir = '~/{job_name}/data/{job_name}/'.format(job_name=args.job_name)
 
@@ -126,32 +132,54 @@ finally:
     tmp_repo.cleanup()
 
 print("Starting job...")
-training_cmd = ['python3', 'start-training.py', data_dir, '--ensure-gpu']
-training_cmd += remaining_args
-if not args.no_shutdown:
-    training_cmd.append('--shutdown')
-if args.port:
-    training_cmd.append('--port=6006')
-tmux_cmds = [
-    # Load all of the environment variables as if we were running from a
-    # login shell. Importantly, this uses the Anaconda versions of the
-    # python environment.
-    "source /etc/profile",
-    "source ~/.bashrc",
+if args.sweep:
+    tmux_cmds = [
+        # Load all of the environment variables as if we were running from a
+        # login shell. Importantly, this uses the Anaconda versions of the
+        # python environment.
+        "source /etc/profile",
+        "source ~/.bashrc",
 
-    # Create a "current_job" directory. This is handy for re-entering the job.
-    f"ln -nsf {src_dir} ~/current_job",
+        # Install dependencies.
+        "sudo apt-get install ffmpeg --yes",
+        f"pip install --user -r {src_dir}/requirements.txt",
 
-    # Install dependencies.
-    "sudo apt-get install ffmpeg --yes",
-    f"pip install --user -r {src_dir}/requirements.txt",
+        # Log in to wandb and start the sweep
+        f"cd {src_dir}",
+        f"wandb agent {sweep_id}",
 
-    # Run the training script!
-    f"cd {src_dir}", ' '.join(training_cmd),
+        # When the sweep is done, log out and exit to bash.
+        "sudo shutdown +3",
+        "bash -il",
+    ]
+else:
+    training_cmd = ['python3', 'start-training.py', data_dir, '--ensure-gpu']
+    training_cmd += remaining_args
+    if not args.no_shutdown:
+        training_cmd.append('--shutdown')
+    if args.port:
+        training_cmd.append('--port=6006')
+    tmux_cmds = [
+        # Load all of the environment variables as if we were running from a
+        # login shell. Importantly, this uses the Anaconda versions of the
+        # python environment.
+        "source /etc/profile",
+        "source ~/.bashrc",
 
-    # Finally, exit to bash. This is very useful for debugging.
-    "bash -il",
-]
+        # Create a "current_job" directory.
+        # This is handy for re-entering the job.
+        f"ln -nsf {src_dir} ~/current_job",
+
+        # Install dependencies.
+        "sudo apt-get install ffmpeg --yes",
+        f"pip install --user -r {src_dir}/requirements.txt",
+
+        # Run the training script!
+        f"cd {src_dir}", ' '.join(training_cmd),
+
+        # Finally, exit to bash. This is very useful for debugging.
+        "bash -il",
+    ]
 
 # Run the script remotely, tunneling tensorboard to the specified port.
 # Use tmux to prevent it from dying on hangup. Note that if this session is
