@@ -1,6 +1,11 @@
 import os
 import logging
 import logging.config
+from functools import lru_cache
+
+from safelife.safelife_logger import SafeLifeLogger
+
+from .global_config import config
 
 
 def setup_logging(data_dir, debug=False):
@@ -58,40 +63,21 @@ def setup_logging(data_dir, debug=False):
     return logging.getLogger('training')
 
 
-def setup_data_logger(data_dir, run_type='train', use_wandb=False):
-    # Delayed import so that running from command line returns an error
-    # faster for bad inputs.
-    from safelife.safelife_logger import SafeLifeLogger
-
-    if use_wandb:
-        import wandb
-        summary_writer = False
-    else:
-        wandb = None
-        summary_writer = 'new'
-
+@lru_cache(maxsize=128)  # reuse the same data logger if called multiple times
+def setup_data_logger(data_dir, episode_type):
     os.makedirs(data_dir, exist_ok=True)
 
-    if run_type == "benchmark":
-        data_logger = SafeLifeLogger(
-            data_dir,
-            summary_writer=False,
-            training_log=False,
-            testing_video_name="benchmark-{level_name}",
-            testing_log="benchmark-data.json",
-            wandb=wandb)
-    elif run_type == "train":
-        data_logger = SafeLifeLogger(
-            data_dir,
-            summary_writer=summary_writer,
-            wandb=wandb)
+    if config.get('_wandb'):
+        import wandb
+        summary_writer = False
+    elif config['run_type'] == 'train':
+        wandb = None
+        summary_writer = 'auto'
     else:
-        data_logger = SafeLifeLogger(
-            data_dir,
-            summary_writer=False,
-            training_log=False,
-            testing_log=False,
-            training_video_name=False,
-            testing_video_name=False,
-            wandb=False)
-    return data_logger
+        wandb = None
+        summary_writer = False
+
+    return SafeLifeLogger(
+        data_dir, episode_type,
+        summary_writer=summary_writer,
+        wandb=wandb)

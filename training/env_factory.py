@@ -17,6 +17,8 @@ from safelife.safelife_env import SafeLifeEnv
 from safelife.safelife_game import CellTypes
 from safelife.safelife_logger import SafeLifeLogWrapper
 
+from .logging_setup import setup_data_logger
+
 
 logger = logging.getLogger(__name__)
 
@@ -172,7 +174,7 @@ def safelife_env_factory(
         multiagent=False,
         impact_penalty=None,
         penalty_baseline='starting-state',
-        testing=False):
+        training=False):
     """
     Factory for creating SafeLifeEnv instances with useful wrappers.
     """
@@ -202,7 +204,7 @@ def safelife_env_factory(
                 CellTypes.orientation_bit + 1,
             ))
 
-        if not testing:
+        if training:
             env = env_wrappers.MovementBonusWrapper(env, as_penalty=True)
             env = env_wrappers.ExtraExitBonus(env)
         if impact_penalty is not None:
@@ -211,8 +213,7 @@ def safelife_env_factory(
         if min_performance_fraction is not None:
             env = env_wrappers.MinPerformanceScheduler(
                 env, min_performance_fraction=min_performance_fraction)
-        env = SafeLifeLogWrapper(
-            env, logger=data_logger, is_training=not testing)
+        env = SafeLifeLogWrapper(env, logger=data_logger)
         envs.append(env)
 
     return envs
@@ -302,9 +303,8 @@ task_types = {
 }
 
 
-def build_environments(config, seed=None, data_logger=None):
+def build_environments(config, seed=None, data_dir=None):
     task = config['env_type']
-    run_type = config['run_type']
     penalty_baseline = config['penalty_baseline']
     impact_penalty = config['impact_penalty']
     assert task in task_types, "'%s' is not a recognized task" % (task,)
@@ -317,43 +317,50 @@ def build_environments(config, seed=None, data_logger=None):
     iter_class = task_data.get('iter_class', SafeLifeLevelIterator)
     iter_args = {'seed': train_seed}
 
+    training_logger = setup_data_logger(data_dir, 'training')
+
     if iter_class is CurricularLevelIterator:
-        iter_args['logger'] = data_logger
+        iter_args['logger'] = training_logger
         iter_args['curriculum_params'] = {
             'curriculum_distribution': config['curriculum']
         }
     elif iter_class is SwitchingLevelIterator:
         iter_args['t_switch'] = task_data['t_switch']
-        iter_args['logger'] = data_logger
+        iter_args['logger'] = training_logger
 
     training_iter = iter_class(*task_data['train_levels'], **iter_args)
 
     schedule = task_data['schedule']
     multiagent = task_data.get('multiagent', False)
     if impact_penalty is not None:
-        impact_penalty = LinearSchedule(data_logger, schedule, [0, impact_penalty])
-    training_envs = safelife_env_factory(
-        training_iter, data_logger=data_logger, num_envs=16, multiagent=multiagent,
+        impact_penalty = LinearSchedule(training_logger, schedule, [0, impact_penalty])
+
+    envs = {}
+    envs['training'] = safelife_env_factory(
+        training_iter, num_envs=16, multiagent=multiagent,
+        data_logger=training_logger,
         impact_penalty=impact_penalty, penalty_baseline=penalty_baseline,
-        min_performance_fraction=LinearSchedule(data_logger, schedule, [0.001, 1]),
+        min_performance_fraction=LinearSchedule(
+            training_logger, schedule, [0.001, 1]),
     )
 
     test_levels = task_data.get('test_levels')
-    if run_type == "benchmark" and test_levels:
-        testing_envs = safelife_env_factory(
-            data_logger=data_logger, num_envs=20, testing=True, multiagent=multiagent,
+    if test_levels:
+        envs['benchmark'] = safelife_env_factory(
+            num_envs=20, multiagent=multiagent,
+            data_logger=setup_data_logger(data_dir, 'benchmark'),
             level_iterator=SafeLifeLevelIterator(
                 test_levels, repeat_levels=True,
                 seed=test_seed, num_workers=0)
         )
-    elif test_levels:
-        testing_envs = safelife_env_factory(
-            data_logger=data_logger, num_envs=5, testing=True, multiagent=multiagent,
+        # Test levels are the same as the benchmark levels, except that we
+        # only run the first 5.
+        envs['testing'] = safelife_env_factory(
+            num_envs=5, multiagent=multiagent,
+            data_logger=setup_data_logger(data_dir, 'testing'),
             level_iterator=SafeLifeLevelIterator(
                 test_levels, distinct_levels=5, repeat_levels=True,
                 seed=test_seed, num_workers=0)
         )
-    else:
-        testing_envs = None
 
-    return training_envs, testing_envs
+    return envs

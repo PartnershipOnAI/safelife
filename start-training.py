@@ -84,6 +84,7 @@ subprocess.run([
 ])
 
 from safelife.random import set_rng  # noqa
+from safelife.safelife_logger import SafeLifeLogger  # noqa
 from training.logging_setup import setup_logging, setup_data_logger  # noqa
 from training.env_factory import build_environments  # noqa
 from training.global_config import config  # noqa
@@ -137,6 +138,7 @@ if args.wandb:
             job_name = wandb.run.name
             data_dir = os.path.join(wandb.run.dir, 'data')
 else:
+    wandb = None
     config.update(vars(args))
 
 os.makedirs(data_dir, exist_ok=True)
@@ -144,8 +146,6 @@ logger = setup_logging(data_dir, debug=(config['run_type'] == 'inspect'))
 logger.info("COMMAND ARGUMENTS: %s", ' '.join(sys.argv))
 logger.info("TRAINING RUN: %s", job_name)
 logger.info("ON HOST: %s", platform.node())
-
-data_logger = setup_data_logger(data_dir, config['run_type'], args.wandb)
 
 
 # Set the global seed
@@ -173,13 +173,13 @@ else:
 # Start training!
 
 try:
-    training_envs, testing_envs = build_environments(config, main_seed, data_logger)
-    obs_shape = training_envs[0].observation_space.shape
+    envs = build_environments(config, main_seed, data_dir)
+    obs_shape = envs['training'][0].observation_space.shape
 
     algo_args = {
-        'training_envs': training_envs,
-        'testing_envs': testing_envs,
-        'data_logger': data_logger,
+        'training_envs': envs['training'],
+        'testing_envs': envs.get('testing'),
+        'data_logger': setup_data_logger(data_dir, 'training'),
     }
 
     if config['algo'] == 'ppo':
@@ -203,8 +203,10 @@ try:
 
     if config['run_type'] == "train":
         algo.train(int(config['steps']))
-    elif config['run_type'] == "benchmark":
-        algo.run_episodes(testing_envs, num_episodes=1000)
+        if 'benchmark' in envs:
+            algo.run_episodes(envs['benchmark'], num_episodes=1000)
+    elif config['run_type'] == "benchmark" and "benchmark" in envs:
+        algo.run_episodes(envs['benchmark'], num_episodes=1000)
     elif config['run_type'] == "inspect":
         from IPython import embed
         print('')

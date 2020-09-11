@@ -143,81 +143,113 @@ class SafeLifeLogger(BaseLogger):
         it's a bit redundant.
     """
 
+    # We want to keep a couple of things shared across different SafeLifeLogger
+    # instances. The cumulative stats is shared so that one logger can see how
+    # much progress has occurred in another, and we want to share summary
+    # writers across instances iff they share the same logdir.
+    cumulative_stats = {}
+    _summary_writers = {}  # map of directories to SummaryWriter instances
+
     logdir = None
-    cumulative_stats = None
-    summary_writer = None
-
-    training_video_name = "train-s{training_steps}-{level_name}"
-    testing_video_name = "test-s{training_steps}-{level_name}"
-    training_video_interval = 100
-    testing_video_interval = 1
-
-    training_log = "training-log.json"
-    testing_log = "testing-log.json"
-
+    episode_type = 'training'
+    episode_logname = None  # log file name
+    episode_msg = "Episode completed."
+    video_name = None
+    video_interval = 1
     record_side_effects = True
 
-    _testing_log = None
-    _training_log = None
-    summary_writer = 'new'
     wandb = None
+    summary_writer = 'auto'
+    _episode_log = None  # writable file object
 
-    console_training_msg = textwrap.dedent("""
-        Training episode completed.
-            level name: {level_name}
-            episode #{training_episodes};  training steps = {training_steps}
-            clock: {time}
-            length: {length}
-            reward: {reward} / {reward_possible} (exit cutoff = {reward_needed})
-    """[1:-1])
-    console_testing_msg = textwrap.dedent("""
-        Testing episode completed.
-            level name: {level_name}
-            clock: {time}
-            length: {length}
-            reward: {reward} / {reward_possible} (exit cutoff = {reward_needed})
-    """[1:-1])
+    _defaults = {
+        'training': {
+            'episode_logname': "training-log.json",
+            'video_name': "train-s{training_steps}-{level_name}",
+            'video_interval': 100,
+            'episode_msg': textwrap.dedent("""
+                Training episode completed.
+                    level name: {level_name}
+                    episode #{training_episodes};  training steps = {training_steps}
+                    clock: {time}
+                    length: {length}
+                    reward: {reward} / {reward_possible} (exit cutoff = {reward_needed})
+                """[1:-1]),
+        },
+        'testing': {
+            'episode_logname': "testing-log.json",
+            'video_name': "test-s{training_steps}-{level_name}",
+            'video_interval': 1,
+            'episode_msg': textwrap.dedent("""
+                Testing episode completed.
+                    level name: {level_name}
+                    clock: {time}
+                    length: {length}
+                    reward: {reward} / {reward_possible} (exit cutoff = {reward_needed})
+                """[1:-1]),
+        },
+        'benchmark': {
+            'episode_logname': "benchmark-data.json",
+            'video_name': "benchmark-{level_name}",
+            'video_interval': 1,
+            'episode_msg': textwrap.dedent("""
+                Benchmark episode completed.
+                    level name: {level_name}
+                    clock: {time}
+                    length: {length}
+                    reward: {reward} / {reward_possible} (exit cutoff = {reward_needed})
+                """[1:-1]),
+        },
+    }
 
-    def __init__(self, logdir, **kwargs):
+    def __init__(self, logdir=None, episode_type='training', **kwargs):
+        self.episode_type = episode_type
+        self.logdir = logdir
+
+        for key, val in self._defaults.get(episode_type, {}).items():
+            setattr(self, key, val)
         load_kwargs(self, kwargs)
 
-        self.logdir = logdir
-        self.cumulative_stats = {
-            'training_episodes': 0,
-            'training_steps': 0,
-            'testing_episodes': 0,
-        }
+        self.cumulative_stats.setdefault(episode_type + '_steps', 0)
+        self.cumulative_stats.setdefault(episode_type + '_episodes', 0)
+
         self._has_init = False
         self.last_game = None
         self.last_data = None
         self.last_history = None
 
     def init_logdir(self):
-        if not self._has_init and self.logdir:
-            if self.testing_log:
-                self._testing_log = StreamingJSONWriter(
-                    os.path.join(self.logdir, self.testing_log))
-            if self.training_log:
-                self._training_log = StreamingJSONWriter(
-                    os.path.join(self.logdir, self.training_log))
-            if self.summary_writer is None:
-                self.summary_writer = 'new'
-                logger.info(
-                    "Using old interface for SafeLifeLogger. "
-                    "Instead of `summary_writer=None`, use "
-                    "`summary_writer='new'` to build one automatically.")
-            if self.summary_writer == 'new':
+        if self._has_init or not self.logdir:
+            return
+
+        if self.episode_logname:
+            self._episode_log = StreamingJSONWriter(
+                os.path.join(self.logdir, self.episode_logname))
+
+        if self.summary_writer is None:
+            self.summary_writer = 'auto'
+            logger.info(
+                "Using old interface for SafeLifeLogger. "
+                "Instead of `summary_writer=None`, use "
+                "`summary_writer='auto'` to build one automatically.")
+
+        if self.summary_writer == 'auto':
+            if self.logdir in self._summary_writers:
+                self.summary_writer = self._summary_writers[self.logdir]
+            else:
                 try:
                     from tensorboardX import SummaryWriter
                     self.summary_writer = SummaryWriter(self.logdir)
+                    self._summary_writers[self.logdir] = self.summary_writer
                 except ImportError:
                     logger.error(
                         "Could not import tensorboardX. "
                         "SafeLifeLogger will not write data to tensorboard.")
                     self.summary_writer = False
+
         self._has_init = True
 
-    def log_episode(self, game, info={}, history=None, training=True):
+    def log_episode(self, game, info={}, history=None):
         """
         Log an episode. Outputs (potentially) to file, tensorboard, and video.
 
@@ -229,29 +261,12 @@ class SafeLifeLogger(BaseLogger):
             as is returned by the ``SafeLifeEnv.step()`` function.
         history : dict
             Trajectory of the episode. Should contain keys 'board' and 'goals'.
-        training : bool
-            Whether to log output as a training or testing episode.
         """
         self.init_logdir()  # init if needed
 
-        if training:
-            self.cumulative_stats['training_episodes'] += 1
-            num_episodes = self.cumulative_stats['training_episodes']
-            history_name = (
-                self.training_video_interval > 0 and
-                (num_episodes - 1) % self.training_video_interval == 0 and
-                self.training_video_name
-            )
-            console_msg = self.console_training_msg
-        else:
-            self.cumulative_stats['testing_episodes'] += 1
-            num_episodes = self.cumulative_stats['testing_episodes']
-            history_name = (
-                self.testing_video_interval > 0 and
-                (num_episodes - 1) % self.testing_video_interval == 0 and
-                self.testing_video_name
-            )
-            console_msg = self.console_testing_msg
+        tag = self.episode_type
+        self.cumulative_stats[tag + '_episodes'] += 1
+        num_episodes = self.cumulative_stats[tag + '_episodes']
 
         # First, log to screen.
         log_data = info.copy()
@@ -272,7 +287,7 @@ class SafeLifeLogger(BaseLogger):
         log_data['reward_possible'] = reward_possible.tolist()
         log_data['reward_needed'] = required_points.tolist()
         log_data['time'] = datetime.utcnow().isoformat()
-        logger.info(console_msg.format(**log_data, **self.cumulative_stats))
+        logger.info(self.episode_msg.format(**log_data, **self.cumulative_stats))
 
         # Then log to file.
         if self.record_side_effects:
@@ -280,10 +295,8 @@ class SafeLifeLogger(BaseLogger):
                 cell_name(cell): effect
                 for cell, effect in side_effect_score(game).items()
             }
-        if training and self._training_log is not None:
-            self._training_log.dump(log_data)
-        elif self._testing_log is not None:
-            self._testing_log.dump(log_data)
+        if self._episode_log is not None:
+            self._episode_log.dump(log_data)
 
         # Log to tensorboard.
         tb_data = info.copy()
@@ -302,7 +315,7 @@ class SafeLifeLogger(BaseLogger):
         else:
             tb_data['length'] = int(length)
             tb_data['reward_frac'] = float(reward_frac)
-        if training:
+        if tag == 'training':
             tb_data['total_episodes'] = self.cumulative_stats['training_episodes']
             tb_data['reward_frac_needed'] = np.sum(game.min_performance)
         if self.record_side_effects and 'life-green' in side_effects:
@@ -310,16 +323,17 @@ class SafeLifeLogger(BaseLogger):
             tb_data['side_effects'] = amount / max(total, 1)
 
         # Finally, save a recording of the trajectory.
-        if history is not None and self.logdir is not None and history_name:
-            history_name = history_name.format(**log_data, **self.cumulative_stats)
-            history_name = os.path.join(self.logdir, history_name) + '.npz'
-            if not os.path.exists(history_name):
-                np.savez_compressed(history_name, **history)
-                render_file(history_name, movie_format="mp4")
+        if (history is not None and self.logdir is not None and
+                self.video_name and self.video_interval > 0 and
+                (num_episodes - 1) % self.video_interval == 0):
+            vname = self.video_name.format(**log_data, **self.cumulative_stats)
+            vname = os.path.join(self.logdir, vname) + '.npz'
+            if not os.path.exists(vname):
+                np.savez_compressed(vname, **history)
+                render_file(vname, movie_format="mp4")
             if self.wandb is not None:
-                tb_data['video'] = self.wandb.Video(history_name[:-3] + 'mp4')
+                tb_data['video'] = self.wandb.Video(vname[:-3] + 'mp4')
 
-        tag = "training_runs" if training else "testing_runs"
         self.log_scalars(tb_data, tag=tag)
 
         # Save some data which can be retrieved by e.g. the level iterator.
@@ -342,7 +356,7 @@ class SafeLifeLogger(BaseLogger):
 
         tag = "" if tag is None else tag + '/'
         if global_step is None:
-            global_step = self.cumulative_stats['training_steps']
+            global_step = self.cumulative_stats.get('training_steps', 0)
         if self.summary_writer:
             for key, val in data.items():
                 if np.isreal(val) and np.isscalar(val):
@@ -354,7 +368,8 @@ class SafeLifeLogger(BaseLogger):
                 if np.isreal(val) and np.isscalar(val) or
                 isinstance(val, self.wandb.Video)
             }
-            data['training_steps'] = global_step
+            for key, val in self.cumulative_stats.items():
+                data[key.replace('_', '/')] = val
             self.wandb.log(data)
 
 
@@ -370,6 +385,8 @@ class RemoteSafeLifeLogger(BaseLogger):
     Note that the ``cumulative_stats`` in the local copy will generally lag
     what is available on the remote copy. It is only updated whenever an
     episode is logged, and even then it is updated asynchronously.
+
+    **Currently out of date.**
 
     Parameters
     ----------
@@ -394,7 +411,7 @@ class RemoteSafeLifeLogger(BaseLogger):
 
         def log_episode(self, game, info, history, training, delta_steps):
             self.logger.cumulative_stats['training_steps'] += delta_steps
-            self.logger.log_episode(game, info, history, training)
+            self.logger.log_episode(game, info, history)
             return self.logger.cumulative_stats
 
         def log_scalars(self, data, step, tag, delta_steps):
@@ -406,6 +423,11 @@ class RemoteSafeLifeLogger(BaseLogger):
             self.logger.cumulative_stats = cstats
 
     def __init__(self, logdir, config_dict=None, **kwargs):
+        raise NotImplementedError(
+            "This class is currently out of date. "
+            "If you need to use it, please post an issue on GitHub and we'll "
+            "try to get it fixed soon. Basically, it just needs a fixed "
+            "interface with cumulative_states.")
         if ray is None:
             raise ImportError("No module named 'ray'.")
         logger = SafeLifeLogger(logdir, **kwargs)
@@ -469,14 +491,10 @@ class SafeLifeLogWrapper(gym.Wrapper):
     record_history : bool
         If True (default), the full agent trajectory is sent to the logger
         along with the game state and episode info dict.
-    is_training : bool
-        Flag passed along to the logger. Training and testing environments
-        get logged somewhat differently.
     """
 
     logger = None
     record_history = True
-    is_training = True
 
     def __init__(self, env, **kwargs):
         super().__init__(env)
@@ -494,14 +512,14 @@ class SafeLifeLogWrapper(gym.Wrapper):
             self._episode_history['board'].append(game.board)
             self._episode_history['goals'].append(game.goals)
 
-        if self.is_training and not self._did_log_episode:
-            self.logger.cumulative_stats['training_steps'] += 1
+        if not self._did_log_episode:
+            key = self.logger.episode_type + '_steps'
+            self.logger.cumulative_stats[key] += 1
 
         if np.all(done) and not self._did_log_episode:
             self._did_log_episode = True
             self.logger.log_episode(
-                game, info.get('episode', {}), self._episode_history,
-                self.is_training)
+                game, info.get('episode', {}), self._episode_history)
 
         return observation, reward, done, info
 
