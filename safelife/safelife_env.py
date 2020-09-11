@@ -137,19 +137,22 @@ class SafeLifeEnv(gym.Env):
         self.game.advance_board()
         self.game.update_exit_colors()
 
-        times_up = self.game.num_steps > self.time_limit
+        times_up = self.game.num_steps >= self.time_limit
         new_game_value = self.game.current_points()
         reward = (new_game_value - self._old_game_value) * self._is_active
         self._old_game_value = new_game_value
+        completed = self.game.has_exited()
         done = ~self.game.agent_is_active() | times_up
 
         if self.single_agent:
             if len(reward) == 0:
                 reward = 0
                 done = True
+                completed = False
             else:
                 reward = reward[0]
                 done = done[0]
+                completed = completed[0]
 
         reward = np.float32(reward)
         self.episode_reward += reward
@@ -164,6 +167,7 @@ class SafeLifeEnv(gym.Env):
             'episode': {
                 'length': self.episode_length,
                 'reward': self.episode_reward,
+                'completed': completed,
             }
         }
 

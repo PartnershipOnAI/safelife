@@ -272,6 +272,7 @@ class SafeLifeLogger(BaseLogger):
         log_data = info.copy()
         length = np.array(log_data.get('length', 0))
         reward = np.array(log_data.get('reward', 0.0))
+        completed = np.array(log_data.get('completed', False))
         reward_possible = game.initial_available_points()
         required_points = game.required_points()
         if reward.shape:
@@ -284,6 +285,7 @@ class SafeLifeLogger(BaseLogger):
         log_data['level_name'] = game.title
         log_data['length'] = length.tolist()
         log_data['reward'] = reward.tolist()
+        log_data['completed'] = reward.tolist()
         log_data['reward_possible'] = reward_possible.tolist()
         log_data['reward_needed'] = required_points.tolist()
         log_data['time'] = datetime.utcnow().isoformat()
@@ -302,21 +304,27 @@ class SafeLifeLogger(BaseLogger):
         tb_data = info.copy()
         tb_data.pop('reward', None)
         tb_data.pop('length', None)
+        tb_data.pop('completed', None)
         # Use a normalized reward
         reward_frac = reward / np.maximum(reward_possible, 1)
+        # When the agent hasn't completed a level, use NaN for length.
+        # This isn't necessary when logging to file because we can always
+        # reproduce this after the fact.
+        length = np.where(completed, length, np.nan)
         if reward.shape:
             for i in range(len(reward)):
                 # Note that if agent names are not unique, only the last
                 # agent will actually get recorded to tensorboard/wandb.
                 # All data is logged to file though.
                 name = game.agent_names[i]
-                tb_data[name+'-length'] = length[i]
+                tb_data[name+'-length'] = float(length[i])
                 tb_data[name+'-reward_frac'] = reward_frac[i]
+                tb_data[name+'-completed'] = int(completed[i])
         else:
-            tb_data['length'] = int(length)
+            tb_data['length'] = float(length)
             tb_data['reward_frac'] = float(reward_frac)
+            tb_data['completed'] = int(completed)
         if tag == 'training':
-            tb_data['total_episodes'] = self.cumulative_stats['training_episodes']
             tb_data['reward_frac_needed'] = np.sum(game.min_performance)
         if self.record_side_effects and 'life-green' in side_effects:
             amount, total = side_effects['life-green']
@@ -354,23 +362,31 @@ class SafeLifeLogger(BaseLogger):
         """
         self.init_logdir()  # init if needed
 
-        tag = "" if tag is None else tag + '/'
-        if global_step is None:
-            global_step = self.cumulative_stats.get('training_steps', 0)
+        prefix = "" if tag is None else tag + '/'
+        data = {prefix+key: val for key, val in data.items()}
+
+        for key, val in self.cumulative_stats.items():
+            # always log the cumulative stats
+            data[key.replace('_', '/')] = val
+
         if self.summary_writer:
-            for key, val in data.items():
-                if np.isreal(val) and np.isscalar(val):
-                    self.summary_writer.add_scalar(tag + key, val, global_step)
+            if global_step is None:
+                global_step = self.cumulative_stats.get('training_steps', 0)
+            tb_data = {
+                key: val for key, val in data.items()
+                if np.isreal(val) and np.isscalar(val)
+            }
+            for key, val in tb_data.items():
+                self.summary_writer.add_scalar(key, val, global_step)
             self.summary_writer.flush()
+
         if self.wandb:
-            data = {
-                tag+key: val for key, val in data.items()
+            w_data = {
+                key: val for key, val in data.items()
                 if np.isreal(val) and np.isscalar(val) or
                 isinstance(val, self.wandb.Video)
             }
-            for key, val in self.cumulative_stats.items():
-                data[key.replace('_', '/')] = val
-            self.wandb.log(data)
+            self.wandb.log(w_data)
 
 
 class RemoteSafeLifeLogger(BaseLogger):
