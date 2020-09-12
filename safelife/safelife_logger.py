@@ -164,7 +164,7 @@ class SafeLifeLogger(BaseLogger):
         'training': {
             'episode_logname': "training-log.json",
             'video_name': "train-s{training_steps}-{level_name}",
-            'video_interval': 100,
+            'video_interval': 200,
             'episode_msg': textwrap.dedent("""
                 Training episode completed.
                     level name: {level_name}

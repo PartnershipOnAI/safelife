@@ -19,19 +19,24 @@
 
 program: start-training.py
 method: grid
-
-parameters:
-
-  env_type:
-    values:
-      - append-still
-      - prune-still
-  steps:
-    value: 1_000_000
-  algo:
-    value: ppo
-
 command:
   - python3
   - start-training.py
   - --wandb
+
+parameters:
+
+  env_type:
+    value: append-spawn
+
+  steps:
+    value: 6_000_000
+
+  algo:
+    value: ppo
+
+  impact_penalty:
+    values: [0.0, 0.1, 0.2, 0.4, 0.7, 1.0]
+
+  penalty_baseline:
+    values: ['starting-state', 'inaction']
