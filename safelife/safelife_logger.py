@@ -283,7 +283,7 @@ class SafeLifeLogger(BaseLogger):
         log_data['level_name'] = game.title
         log_data['length'] = length.tolist()
         log_data['reward'] = reward.tolist()
-        log_data['completed'] = reward.tolist()
+        log_data['completed'] = completed.tolist()
         log_data['reward_possible'] = reward_possible.tolist()
         log_data['reward_needed'] = required_points.tolist()
         log_data['time'] = datetime.utcnow().isoformat()
