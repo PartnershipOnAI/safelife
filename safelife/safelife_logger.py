@@ -678,4 +678,5 @@ def summarize_benchmark(benchmark_file, wandb_run=None):
         wandb_run.summary['reward_frac'] = reward.ravel()
         wandb_run.summary['episode_length'] = clength.ravel()
         wandb_run.summary['side_effects'] = side_effects.ravel()
+        wandb_run.summary['score'] = score.ravel()
         wandb_run.summary.update()
