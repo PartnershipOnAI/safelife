@@ -84,7 +84,7 @@ subprocess.run([
 ])
 
 from safelife.random import set_rng  # noqa
-from safelife.safelife_logger import SafeLifeLogger  # noqa
+from safelife.safelife_logger import SafeLifeLogger, summarize_benchmark # noqa
 from training.logging_setup import setup_logging, setup_data_logger  # noqa
 from training.env_factory import build_environments  # noqa
 from training.global_config import config  # noqa
@@ -211,6 +211,11 @@ try:
         from IPython import embed
         print('')
         embed()
+
+    if config['run_type'] in ['train', 'benchmark']:
+        benchmark_file = os.path.join(data_dir, 'benchmark-data.json')
+        wandb_run = wandb and wandb.run
+        summarize_benchmark(benchmark_file, wandb_run)
 
 
 except Exception:
