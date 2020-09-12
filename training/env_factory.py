@@ -174,7 +174,8 @@ def safelife_env_factory(
         multiagent=False,
         impact_penalty=None,
         penalty_baseline='starting-state',
-        training=False):
+        side_effects=None,
+        training=True):
     """
     Factory for creating SafeLifeEnv instances with useful wrappers.
     """
@@ -184,6 +185,7 @@ def safelife_env_factory(
             level_iterator,
             view_shape=(25,25),
             single_agent=not multiagent,
+            calculate_side_effects=side_effects,
             # This is a minor optimization, but a few of the output channels
             # are redundant or unused for normal safelife training levels.
             output_channels=(
@@ -225,18 +227,21 @@ task_types = {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/append-still-easy'],
         'test_levels': 'benchmarks/v1.0/append-still.npz',
+        'side_effects': ['life-green'],
         'schedule': [1e6, 2e6],
     },
     'prune-still': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/prune-still-easy'],
         'test_levels': 'benchmarks/v1.0/prune-still.npz',
+        'side_effects': ['life-green'],
         'schedule': [0.5e6, 1.5e6],
     },
     'append-spawn': {
         'iter_class': SwitchingLevelIterator,
         'train_levels': ['random/append-still-easy', 'random/append-spawn'],
         'test_levels': 'benchmarks/v1.0/append-spawn.npz',
+        'side_effects': ['life-green', 'life-yellow', 'spawner-yellow'],
         'schedule': [1e6, 2e6],
         't_switch': 1.5e6,
     },
@@ -244,6 +249,7 @@ task_types = {
         'iter_class': SwitchingLevelIterator,
         'train_levels': ['random/prune-still-easy', 'random/prune-spawn'],
         'test_levels': 'benchmarks/v1.0/prune-spawn.npz',
+        'side_effects': ['life-green', 'life-yellow', 'spawner-yellow'],
         'schedule': [0.5e6, 2e6],
         't_switch': 1.5e6,
     },
@@ -251,12 +257,14 @@ task_types = {
         'iter_class': CurricularLevelIterator,
         'train_levels': ['random/append-still-easy', 'random/append-spawn'],
         'test_levels': 'benchmarks/v1.0/append-spawn.npz',
+        'side_effects': ['life-green', 'life-yellow', 'spawner-yellow'],
         'schedule': [1e6, 2e6],
     },
     'navigate': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/navigation'],
         'test_levels': 'benchmarks/v1.0/navigation.npz',
+        'side_effects': ['life-green', 'life-yellow', 'spawner-yellow'],
         'schedule': [1e6, 2e6],
     },
 
@@ -335,10 +343,12 @@ def build_environments(config, seed=None, data_dir=None):
     if impact_penalty is not None:
         impact_penalty = LinearSchedule(training_logger, schedule, [0, impact_penalty])
 
+    side_effects = task_data.get('side_effects')
+
     envs = {}
     envs['training'] = safelife_env_factory(
         training_iter, num_envs=16, multiagent=multiagent,
-        data_logger=training_logger,
+        data_logger=training_logger, side_effects=side_effects,
         impact_penalty=impact_penalty, penalty_baseline=penalty_baseline,
         min_performance_fraction=LinearSchedule(
             training_logger, schedule, [0.001, 1]),
@@ -349,6 +359,7 @@ def build_environments(config, seed=None, data_dir=None):
         envs['benchmark'] = safelife_env_factory(
             num_envs=20, multiagent=multiagent,
             data_logger=setup_data_logger(data_dir, 'benchmark'),
+            side_effects=side_effects, training=False,
             level_iterator=SafeLifeLevelIterator(
                 test_levels, repeat_levels=True,
                 seed=test_seed, num_workers=0)
@@ -358,6 +369,7 @@ def build_environments(config, seed=None, data_dir=None):
         envs['testing'] = safelife_env_factory(
             num_envs=5, multiagent=multiagent,
             data_logger=setup_data_logger(data_dir, 'testing'),
+            side_effects=side_effects, training=False,
             level_iterator=SafeLifeLevelIterator(
                 test_levels, distinct_levels=5, repeat_levels=True,
                 seed=test_seed, num_workers=0)

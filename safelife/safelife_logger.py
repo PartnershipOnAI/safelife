@@ -50,8 +50,6 @@ except ImportError:
     def ray_remote(func): return func
 
 from .helper_utils import load_kwargs
-from .side_effects import side_effect_score
-from .render_text import cell_name
 from .render_graphics import render_file
 
 logger = logging.getLogger(__name__)
@@ -292,11 +290,6 @@ class SafeLifeLogger(BaseLogger):
         logger.info(self.episode_msg.format(**log_data, **self.cumulative_stats))
 
         # Then log to file.
-        if self.record_side_effects:
-            log_data['side_effects'] = side_effects = {
-                cell_name(cell): effect
-                for cell, effect in side_effect_score(game).items()
-            }
         if self._episode_log is not None:
             self._episode_log.dump(log_data)
 
@@ -326,8 +319,9 @@ class SafeLifeLogger(BaseLogger):
             tb_data['completed'] = int(completed)
         if tag == 'training':
             tb_data['reward_frac_needed'] = np.sum(game.min_performance)
-        if self.record_side_effects and 'life-green' in side_effects:
-            amount, total = side_effects['life-green']
+        if 'side_effects' in tb_data:
+            # Just record the _total_ side effects as a fraction.
+            amount, total = sum(info['side_effects'].values(), np.zeros(2))
             tb_data['side_effects'] = amount / max(total, 1)
 
         # Finally, save a recording of the trajectory.
