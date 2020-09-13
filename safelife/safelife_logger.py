@@ -270,7 +270,7 @@ class SafeLifeLogger(BaseLogger):
         log_data = info.copy()
         length = np.array(log_data.get('length', 0))
         reward = np.array(log_data.get('reward', 0.0))
-        completed = np.array(log_data.get('completed', False))
+        success = np.array(log_data.get('success', False))
         reward_possible = game.initial_available_points()
         reward_possible += game.points_on_level_exit
         required_points = game.required_points()
@@ -284,7 +284,7 @@ class SafeLifeLogger(BaseLogger):
         log_data['level_name'] = game.title
         log_data['length'] = length.tolist()
         log_data['reward'] = reward.tolist()
-        log_data['completed'] = completed.tolist()
+        log_data['success'] = success.tolist()
         log_data['reward_possible'] = reward_possible.tolist()
         log_data['reward_needed'] = required_points.tolist()
         log_data['time'] = datetime.utcnow().isoformat()
@@ -298,13 +298,13 @@ class SafeLifeLogger(BaseLogger):
         tb_data = info.copy()
         tb_data.pop('reward', None)
         tb_data.pop('length', None)
-        tb_data.pop('completed', None)
+        tb_data.pop('success', None)
         # Use a normalized reward
         reward_frac = reward / np.maximum(reward_possible, 1)
         # When the agent hasn't completed a level, use NaN for length.
         # This isn't necessary when logging to file because we can always
         # reproduce this after the fact.
-        length = np.where(completed, length, np.nan)
+        steps = np.where(success, length, np.nan)
         if 'side_effects' in info:
             tb_data['side_effects'], score = combined_score({
                 'reward_possible': reward_possible, **info})
@@ -314,14 +314,14 @@ class SafeLifeLogger(BaseLogger):
                 # agent will actually get recorded to tensorboard/wandb.
                 # All data is logged to file though.
                 name = game.agent_names[i]
-                tb_data[name+'-length'] = float(length[i])
-                tb_data[name+'-reward_frac'] = reward_frac[i]
-                tb_data[name+'-completed'] = int(completed[i])
+                tb_data[name+'-steps'] = float(steps[i])
+                tb_data[name+'-reward'] = reward_frac[i]
+                tb_data[name+'-success'] = int(success[i])
                 tb_data[name+'-score'] = float(score[i])
         else:
-            tb_data['episode_length'] = float(length)
-            tb_data['reward_frac'] = float(reward_frac)
-            tb_data['completed'] = int(completed)
+            tb_data['num_steps'] = float(steps)
+            tb_data['reward'] = float(reward_frac)
+            tb_data['success'] = int(success)
             tb_data['score'] = float(score)
         if tag == 'training':
             tb_data['reward_frac_needed'] = np.sum(game.min_performance)
@@ -669,28 +669,27 @@ def combined_score(data):
     return side_effects_frac, score
 
 
-def summarize_run(logfile, wandb_run=None, tag='benchmark'):
+def summarize_run(logfile, wandb_run=None, tag=''):
     data = load_safelife_log(logfile)
     reward_frac = data['reward'] / np.maximum(data['reward_possible'], 1)
     length = data['length']
-    completed = data.get('completed', np.ones_like(reward_frac))
-    clength = length.ravel()[completed.ravel()]
+    success = data.get('success', np.ones_like(reward_frac))
+    clength = length.ravel()[success.ravel()]
     side_effects, score = combined_score(data)
 
     logger.info(textwrap.dedent(f"""
         TOTAL RUN STATISTICS:
 
-        Levels completed: {np.average(completed):0.1%}
+        Success: {np.average(success):0.1%}
+        Reward: {np.average(reward_frac):0.3f} ± {np.std(reward_frac):0.3f}
         Episode length: {np.average(clength):0.1f} ± {np.std(clength):0.1f}
-        Reward Fraction: {np.average(reward_frac):0.3f} ± {np.std(reward_frac):0.3f}
         Side effects: {np.average(side_effects):0.3f} ± {np.std(side_effects):0.3f}
         COMBINED SCORE: {np.average(score):0.3f} ± {np.std(score):0.3f}
         """))
 
     if wandb_run is not None:
-        wandb_run.summary[tag+'/episode_length'] = np.average(clength)
-        wandb_run.summary[tag+'/completed'] = np.average(completed)
-        wandb_run.summary[tag+'/side_effects'] = np.average(side_effects)
-        wandb_run.summary[tag+'/reward_frac'] = np.average(reward_frac)
-        wandb_run.summary[tag+'/score'] = np.average(score)
-        wandb_run.summary.update()
+        wandb_run.summary[tag+'success'] = np.average(success)
+        wandb_run.summary[tag+'num_steps'] = np.average(clength)
+        wandb_run.summary[tag+'side_effects'] = np.average(side_effects)
+        wandb_run.summary[tag+'reward'] = np.average(reward_frac)
+        wandb_run.summary[tag+'score'] = np.average(score)

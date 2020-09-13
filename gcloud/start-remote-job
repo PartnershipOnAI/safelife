@@ -102,6 +102,20 @@ try:
     result = sp.run(
         f"git clone --no-local --single-branch --branch {git_tag} . {tmp_repo.name}",
         shell=True, **quiet)
+    if result.returncode != 0:
+        print("Error cloning the repo.")
+        exit(1)
+
+    # Make the remote of the cloned repo match the remote of this one
+    result = sp.run("git remote get-url origin", shell=True, stdout=sp.PIPE)
+    if result.returncode == 0:
+        remote_url = result.stdout.decode().strip()
+        sp.run(
+            f"cd {tmp_repo.name} && git remote set-url origin {remote_url}",
+            shell=True, **quiet)
+    else:
+        print("Error getting the remote url.")
+
     if new_commit:
         # Roll back the new commit.
         # This is so that the cloned repo matches the state of the current
@@ -109,11 +123,8 @@ try:
         sp.run(
             f"cd {tmp_repo.name} && git reset --soft HEAD~1",
             shell=True, **quiet)
-    if result.returncode != 0:
-        print("Error cloning the repo.")
-        exit(1)
 
-# Also copy over some files that are not (necessarily) in source control.
+    # Also copy over some files that are not (necessarily) in source control.
     extra_files = [
         'run-info.md',
         'run-notes.txt',
