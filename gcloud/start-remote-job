@@ -62,10 +62,11 @@ quiet = {'stdout': sp.DEVNULL, 'stderr': sp.DEVNULL}
 
 if args.commit_id:
     commit_id = args.commit_id
+    new_commit = False
 else:
     result = sp.run("git stash create", shell=True, stdout=sp.PIPE, check=True)
-    commit_id = result.stdout.decode()
-    if not commit_id:
+    new_commit = commit_id = result.stdout.decode()
+    if not new_commit:
         # means there were no stashed chages. Use HEAD instead.
         result = sp.run("git rev-parse HEAD", shell=True, stdout=sp.PIPE)
         commit_id = result.stdout.decode()
@@ -101,6 +102,13 @@ try:
     result = sp.run(
         f"git clone --no-local --single-branch --branch {git_tag} . {tmp_repo.name}",
         shell=True, **quiet)
+    if new_commit:
+        # Roll back the new commit.
+        # This is so that the cloned repo matches the state of the current
+        # repo, including untracked files and HEAD commit id.
+        sp.run(
+            f"cd {tmp_repo.name} && git reset --soft HEAD~1",
+            shell=True, **quiet)
     if result.returncode != 0:
         print("Error cloning the repo.")
         exit(1)
@@ -139,6 +147,9 @@ if args.sweep:
         # python environment.
         "source /etc/profile",
         "source ~/.bashrc",
+
+        # Create a "current_job" directory.
+        f"ln -nsf {src_dir} ~/current_job",
 
         # Install dependencies.
         "sudo apt-get install ffmpeg --yes",
