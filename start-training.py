@@ -215,7 +215,6 @@ try:
         benchmark_file = os.path.join(data_dir, 'benchmark-data.json')
         summarize_run(benchmark_file, wandb.run)
         wandb.run.summary['env_type'] = config['env_type']
-        wandb.run.summary.update()
 
 
 except Exception:
