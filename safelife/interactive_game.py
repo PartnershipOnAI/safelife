@@ -200,7 +200,8 @@ class GameLoop(object):
             'length': state.total_steps - state.level_start_steps,
             'undos': state.total_undos - state.level_start_undos,
             'reward': np.average(game.points_earned()),
-            'reward_possible': np.average(game.initial_available_points()),
+            'reward_possible': np.average(
+                game.initial_available_points() + game.points_on_level_exit),
             'reward_needed': np.average(game.required_points()),
             'delta_time': time.time() - state.level_start_time,
         }
