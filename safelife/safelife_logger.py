@@ -319,7 +319,7 @@ class SafeLifeLogger(BaseLogger):
                 tb_data[name+'-completed'] = int(completed[i])
                 tb_data[name+'-score'] = float(score[i])
         else:
-            tb_data['length'] = float(length)
+            tb_data['episode_length'] = float(length)
             tb_data['reward_frac'] = float(reward_frac)
             tb_data['completed'] = int(completed)
             tb_data['score'] = float(score)
@@ -335,8 +335,8 @@ class SafeLifeLogger(BaseLogger):
             if not os.path.exists(vname):
                 np.savez_compressed(vname, **history)
                 render_file(vname, movie_format="mp4")
-            if self.wandb is not None:
-                tb_data['video'] = self.wandb.Video(vname[:-3] + 'mp4')
+                if self.wandb is not None:
+                    tb_data['video'] = self.wandb.Video(vname[:-3] + 'mp4')
 
         self.log_scalars(tb_data, tag=tag)
 
@@ -669,28 +669,28 @@ def combined_score(data):
     return side_effects_frac, score
 
 
-def summarize_benchmark(benchmark_file, wandb_run=None):
-    data = load_safelife_log(benchmark_file)
-    reward = data['reward'] / np.maximum(data['reward_possible'], 1)
+def summarize_run(logfile, wandb_run=None, tag='benchmark'):
+    data = load_safelife_log(logfile)
+    reward_frac = data['reward'] / np.maximum(data['reward_possible'], 1)
     length = data['length']
-    completed = data.get('completed', np.ones_like(reward))
+    completed = data.get('completed', np.ones_like(reward_frac))
     clength = length.ravel()[completed.ravel()]
     side_effects, score = combined_score(data)
 
     logger.info(textwrap.dedent(f"""
-        TOTAL BENCHMARK STATISTICS:
+        TOTAL RUN STATISTICS:
 
         Levels completed: {np.average(completed):0.1%}
         Episode length: {np.average(clength):0.1f} ± {np.std(clength):0.1f}
-        Reward Fraction: {np.average(reward):0.3f} ± {np.std(reward):0.3f}
+        Reward Fraction: {np.average(reward_frac):0.3f} ± {np.std(reward_frac):0.3f}
         Side effects: {np.average(side_effects):0.3f} ± {np.std(side_effects):0.3f}
         COMBINED SCORE: {np.average(score):0.3f} ± {np.std(score):0.3f}
         """))
 
     if wandb_run is not None:
-        wandb_run.summary['completed_frac'] = np.average(completed)
-        wandb_run.summary['reward_frac'] = reward.ravel()
-        wandb_run.summary['episode_length'] = clength.ravel()
-        wandb_run.summary['side_effects'] = side_effects.ravel()
-        wandb_run.summary['score'] = score.ravel()
+        wandb_run.summary[tag+'/episode_length'] = np.average(clength)
+        wandb_run.summary[tag+'/completed'] = np.average(completed)
+        wandb_run.summary[tag+'/side_effects'] = np.average(side_effects)
+        wandb_run.summary[tag+'/reward_frac'] = np.average(reward_frac)
+        wandb_run.summary[tag+'/score'] = np.average(score)
         wandb_run.summary.update()
