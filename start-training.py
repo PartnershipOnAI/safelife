@@ -53,9 +53,6 @@ parser.add_argument('--port', type=int,
     help="Port on which to run tensorboard.")
 parser.add_argument('-w', '--wandb', action='store_true',
     help='Use wandb for analytics.')
-parser.add_argument('--shutdown', action="store_true",
-    help="Shut down the system when the job is complete"
-    "(helpful for running remotely).")
 parser.add_argument('--ensure-gpu', action='store_true',
     help="Check that the machine we're running on has CUDA support")
 args = parser.parse_args()
@@ -128,7 +125,7 @@ if args.wandb:
         # These args don't actually affect the run output.
         wandb.init(name=job_name, notes=run_notes, config={
             k: v for k, v in vars(args).items() if k not in
-            ['port', 'wandb', 'shutdown', 'ensure_gpu']
+            ['port', 'wandb', 'ensure_gpu']
         })
         # Note that wandb config can contain different and/or new keys that
         # aren't in the command-line arguments. This is especially true for
@@ -222,12 +219,7 @@ try:
 
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.")
+    raise
 finally:
     if tb_proc is not None:
         tb_proc.kill()
-    if args.shutdown:
-        # Shutdown in 3 minutes.
-        # Enough time to recover if it crashed at the start.
-        subprocess.run("sudo shutdown +3", shell=True)
-        logging.critical("Shutdown commenced, but keeping ssh available...")
-        subprocess.run("sudo rm -f /run/nologin", shell=True)

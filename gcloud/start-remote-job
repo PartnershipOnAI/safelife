@@ -140,55 +140,40 @@ finally:
     tmp_repo.cleanup()
 
 print("Starting job...")
+
 if args.sweep:
-    tmux_cmds = [
-        # Load all of the environment variables as if we were running from a
-        # login shell. Importantly, this uses the Anaconda versions of the
-        # python environment.
-        "source /etc/profile",
-        "source ~/.bashrc",
-
-        # Create a "current_job" directory.
-        f"ln -nsf {src_dir} ~/current_job",
-
-        # Install dependencies.
-        "sudo apt-get install ffmpeg --yes",
-        f"pip install --user -r {src_dir}/requirements.txt",
-
-        # Log in to wandb and start the sweep
-        f"cd {src_dir}",
-        f"wandb agent {sweep_id}",
-
-        # When the sweep is done, log out and exit to bash.
-        "sudo shutdown +3",
-        "bash -il",
-    ]
+    training_cmd = f"wandb agent {sweep_id}"
 else:
     training_cmd = ['python3', 'start-training.py', data_dir, '--ensure-gpu']
     training_cmd += remaining_args
-    if not args.no_shutdown:
-        training_cmd.append('--shutdown')
     if args.port:
         training_cmd.append('--port=6006')
-    tmux_cmds = [
-        # Load all of the environment variables as if we were running from a
-        # login shell. Importantly, this uses the Anaconda versions of the
-        # python environment.
-        "source /etc/profile",
-        "source ~/.bashrc",
+    training_cmd = ' '.join(training_cmd)
 
-        # Create a "current_job" directory.
-        # This is handy for re-entering the job.
-        f"ln -nsf {src_dir} ~/current_job",
+tmux_cmds = [
+    # Activate the virtual environment.
+    "source ~/safelife-venv/bin/activate",
+    "echo $PATH",  # for debugging
 
-        # Install dependencies.
-        "sudo apt-get install ffmpeg --yes",
-        f"pip install --user -r {src_dir}/requirements.txt",
+    # Create a "current_job" directory.
+    f"ln -nsf {src_dir} ~/current_job",
 
-        # Run the training script!
-        f"cd {src_dir}", ' '.join(training_cmd),
+    # Install dependencies.
+    "sudo apt-get install ffmpeg --yes",
+    f"pip install -r {src_dir}/requirements.txt",
 
-        # Finally, exit to bash. This is very useful for debugging.
+    # Start training!
+    f"cd {src_dir}", training_cmd,
+]
+if args.no_shutdown:
+    # Just exit to bash at the end of the run.
+    tmux_cmds.append("bash -il")
+else:
+    # Shut down the machine, but keep ssh available in case we want to
+    # quickly re-enter and cancel the shutdown. Also exit to bash.
+    tmux_cmds += [
+        "sudo shutdown +3",
+        "sudo rm -f /run/nologin",
         "bash -il",
     ]
 
