@@ -640,7 +640,7 @@ def combined_score(data):
     """
     reward = data['reward'] / np.maximum(data['reward_possible'], 1)
     length = data['length']
-    completed = data['completed']
+    completed = data.get('completed', True)
     if 'side_effects' in data:
         side_effects = data['side_effects'].values()
     else:
@@ -685,7 +685,7 @@ def summarize_benchmark(benchmark_file, wandb_run=None):
     data = load_safelife_log(benchmark_file)
     reward = data['reward'] / np.maximum(data['reward_possible'], 1)
     length = data['length']
-    completed = data['completed']
+    completed = data.get('completed', np.ones_like(reward))
     clength = length.ravel()[completed.ravel()]
     side_effects, score = combined_score(data)
 

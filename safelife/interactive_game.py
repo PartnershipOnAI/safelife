@@ -14,6 +14,7 @@ from .keyboard_input import KEYS, getch
 from .side_effects import side_effect_score
 from .level_iterator import SafeLifeLevelIterator
 from .random import set_rng
+from .safelife_logger import StreamingJSONWriter
 
 
 COMMAND_KEYS = {
@@ -106,7 +107,7 @@ class GameLoop(object):
             edit_mode=0,
             history=deque(maxlen=MAX_HISTORY_LENGTH),
             side_effects=None,
-            total_side_effects=defaultdict(lambda: 0),
+            total_side_effects=defaultdict(lambda: np.zeros(2)),
             message="",
             last_command="",
             level_num=0,
@@ -190,33 +191,23 @@ class GameLoop(object):
 
     def log_level_stats(self):
         state = self.state
+        game = state.game
         if not state.game or not self.logfile:
             return
-        with open(self.logfile, 'a') as logfile:
-            p1 = state.game.points_earned().tolist()
-            p2 = state.game.initial_available_points().tolist()
-            msg = """
-            - level: {level}
-              score: {score}
-              steps: {steps}
-              undos: {undos}
-              time: {time:0.1f}
-              reward: [{p1}, {p2}]
-            """.format(
-                level=state.game.title,
-                score=state.total_points - state.level_start_points,
-                steps=state.total_steps - state.level_start_steps,
-                undos=state.total_undos - state.level_start_undos,
-                time=time.time() - state.level_start_time,
-                p1=p1, p2=p2,
-            )[1:]
-            logfile.write(textwrap.dedent(msg))
-            if state.side_effects:
-                logfile.write("  side_effects:\n")
-                for ctype, effect in state.side_effects.items():
-                    cname = render_text.cell_name(ctype)
-                    logfile.write("    {}: {:0.2f}\n".format(cname, effect))
-            logfile.write('\n')
+        writer = StreamingJSONWriter(self.logfile)
+        data = {
+            'level_name': game.title,
+            'length': state.total_steps - state.level_start_steps,
+            'undos': state.total_undos - state.level_start_undos,
+            'reward': np.average(game.points_earned()),
+            'reward_possible': np.average(game.initial_available_points()),
+            'reward_needed': np.average(game.required_points()),
+            'delta_time': time.time() - state.level_start_time,
+        }
+        if state.side_effects:
+            data['side_effects'] = state.side_effects
+        writer.dump(data)
+        writer.close()
 
     def undo(self):
         history = self.state.history
@@ -361,10 +352,7 @@ class GameLoop(object):
                 self.load_next_level(-1)
             elif game.game_over:
                 state.screen = "LEVEL SUMMARY"
-                state.side_effects = {
-                    key: val[0] for key, val in
-                    side_effect_score(game).items()
-                }
+                state.side_effects = side_effect_score(game, strkeys=True)
                 for key, val in state.side_effects.items():
                     state.total_side_effects[key] += val
                 self.log_level_stats()
@@ -504,12 +492,11 @@ class GameLoop(object):
     def print_side_effects(self, side_effects, ansi=True):
         output = ""
         fmt = "    {name:14s} {val:6.2f}\n"
-        for ctype, score in side_effects.items():
+        for name, score in side_effects.items():
+            score = score[0]
             if not ansi:
-                name = render_text.cell_name(ctype)
                 output += fmt.format(name=name+':', val=score)
             else:
-                name = render_text.render_cell(ctype)
                 # Formatted padding doesn't really work since we use
                 # extra escape characters. Use replace instead.
                 line = fmt.format(name='zz:', val=score)
