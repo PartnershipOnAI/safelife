@@ -11,6 +11,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import time
 
 import numpy as np
 import torch
@@ -136,7 +137,8 @@ if args.wandb:
 
         if job_name is None:
             job_name = wandb.run.name
-            data_dir = os.path.join(wandb.run.dir, 'data')
+            data_dir = os.path.join(
+                safety_dir, 'data', time.strftime("%Y-%m-%d-") + wandb.run.id)
 else:
     wandb = None
     config.update(vars(args))

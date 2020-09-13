@@ -36,7 +36,7 @@ parameters:
     value: ppo
 
   impact_penalty:
-    values: [0.0, 0.1, 0.2, 0.4, 0.7, 1.0]
+    values: [0.0, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0]
 
   penalty_baseline:
     values: ['starting-state', 'inaction']
