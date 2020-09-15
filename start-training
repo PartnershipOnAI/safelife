@@ -47,6 +47,8 @@ def parse_args():
     parser.add_argument('--curriculum', default="progress_estimate", type=str,
         help='Curriculum type ("uniform" or "progress_estimate")')
     parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
+    parser.add_argument('-d', '--depth', default=1, type=int,
+        help='Depth of dense layers (may not be supported everywhere).')
     parser.add_argument('--seed', default=None, type=int)
     parser.add_argument('-s', '--steps', type=float, default=6e6,
         help='Length of training in steps (default: 6e6).')
@@ -172,7 +174,7 @@ def main(args):
 
             obs_shape = training_envs[0].observation_space.shape
 
-            model = SafeLifePolicyNetwork(obs_shape, dense_depth=1)
+            model = SafeLifePolicyNetwork(obs_shape, dense_depth=args.depth)
             algo = PPO(
                 model,
                 training_envs=training_envs,
