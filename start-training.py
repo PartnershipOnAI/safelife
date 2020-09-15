@@ -35,7 +35,7 @@ parser.add_argument('--run-type', choices=('train', 'benchmark', 'inspect'),
     "environments. If 'inspect', load an ipython prompt for interactive "
     "debugging.")
 parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
-parser.add_argument('-e', '--env-type', default='prune-still')
+parser.add_argument('-e', '--env-type', default='append-spawn')
 parser.add_argument('-s', '--steps', type=float, default=6e6,
     help='Length of training in steps (default: 6e6).')
 parser.add_argument('--seed', default=None, type=int)
