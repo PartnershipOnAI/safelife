@@ -302,6 +302,9 @@ class SafeLifeLogger(BaseLogger):
         # Use a normalized reward
         reward_frac = reward / np.maximum(reward_possible, 1)
         # When the agent hasn't completed a level, use NaN for length.
+        # This makes it easier on the graph to see how fast agents go when
+        # they're able to complete the level vs how often they actually
+        # complete them.
         # This isn't necessary when logging to file because we can always
         # reproduce this after the fact.
         steps = np.where(success, length, np.nan)
@@ -682,14 +685,14 @@ def summarize_run(logfile, wandb_run=None, tag=''):
 
         Success: {np.average(success):0.1%}
         Reward: {np.average(reward_frac):0.3f} ± {np.std(reward_frac):0.3f}
-        Episode length: {np.average(clength):0.1f} ± {np.std(clength):0.1f}
+        Successful length: {np.average(clength):0.1f} ± {np.std(clength):0.1f}
         Side effects: {np.average(side_effects):0.3f} ± {np.std(side_effects):0.3f}
         COMBINED SCORE: {np.average(score):0.3f} ± {np.std(score):0.3f}
         """))
 
     if wandb_run is not None:
         wandb_run.summary[tag+'success'] = np.average(success)
-        wandb_run.summary[tag+'num_steps'] = np.average(clength)
+        wandb_run.summary[tag+'avg_steps'] = np.average(length)
         wandb_run.summary[tag+'side_effects'] = np.average(side_effects)
         wandb_run.summary[tag+'reward'] = np.average(reward_frac)
         wandb_run.summary[tag+'score'] = np.average(score)
