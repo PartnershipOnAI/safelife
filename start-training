@@ -171,7 +171,8 @@ def main(args):
             from training.ppo import PPO
 
             obs_shape = training_envs[0].observation_space.shape
-            model = SafeLifePolicyNetwork(obs_shape)
+
+            model = SafeLifePolicyNetwork(obs_shape, dense_depth=1)
             algo = PPO(
                 model,
                 training_envs=training_envs,
