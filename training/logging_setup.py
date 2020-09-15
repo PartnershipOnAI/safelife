@@ -2,6 +2,7 @@ import os
 import logging
 import logging.config
 from functools import lru_cache
+import subprocess as sp
 
 from safelife.safelife_logger import SafeLifeLogger
 
@@ -81,3 +82,31 @@ def setup_data_logger(data_dir, episode_type):
         data_dir, episode_type,
         summary_writer=summary_writer,
         wandb=wandb)
+
+
+def save_code_to_wandb():
+    """
+    Save all code that's version controlled in git to a wandb artifact.
+
+    Note that this assumes that we're running from root of the git directory.
+    """
+    import wandb
+    logger = logging.getLogger('training')
+
+    # First, get all of the tracked files.
+    result = sp.run(
+        "git ls-tree --full-tree -r --name-only HEAD",
+        shell=True, stdout=sp.PIPE)
+    if result.returncode != 0:
+        logger.error("Could not retrieve list of tracked files.")
+    files = result.stdout.decode().strip().splitlines()
+    safelife_files = wandb.Artifact('safelife_core', type='code')
+    training_files = wandb.Artifact('safelife_training', type='code')
+    for file in files:
+        if file.rpartition('.')[2] in ('py', 'c', 'cpp', 'h', 'yaml'):
+            if file.startswith('safelife'):  # core safelife code
+                safelife_files.add_file(file, name=file)
+            else:
+                training_files.add_file(file, name=file)
+    wandb.run.log_artifact(safelife_files)
+    wandb.run.log_artifact(training_files)

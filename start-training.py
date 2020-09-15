@@ -83,10 +83,10 @@ subprocess.run([
 
 from safelife.random import set_rng  # noqa
 from safelife.safelife_logger import SafeLifeLogger, summarize_run # noqa
-from training.logging_setup import setup_logging, setup_data_logger  # noqa
+from training import logging_setup  # noqa
+from training import models  # noqa
 from training.env_factory import build_environments  # noqa
 from training.global_config import config  # noqa
-from training import models  # noqa
 
 
 # Check to see if the data directory is already in use
@@ -136,12 +136,15 @@ if args.wandb:
             job_name = wandb.run.name
             data_dir = os.path.join(
                 safety_dir, 'data', time.strftime("%Y-%m-%d-") + wandb.run.id)
+
+        logging_setup.save_code_to_wandb()
 else:
     wandb = None
     config.update(vars(args))
 
 os.makedirs(data_dir, exist_ok=True)
-logger = setup_logging(data_dir, debug=(config['run_type'] == 'inspect'))
+logger = logging_setup.setup_logging(
+    data_dir, debug=(config['run_type'] == 'inspect'))
 logger.info("COMMAND ARGUMENTS: %s", ' '.join(sys.argv))
 logger.info("TRAINING RUN: %s", job_name)
 logger.info("ON HOST: %s", platform.node())
@@ -178,7 +181,7 @@ try:
     algo_args = {
         'training_envs': envs['training'],
         'testing_envs': envs.get('testing'),
-        'data_logger': setup_data_logger(data_dir, 'training'),
+        'data_logger': logging_setup.setup_data_logger(data_dir, 'training'),
     }
 
     if config['algo'] == 'ppo':
