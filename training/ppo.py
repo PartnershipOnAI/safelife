@@ -114,7 +114,8 @@ class PPO(BaseAlgo):
         # Take a bunch of steps, and put them into trajectories associated with
         # each distinct agent
         for _ in range(steps_per_env):
-            step = self.take_one_step(self.training_envs)
+            lstm_input = self.cell_states if hasattr(self, "cell_states") else []
+            step = self.take_one_step(self.training_envs, *lstm_input)
             for k, agent_id in enumerate(step.agent_ids):
                 t = trajectories[agent_id]
                 action = step.actions[k]
@@ -233,3 +234,31 @@ class PPO(BaseAlgo):
 
             if self.testing_envs and num_steps >= next_test:
                 self.run_episodes(self.testing_envs)
+
+class LSTM_PPO(PPO):
+    def __init__(self, *args, **kwargs)
+        super().__init__(*args, **kwargs)
+        self.cell_states = torch.zeros(16, 576)
+
+    @named_output('obs actions rewards done next_obs agent_ids policies values')
+    def take_one_step(self, envs):
+        obs, agent_ids = self.obs_for_envs(envs)
+
+        tensor_obs = self.tensor(obs, torch.float32)
+        values, policies, cell_state = self.model(tensor_obs)
+        values = values.detach().cpu().numpy()
+        policies = policies.detach().cpu().numpy()
+        if self.compute_device.type == "xla":
+            # correct after low precision #floatlife
+            policies = policies.astype("float16")
+        actions = []
+        for policy in policies:
+            try:
+                actions.append(get_rng().choice(len(policy), p=policy))
+            except ValueError:
+                print("Logits:", policy, "sum to", np.sum(policy))
+                raise
+
+        next_obs, rewards, done = self.act_on_envs(envs, actions)
+
+        return obs, actions, rewards, done, next_obs, agent_ids, policies, values

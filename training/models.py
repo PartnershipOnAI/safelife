@@ -1,5 +1,9 @@
 import numpy as np
 
+from training.utils import recursive_shape
+
+import torch
+
 from torch import nn
 from torch.nn import functional as F
 
@@ -95,6 +99,53 @@ class SafeLifePolicyNetwork(nn.Module):
         obs = obs.transpose(-1, -3)
         x = self.cnn(obs).flatten(start_dim=1)
         for layer in self.dense:
+            x = layer(x)
+        value = self.value_func(x)[...,0]
+        policy = F.softmax(self.logits(x), dim=-1)
+        return value, policy
+
+class SafeLifeLSTMPolicyNetwork(nn.Module):
+    def __init__(self, input_shape, dense_depth=1, lstm_shape=(3,1), dropout=0):
+        super().__init__()
+        lstm_channels, lstm_depth = lstm_shape
+
+        self.cnn, cnn_out_shape = safelife_cnn(input_shape)
+        h, w, c = cnn_out_shape
+        num_features = np.product(cnn_out_shape)
+        num_actions = 9
+
+        dense = [nn.Sequential(nn.Linear(num_features + h * w * lstm_channels, 512), nn.ReLU())]
+        for n in range(dense_depth - 1):
+            dense.append(nn.Sequential(nn.Linear(512, 512), nn.ReLU()))
+        self.dense = nn.Sequential(*dense)
+
+        self.memory = nn.LSTM(
+            input_size=num_features, hidden_size=h * w * lstm_channels, num_layers=lstm_depth, 
+            dropout=dropout, batch_first=True
+        )
+
+        self.logits = nn.Linear(512, num_actions)
+        self.value_func = nn.Linear(512, 1)
+
+    def forward(self, obs):
+        # Switch observation to (c, w, h) instead of (h, w, c)
+        obs = obs.transpose(-1, -3)
+
+        x = self.cnn(obs).flatten(start_dim=1)
+        print("CNN shape", x.shape)
+        y = x.view([1] + list(x.shape))
+        print("Memory shape", y.shape)
+        y = self.memory(y)
+        print(recursive_shape(y))
+        y, (hidden, cell) = y
+        y = y[0] # remove time
+        print("Merging", x.shape, y.shape)
+        merged = torch.cat((x, y), dim=1)
+        print("Merged shape", merged.shape)
+        x = self.dense[0]()
+
+        rest = self.dense[1:]
+        for layer in rest:
             x = layer(x)
         value = self.value_func(x)[...,0]
         policy = F.softmax(self.logits(x), dim=-1)

@@ -46,7 +46,7 @@ def parse_args():
     parser.add_argument('-e', '--env-type', default='prune-still')
     parser.add_argument('--curriculum', default="progress_estimate", type=str,
         help='Curriculum type ("uniform" or "progress_estimate")')
-    parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
+    parser.add_argument('--algo', choices=('ppo', 'dqn', 'mppo'), default='ppo')
     parser.add_argument('-d', '--depth', default=1, type=int,
         help='Depth of dense layers (may not be supported everywhere).')
     parser.add_argument('--seed', default=None, type=int)
@@ -175,6 +175,19 @@ def main(args):
             obs_shape = training_envs[0].observation_space.shape
 
             model = SafeLifePolicyNetwork(obs_shape, dense_depth=args.depth)
+            algo = PPO(
+                model,
+                training_envs=training_envs,
+                testing_envs=testing_envs,
+                data_logger=data_logger)
+
+        if args.algo == 'mppo':
+            from training.models import SafeLifeLSTMPolicyNetwork
+            from training.ppo import PPO
+
+            obs_shape = training_envs[0].observation_space.shape
+
+            model = SafeLifeLSTMPolicyNetwork(obs_shape, dense_depth=args.depth)
             algo = PPO(
                 model,
                 training_envs=training_envs,

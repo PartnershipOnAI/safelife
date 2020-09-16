@@ -133,3 +133,22 @@ def get_compute_device():
             return torch.device("cuda")
         else:
             return torch.device("cpu")
+
+def recursive_shape(obj, indent=0):
+    "Recursively prettyprint the shape of a hierarchical torch object."
+    s = ""
+    if isinstance(obj, list) or isinstance(obj, tuple):
+        c1, c2 = ["[", "]"] if isinstance(obj, list) else ["(", ")"]
+        s += indent * " " + c1 + "\n"
+        indent += 2
+        for item in obj:
+            s += recursive_shape(item, indent) + ",\n"
+        indent -= 2
+        s += indent * " " + c2 + "\n"
+    else:
+        if hasattr(obj, "shape"):
+            s += " " * indent + str(obj.shape)
+        else:
+            s += " " * indent + str(obj)
+
+    return s
