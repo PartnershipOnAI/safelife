@@ -49,6 +49,8 @@ def parse_args():
     parser.add_argument('--algo', choices=('ppo', 'dqn', 'mppo'), default='ppo')
     parser.add_argument('-d', '--depth', default=1, type=int,
         help='Depth of dense layers (may not be supported everywhere).')
+    parser.add_argument('--env_batch_size', default=16, type=int,
+        help='Number of game environments to play simultaneously')
     parser.add_argument('--seed', default=None, type=int)
     parser.add_argument('-s', '--steps', type=float, default=6e6,
         help='Length of training in steps (default: 6e6).')

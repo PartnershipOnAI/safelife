@@ -318,7 +318,7 @@ def build_environments(config, seed=None, data_logger=None):
     if impact_penalty is not None:
         impact_penalty = LinearSchedule(data_logger, schedule, [0, impact_penalty])
     training_envs = safelife_env_factory(
-        training_iter, data_logger=data_logger, num_envs=16,
+        training_iter, data_logger=data_logger, num_envs=config.env_batch_size,
         impact_penalty=impact_penalty, penalty_baseline=penalty_baseline,
         min_performance=LinearSchedule(data_logger, schedule, [0.01, 0.5]),
     )
