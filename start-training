@@ -62,6 +62,7 @@ def parse_args():
         help="Check that the machine we're running on has CUDA support")
     parser.add_argument('--profile', action='store_true',
         help="Profile the main thread")
+
     args = parser.parse_args()
 
 
@@ -183,7 +184,7 @@ def main(args):
                 testing_envs=testing_envs,
                 data_logger=data_logger)
 
-        if args.algo == 'mppo':
+        elif args.algo == 'mppo':
             from training.models import SafeLifeLSTMPolicyNetwork
             from training.ppo import PPO
 
