@@ -80,6 +80,7 @@ class SafeLifeQNetwork(nn.Module):
 class SafeLifePolicyNetwork(nn.Module):
 
     dense_depth: HyperParam = 1
+    dense_width: HyperParam = 512
 
     def __init__(self, input_shape):
         super().__init__()
@@ -88,13 +89,13 @@ class SafeLifePolicyNetwork(nn.Module):
         num_features = np.product(cnn_out_shape)
         num_actions = 9
 
-        dense = [nn.Sequential(nn.Linear(num_features, 512), nn.ReLU())]
+        dense = [nn.Sequential(nn.Linear(num_features, self.dense_width), nn.ReLU())]
         for n in range(self.dense_depth - 1):
-            dense.append(nn.Sequential(nn.Linear(512, 512), nn.ReLU()))
+            dense.append(nn.Sequential(nn.Linear(self.dense_width, self.width), nn.ReLU()))
         self.dense = nn.Sequential(*dense)
 
-        self.logits = nn.Linear(512, num_actions)
-        self.value_func = nn.Linear(512, 1)
+        self.logits = nn.Linear(self.dense_width, num_actions)
+        self.value_func = nn.Linear(self.dense_width, 1)
 
     def forward(self, obs):
         # Switch observation to (c, w, h) instead of (h, w, c)
