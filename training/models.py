@@ -121,13 +121,13 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
 
         self.memory = nn.LSTM(
             input_size=num_features, hidden_size=h * w * lstm_channels, num_layers=lstm_depth, 
-            dropout=dropout, batch_first=True
+            dropout=dropout,
         )
 
         self.logits = nn.Linear(512, num_actions)
         self.value_func = nn.Linear(512, 1)
 
-    def forward(self, obs):
+    def forward(self, obs, state):
         # Switch observation to (c, w, h) instead of (h, w, c)
         obs = obs.transpose(-1, -3)
 
@@ -135,18 +135,19 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
         # print("CNN shape", x.shape)
         y = x.view([1] + list(x.shape))
         # print("Memory shape", y.shape)
-        y = self.memory(y)
+        print("Applying memory with state", recursive_shape(state))
+        y = self.memory(y, state)
         # print(recursive_shape(y))
-        y, (hidden, cell) = y
+        y, state = y
         y = y[0] # remove time
         # print("Merging", x.shape, y.shape)
         merged = torch.cat((x, y), dim=1)
         # print("Merged shape", merged.shape)
-        x = self.dense[0]()
+        x = self.dense[0](merged)
 
         rest = self.dense[1:]
         for layer in rest:
             x = layer(x)
         value = self.value_func(x)[...,0]
         policy = F.softmax(self.logits(x), dim=-1)
-        return value, policy, cell
+        return value, policy, state

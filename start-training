@@ -186,12 +186,12 @@ def main(args):
 
         elif args.algo == 'mppo':
             from training.models import SafeLifeLSTMPolicyNetwork
-            from training.ppo import PPO
+            from training.ppo import LSTM_PPO
 
             obs_shape = training_envs[0].observation_space.shape
 
             model = SafeLifeLSTMPolicyNetwork(obs_shape, dense_depth=args.depth)
-            algo = PPO(
+            algo = LSTM_PPO(
                 model,
                 training_envs=training_envs,
                 testing_envs=testing_envs,

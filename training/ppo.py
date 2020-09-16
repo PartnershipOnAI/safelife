@@ -8,7 +8,7 @@ import torch.optim as optim
 from safelife.helper_utils import load_kwargs
 from safelife.random import get_rng
 
-from .utils import named_output, round_up, get_compute_device
+from .utils import named_output, round_up, get_compute_device, recursive_shape
 from .base_algo import BaseAlgo
 
 try:
@@ -69,7 +69,7 @@ class PPO(BaseAlgo):
         obs, agent_ids = self.obs_for_envs(envs)
 
         tensor_obs = self.tensor(obs, torch.float32)
-        values, policies = self.model(tensor_obs)
+        values, policies = self.model_forward(tensor_obs)
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
         if self.compute_device.type == "xla":
@@ -114,8 +114,7 @@ class PPO(BaseAlgo):
         # Take a bunch of steps, and put them into trajectories associated with
         # each distinct agent
         for _ in range(steps_per_env):
-            lstm_input = self.cell_states if hasattr(self, "cell_states") else []
-            step = self.take_one_step(self.training_envs, *lstm_input)
+            step = self.take_one_step(self.training_envs)
             for k, agent_id in enumerate(step.agent_ids):
                 t = trajectories[agent_id]
                 action = step.actions[k]
@@ -128,7 +127,7 @@ class PPO(BaseAlgo):
         # For the final step in each environment, also calculate the value
         # function associated with the next observation
         tensor_obs = self.tensor(step.next_obs, torch.float32)
-        vals = self.model(tensor_obs)[0].detach().cpu().numpy()
+        vals = self.model_forward(tensor_obs)[0].detach().cpu().numpy()
         for k, agent_id in enumerate(step.agent_ids):
             if not step.done[k]:
                 trajectories[agent_id]['final_value'] = vals[k]
@@ -159,12 +158,16 @@ class PPO(BaseAlgo):
             t('returns'), t('advantages'), t('values')
         )
 
+    def model_forward(self, obs):
+        "Here to be overriden if state is required."
+        return self.model(obs)
+
     def calculate_loss(
             self, obs, actions, old_policy, old_values, returns, advantages):
         """
         All parameters ought to be tensors on the appropriate compute device.
         """
-        values, policy = self.model(obs)
+        values, policy = self.model_forward(obs)
         a_policy = torch.gather(policy, -1, actions[..., np.newaxis])[..., 0]
 
         prob_diff = advantages.sign() * (1 - a_policy / old_policy)
@@ -238,14 +241,21 @@ class PPO(BaseAlgo):
 class LSTM_PPO(PPO):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.cell_states = torch.zeros(16, 576)
+        # (hidden state, cell state)
+        self.lstm_state = (torch.randn(1, 16, 576), torch.randn(1, 16, 576))
+
+    def model_forward(self, obs):
+        ret = self.model(obs, self.lstm_state)
+        result = ret[:-1]  # trim off & discard LSTM state
+                           # on the speculative theory it isn't needed when we're called
+        return ret
 
     @named_output('obs actions rewards done next_obs agent_ids policies values')
     def take_one_step(self, envs):
         obs, agent_ids = self.obs_for_envs(envs)
 
         tensor_obs = self.tensor(obs, torch.float32)
-        values, policies, cell_state = self.model(tensor_obs)
+        values, policies, self.lstm_state = self.model(tensor_obs, self.lstm_state)
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
         if self.compute_device.type == "xla":
