@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import time
+import json
 
 import numpy as np
 import torch
@@ -55,7 +56,21 @@ parser.add_argument('-w', '--wandb', action='store_true',
     help='Use wandb for analytics.')
 parser.add_argument('--ensure-gpu', action='store_true',
     help="Check that the machine we're running on has CUDA support")
+
+parser.add_argument('-x', '--extra-params', default=None,
+    help="Extra config values/hyperparameters. Should be loadable as JSON.")
+
 args = parser.parse_args()
+if args.extra_params:
+    try:
+        extra_params = json.loads(args.extra_params)
+        assert isinstance(extra_params, dict)
+    except (json.JSONDecodeError, AssertionError):
+        print(f"'{args.extra_params}' is not a valid JSON dictionary. "
+            "Make sure to escape your quotes!")
+        exit(1)
+    args.__dict__.update(extra_params)
+    del args.extra_params
 
 
 if args.seed is None:
