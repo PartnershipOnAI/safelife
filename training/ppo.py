@@ -236,7 +236,7 @@ class PPO(BaseAlgo):
                 self.run_episodes(self.testing_envs)
 
 class LSTM_PPO(PPO):
-    def __init__(self, *args, **kwargs)
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.cell_states = torch.zeros(16, 576)
 
