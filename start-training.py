@@ -54,6 +54,13 @@ parser.add_argument('--port', type=int,
     help="Port on which to run tensorboard.")
 parser.add_argument('-w', '--wandb', action='store_true',
     help='Use wandb for analytics.')
+parser.add_argument('--project', default=None,
+    help='[Entity and] project for wandb. '
+    'Eg: "safelife/multiagent" or "multiagent"')
+parser.add_argument('--shutdown', action="store_true",
+    help="Shut down the system when the job is complete"
+    "(helpful for running remotely).")
+
 parser.add_argument('--ensure-gpu', action='store_true',
     help="Check that the machine we're running on has CUDA support")
 
@@ -138,10 +145,19 @@ if args.wandb:
 
         # Remove some args from the wandb config, just to make things neater.
         # These args don't actually affect the run output.
-        wandb.init(name=job_name, notes=run_notes, config={
-            k: v for k, v in vars(args).items() if k not in
-            ['port', 'wandb', 'ensure_gpu']
-        })
+        if args.project and '/' in args.project:
+            entity, project = args.project.split("/", 1)
+        elif args.project:
+            entity, project = None, args.project
+        else:
+            entity = project = None  # use values from wandb/settings
+
+        wandb.init(
+            name=job_name, notes=run_notes, project=project, entity=entity,
+            config={
+                k: v for k, v in vars(args).items() if k not in
+                ['port', 'wandb', 'ensure_gpu', 'project', 'shutdown']
+            })
         # Note that wandb config can contain different and/or new keys that
         # aren't in the command-line arguments. This is especially true for
         # wandb sweeps.
@@ -241,3 +257,9 @@ except Exception:
 finally:
     if tb_proc is not None:
         tb_proc.kill()
+    if args.shutdown:
+        # Shutdown in 3 minutes.
+        # Enough time to recover if it crashed at the start.
+        subprocess.run("sudo shutdown +3", shell=True)
+        logging.critical("Shutdown commenced, but keeping ssh available...")
+        subprocess.run("sudo rm -f /run/nologin", shell=True)
