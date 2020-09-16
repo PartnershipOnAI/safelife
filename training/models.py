@@ -132,16 +132,16 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
         obs = obs.transpose(-1, -3)
 
         x = self.cnn(obs).flatten(start_dim=1)
-        print("CNN shape", x.shape)
+        # print("CNN shape", x.shape)
         y = x.view([1] + list(x.shape))
-        print("Memory shape", y.shape)
+        # print("Memory shape", y.shape)
         y = self.memory(y)
-        print(recursive_shape(y))
+        # print(recursive_shape(y))
         y, (hidden, cell) = y
         y = y[0] # remove time
-        print("Merging", x.shape, y.shape)
+        # print("Merging", x.shape, y.shape)
         merged = torch.cat((x, y), dim=1)
-        print("Merged shape", merged.shape)
+        # print("Merged shape", merged.shape)
         x = self.dense[0]()
 
         rest = self.dense[1:]
@@ -149,4 +149,4 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
             x = layer(x)
         value = self.value_func(x)[...,0]
         policy = F.softmax(self.logits(x), dim=-1)
-        return value, policy
+        return value, policy, cell
