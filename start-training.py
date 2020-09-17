@@ -17,12 +17,6 @@ import json
 import numpy as np
 import torch
 
-from safelife.random import set_rng  # noqa
-from safelife.safelife_logger import SafeLifeLogger, summarize_run # noqa
-from training import logging_setup  # noqa
-from training import models  # noqa
-from training.env_factory import build_environments  # noqa
-from training.global_config import config  # noqa
 
 
 parser = argparse.ArgumentParser(description="""
@@ -77,14 +71,12 @@ parser.add_argument('-x', '--extra-params', default=None,
 args = parser.parse_args()
 if args.extra_params:
     try:
-        extra_params = json.loads(args.extra_params)
-        assert isinstance(extra_params, dict)
+        args.extra_params = json.loads(args.extra_params)
+        assert isinstance(args.extra_params, dict)
     except (json.JSONDecodeError, AssertionError):
         print(f"'{args.extra_params}' is not a valid JSON dictionary. "
             "Make sure to escape your quotes!")
         exit(1)
-    config.add_hyperparams(extra_params)
-    del args.extra_params
 
 
 if args.seed is None:
@@ -109,6 +101,13 @@ subprocess.run([
     "python3", os.path.join(safety_dir, "setup.py"),
     "build_ext", "--inplace"
 ])
+
+from safelife.random import set_rng  # noqa
+from safelife.safelife_logger import SafeLifeLogger, summarize_run # noqa
+from training import logging_setup  # noqa
+from training import models  # noqa
+from training.env_factory import build_environments  # noqa
+from training.global_config import config  # noqa
 
 
 # Check to see if the data directory is already in use
@@ -172,6 +171,10 @@ if args.wandb:
 else:
     wandb = None
     config.update(vars(args))
+
+# tag any hyperparams from the commandline
+if args.extra_params is not None:
+    config.add_hyperparams(args.extra_params)
 
 os.makedirs(data_dir, exist_ok=True)
 logger = logging_setup.setup_logging(
