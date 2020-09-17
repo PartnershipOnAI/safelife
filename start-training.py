@@ -17,6 +17,13 @@ import json
 import numpy as np
 import torch
 
+from safelife.random import set_rng  # noqa
+from safelife.safelife_logger import SafeLifeLogger, summarize_run # noqa
+from training import logging_setup  # noqa
+from training import models  # noqa
+from training.env_factory import build_environments  # noqa
+from training.global_config import config  # noqa
+
 
 parser = argparse.ArgumentParser(description="""
     Run agent training using proximal policy optimization.
@@ -76,7 +83,7 @@ if args.extra_params:
         print(f"'{args.extra_params}' is not a valid JSON dictionary. "
             "Make sure to escape your quotes!")
         exit(1)
-    args.__dict__.update(extra_params)
+    config.add_hyperparams(extra_params)
     del args.extra_params
 
 
@@ -102,13 +109,6 @@ subprocess.run([
     "python3", os.path.join(safety_dir, "setup.py"),
     "build_ext", "--inplace"
 ])
-
-from safelife.random import set_rng  # noqa
-from safelife.safelife_logger import SafeLifeLogger, summarize_run # noqa
-from training import logging_setup  # noqa
-from training import models  # noqa
-from training.env_factory import build_environments  # noqa
-from training.global_config import config  # noqa
 
 
 # Check to see if the data directory is already in use
@@ -233,6 +233,8 @@ try:
         config2 = config.copy()
         config2.pop('_wandb', None)
         wandb.config.update(config2)
+
+    config.check_for_unused_hyperparams()
 
     if config['run_type'] == "train":
         algo.train(int(config['steps']))

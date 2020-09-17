@@ -1,10 +1,13 @@
 from collections import defaultdict
 from functools import partial
 import inspect
+import logging
 from typing import Generic, TypeVar
 
 T = TypeVar('T')
 config: 'GlobalConfig'  # singleton, set below
+
+logger = logging.getLogger(__name__)
 
 
 class HyperParam(Generic[T]):
@@ -103,6 +106,11 @@ class GlobalConfig(dict):
         # e.g. in function signatures and class parameters.
         self._hooks = defaultdict(list)
 
+        # things the user has tried to set as hyperparams; keep a record so
+        # that we can warn if the code doesn't actually look at them
+        self._expected_hyperparams = set()
+        self._checked = False
+
     def __setitem__(self, name, val):
         super().__setitem__(name, val)
         for hook in self._hooks[name]:
@@ -116,6 +124,18 @@ class GlobalConfig(dict):
                 val = self[key]
                 for hook in hooks:
                     hook(val)
+
+    def add_hyperparams(self, params):
+        self.update(**params)
+        self._expected_hyperparams.update(params)  # throws away values
+
+    def check_for_unused_hyperparams(self, only_once=False):
+        if not (self._checked and only_once):
+            logger.info("Checking for unused hyperparams...")
+            for p in self._expected_hyperparams:
+                if p not in self._hooks:
+                    logger.warning(f"Hyperparameter {p} was set but has not been used by the code.")
+            self._checked = True
 
     def addhook(self, name, hook):
         self._hooks[name].append(hook)
