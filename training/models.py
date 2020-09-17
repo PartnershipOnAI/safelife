@@ -133,9 +133,14 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
 
         x = self.cnn(obs).flatten(start_dim=1)
         # print("CNN shape", x.shape)
-        y = x.view([1] + list(x.shape))
+        y = x[np.newaxis, ...]
         # print("Memory shape", y.shape)
-        print("Applying memory with state", recursive_shape(state))
+        # import inspect
+        # curframe = inspect.currentframe()
+        # calframe = inspect.getouterframes(curframe, 2)
+        # caller = calframe[1][3]
+        # print("Called from", caller)
+        print("Applying memory with data", obs.shape, "and state:", recursive_shape(state))
         y = self.memory(y, state)
         # print(recursive_shape(y))
         y, state = y

@@ -241,13 +241,14 @@ class PPO(BaseAlgo):
 class LSTM_PPO(PPO):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # (hidden state, cell state)
+        # (hidden state, cell state) <--- XXX need better init
         self.lstm_state = (torch.randn(1, 16, 576), torch.randn(1, 16, 576))
 
     def model_forward(self, obs):
         ret = self.model(obs, self.lstm_state)
         result = ret[:-1]  # trim off & discard LSTM state
-                           # on the speculative theory it isn't needed when we're called
+                           # on the speculative theory it needn't be kept except
+                           # for forward passes from take_one_step
         return ret
 
     @named_output('obs actions rewards done next_obs agent_ids policies values')
