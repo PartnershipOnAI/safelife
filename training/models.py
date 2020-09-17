@@ -91,7 +91,7 @@ class SafeLifePolicyNetwork(nn.Module):
 
         dense = [nn.Sequential(nn.Linear(num_features, self.dense_width), nn.ReLU())]
         for n in range(self.dense_depth - 1):
-            dense.append(nn.Sequential(nn.Linear(self.dense_width, self.width), nn.ReLU()))
+            dense.append(nn.Sequential(nn.Linear(self.dense_width, self.dense_width), nn.ReLU()))
         self.dense = nn.Sequential(*dense)
 
         self.logits = nn.Linear(self.dense_width, num_actions)
