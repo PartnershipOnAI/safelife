@@ -290,9 +290,15 @@ class BaseAlgo(object):
             Total number of episodes to run. Defaults to the same as number
             of environments.
         """
+        if not envs:
+            return
         if num_episodes is None:
             num_episodes = len(envs)
         num_completed = 0
+
+        logger = getattr(envs[0], 'logger', None)
+        if logger is not None:
+            logger.reset_summary()
 
         while num_completed < num_episodes:
             data = self.take_one_step(envs)
@@ -307,3 +313,6 @@ class BaseAlgo(object):
                 else:
                     new_envs.append(env)
             envs = new_envs
+
+        if logger is not None:
+            logger.log_summary()

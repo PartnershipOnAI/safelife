@@ -116,22 +116,30 @@ class SafeLifeLogger(BaseLogger):
     ----------
     logdir : str
         Directory to save log data.
+    episode_type : str
+        Label for logged episodes. Intelligent defaults for other attributes
+        get set for values "training", "testing", and "benchmark".
     cumulative_stats : dict
-        Cumulative statistics for the training run. Includes
-        ``training_steps``, ``training_episodes``, and ``testing_epsodes``.
-        Note that this dictionary gets updated in place, so it can easily be
-        passed to other functions to do e.g. hyperparameter annealing.
-    training_video_name : str
-        Format string for the training video files.
-    testing_video_name : str
-        Format string for the testing video files.
-    training_video_interval : int
-        Interval at which to save training videos. If 1, every episode is saved.
-    testing_video_interval : int
-        Interval at which to save testing videos.
-    record_side_effects : bool
-        If true (default), side effects are calculated at the end of each
-        episode.
+        Cumulative statistics for all runs. Includes ``[episode_type]_steps``
+        and ``[episode_type]_episodes``. Note that this dictionary is shared
+        across *all* SafeLifeLogger instances, so it's easy to keep track of
+        the number of training steps or episodes completed from multiple points.
+    summary_stats : dict
+        Average of recent values logged in ``log_scalars()``. Like the
+        cumulative stats, this is shared across instances.
+    summary_polyak : float
+        Controls how the averaging of recent stats is performed. If 0, only the
+        most recent statistic is saved in the summary. If 1, the average is
+        over all values since the start of the run (or since ``reset_summary()``
+        was called). In between, more recent values are weighted more heavily.
+    episode_logname : str
+        File name for storing episode data.
+    episode_msg : str
+        Console message format for printing episode data.
+    video_name : str
+        Format string for video files.
+    video_interval : int
+        Interval at which to save videos. If 1, every episode is saved.
     summary_writer : tensorboardX.SummaryWriter
         Writes data to tensorboard. The SafeLifeLogger will attempt to create
         a new summary writer for the log directory if one is not supplied.
@@ -154,7 +162,7 @@ class SafeLifeLogger(BaseLogger):
     episode_msg = "Episode completed."
     video_name = None
     video_interval = 1
-    record_side_effects = True
+    summary_polyak = 1.0
 
     wandb = None
     summary_writer = 'auto'
@@ -173,6 +181,7 @@ class SafeLifeLogger(BaseLogger):
                     length: {length}
                     reward: {reward} / {reward_possible} (exit cutoff = {reward_needed})
                 """[1:-1]),
+            'summary_polyak': 0.99,
         },
         'testing': {
             'episode_logname': "testing-log.json",
@@ -215,6 +224,8 @@ class SafeLifeLogger(BaseLogger):
         self.last_game = None
         self.last_data = None
         self.last_history = None
+
+        self.reset_summary()
 
     def init_logdir(self):
         if self._has_init or not self.logdir:
@@ -307,7 +318,7 @@ class SafeLifeLogger(BaseLogger):
         # complete them.
         # This isn't necessary when logging to file because we can always
         # reproduce this after the fact.
-        steps = np.where(success, length, np.nan)
+        length = np.where(success, length, np.nan)
         if 'side_effects' in info:
             tb_data['side_effects'], score = combined_score({
                 'reward_possible': reward_possible, **info})
@@ -317,12 +328,12 @@ class SafeLifeLogger(BaseLogger):
                 # agent will actually get recorded to tensorboard/wandb.
                 # All data is logged to file though.
                 name = game.agent_names[i]
-                tb_data[name+'-steps'] = float(steps[i])
+                tb_data[name+'-length'] = float(length[i])
                 tb_data[name+'-reward'] = reward_frac[i]
                 tb_data[name+'-success'] = int(success[i])
                 tb_data[name+'-score'] = float(score[i])
         else:
-            tb_data['num_steps'] = float(steps)
+            tb_data['ep_length'] = float(length)
             tb_data['reward'] = float(reward_frac)
             tb_data['success'] = int(success)
             tb_data['score'] = float(score)
@@ -364,6 +375,17 @@ class SafeLifeLogger(BaseLogger):
         prefix = "" if tag is None else tag + '/'
         data = {prefix+key: val for key, val in data.items()}
 
+        # Update the summary statistics
+        for key, val in data.items():
+            if not (np.isscalar(val) and np.isreal(val) and np.isfinite(val)):
+                continue
+            p = self.summary_polyak
+            n = self.summary_counts.setdefault(key, 0)
+            old_val = self.summary_stats.get(key, 0.0)
+            weight = p * (1-p**n) / (1-p) if p < 1 else n
+            self.summary_stats[key] = (val + weight * old_val) / (1 + weight)
+            self.summary_counts[key] += 1
+
         for key, val in self.cumulative_stats.items():
             # always log the cumulative stats
             data[key.replace('_', '/')] = val
@@ -386,6 +408,32 @@ class SafeLifeLogger(BaseLogger):
                 isinstance(val, self.wandb.Video)
             }
             self.wandb.log(w_data)
+
+    def reset_summary(self):
+        """
+        Reset the summary statistics to zero.
+
+        Subsequent calls to `log_scalars` will summarize averages starting from
+        this point.
+        """
+        self.summary_counts = {}
+        self.summary_stats = {}
+
+    def log_summary(self):
+        """
+        Log the summary statistics to wandb.
+
+        Note that this appends '_avg' to each stat name so that they can be
+        distinguished from the non-summary stats.
+        """
+        data = {
+            key+'_avg': val for key, val in self.summary_stats.items()
+        }
+        for key, val in self.cumulative_stats.items():
+            # always log the cumulative stats
+            data[key.replace('_', '/')] = val
+        if self.wandb:
+            self.wandb.log(data)
 
 
 class RemoteSafeLifeLogger(BaseLogger):
