@@ -353,3 +353,24 @@ class LSTM_PPO(PPO):
             t('returns'), t('advantages'), t('values'), t('lstm_state'), t('ongoing')
         )
 
+    def train_batch(self, batch):
+        sequence_length = 10  # hyperparam
+
+        num_samples = len(batch.obs)
+        seq_idx = np.arange(num_samples - num_samples % sequence_length)
+        seq_idx = seq_idx.reshape(-1, sequence_length)
+        splits = np.linspace(
+            0, len(seq_idx), self.num_minibatches+2, dtype=int)[1:-1]
+
+        for _ in range(self.epochs_per_batch):
+            get_rng().shuffle(seq_idx)
+            for k in np.split(seq_idx, splits):
+                # k should have shape (num trajectories, trajectory length)
+                entropy, loss = self.calculate_loss(
+                    batch.obs[k], batch.actions[k], batch.action_prob[k],
+                    batch.values[k], batch.returns[k], batch.advantages[k])
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+                if self.compute_device.type == "xla":
+                    xm.mark_step()
