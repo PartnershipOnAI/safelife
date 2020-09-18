@@ -241,8 +241,9 @@ class PPO(BaseAlgo):
 class LSTM_PPO(PPO):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # (hidden state, cell state) <--- XXX need better init
-        self.lstm_state = (torch.randn(1, 16, 576), torch.randn(1, 16, 576))
+        # (hidden state, cell state) <--- XXX need better init?
+        #self.lstm_state = (torch.randn(1, 16, 576), torch.randn(1, 16, 576))
+        self.default_state = (torch.zeros(1, 16, 576), torch.zeros(1, 16, 576))
 
     def model_forward(self, obs):
         ret = self.model(obs, self.lstm_state)
@@ -254,9 +255,12 @@ class LSTM_PPO(PPO):
     @named_output('obs actions rewards done next_obs agent_ids policies values')
     def take_one_step(self, envs):
         obs, agent_ids = self.obs_for_envs(envs)
+        state = [getattr(e, "lstm_state", self.default_state) for e in envs]
 
         tensor_obs = self.tensor(obs, torch.float32)
-        values, policies, self.lstm_state = self.model(tensor_obs, self.lstm_state)
+        values, policies, new_state = self.model(tensor_obs, self.lstm_state)
+        for i, e in enumerate(envs):
+            e.lstm_state = new_state[i]
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
         if self.compute_device.type == "xla":
@@ -272,4 +276,80 @@ class LSTM_PPO(PPO):
 
         next_obs, rewards, done = self.act_on_envs(envs, actions)
 
-        return obs, actions, rewards, done, next_obs, agent_ids, policies, values
+        return obs, actions, rewards, done, next_obs, agent_ids, policies, values, state
+
+    @named_output('obs actions action_prob returns advantages values')
+    def gen_training_batch(self, steps_per_env):
+        """
+        Run each environment a number of steps and calculate advantages.
+
+        Note that the output is flat, i.e., a single list of observations,
+        actions, etc.
+
+        Parameters
+        ----------
+        steps_per_env : int
+            Number of steps to take per environment.
+        """
+        assert steps_per_env > 0
+
+        trajectories = defaultdict(lambda: {
+            'obs': [],
+            'actions': [],
+            'action_prob': [],
+            'rewards': [],
+            'values': [],
+            'lstm_state': [],
+            'ongoing': [],
+            'final_value': 0.0,
+        })
+
+        # Take a bunch of steps, and put them into trajectories associated with
+        # each distinct agent
+        for _ in range(steps_per_env):
+            with torch.no_grad():
+                step = self.take_one_step(self.training_envs)
+            for k, agent_id in enumerate(step.agent_ids):
+                t = trajectories[agent_id]
+                action = step.actions[k]
+                t['obs'].append(step.obs[k])
+                t['actions'].append(action)
+                t['action_prob'].append(step.policies[k, action])
+                t['rewards'].append(step.rewards[k])
+                t['values'].append(step.values[k])
+                t['ongoing'].append(not step.done[k])
+
+        # For the final step in each environment, also calculate the value
+        # function associated with the next observation
+        tensor_obs = self.tensor(step.next_obs, torch.float32)
+        vals = self.model_forward(tensor_obs)[0].detach().cpu().numpy()
+        for k, agent_id in enumerate(step.agent_ids):
+            if not step.done[k]:
+                trajectories[agent_id]['final_value'] = vals[k]
+
+        # Calculate the discounted rewards for each trajectory
+        gamma = self.gamma
+        lmda = self.lmda
+        for t in trajectories.values():
+            val0 = np.array(t['values'])
+            val1 = np.append(t['values'][1:], t['final_value'])
+            rewards = returns = np.array(t['rewards'])
+            advantages = rewards + gamma * val1 - val0
+            returns[-1] += gamma * t['final_value']
+            for i in range(len(rewards) - 2, -1, -1):
+                returns[i] += gamma * returns[i+1]
+                advantages[i] += lmda * advantages[i+1]
+            t['returns'] = returns
+            t['advantages'] = advantages
+
+        self.num_steps += steps_per_env * len(self.training_envs)
+
+        def t(label, dtype=torch.float32):
+            x = np.concatenate([d[label] for d in trajectories.values()])
+            return torch.as_tensor(x, device=self.compute_device, dtype=dtype)
+
+        return (
+            t('obs'), t('actions', torch.int64), t('action_prob'),
+            t('returns'), t('advantages'), t('values'), t('lstm_state'), t('ongoing')
+        )
+
