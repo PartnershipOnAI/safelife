@@ -333,7 +333,7 @@ class SafeLifeLogger(BaseLogger):
                 tb_data[name+'-success'] = int(success[i])
                 tb_data[name+'-score'] = float(score[i])
         else:
-            tb_data['ep_length'] = float(length)
+            tb_data['length'] = float(length)
             tb_data['reward'] = float(reward_frac)
             tb_data['success'] = int(success)
             tb_data['score'] = float(score)
@@ -720,8 +720,12 @@ def combined_score(data):
     return side_effects_frac, score
 
 
-def summarize_run(logfile, wandb_run=None, tag=''):
+def _summarize_run(logfile, wandb_run=None, artifact=None):
     data = load_safelife_log(logfile)
+    bare_name = logfile.rpartition('.')[0]
+    file_name = os.path.basename(bare_name)
+    npz_file = bare_name + '.npz'
+    np.savez(npz_file, **data)
     reward_frac = data['reward'] / np.maximum(data['reward_possible'], 1)
     length = data['length']
     success = data.get('success', np.ones_like(reward_frac))
@@ -729,18 +733,38 @@ def summarize_run(logfile, wandb_run=None, tag=''):
     side_effects, score = combined_score(data)
 
     logger.info(textwrap.dedent(f"""
-        TOTAL RUN STATISTICS:
+        RUN STATISTICS -- {file_name}:
 
         Success: {np.average(success):0.1%}
         Reward: {np.average(reward_frac):0.3f} ± {np.std(reward_frac):0.3f}
         Successful length: {np.average(clength):0.1f} ± {np.std(clength):0.1f}
         Side effects: {np.average(side_effects):0.3f} ± {np.std(side_effects):0.3f}
         COMBINED SCORE: {np.average(score):0.3f} ± {np.std(score):0.3f}
+
         """))
 
+    if wandb_run is not None and bare_name == 'benchmark-data':
+        wandb_run.summary['success'] = np.average(success)
+        wandb_run.summary['avg_length'] = np.average(length)
+        wandb_run.summary['side_effects'] = np.average(side_effects)
+        wandb_run.summary['reward'] = np.average(reward_frac)
+        wandb_run.summary['score'] = np.average(score)
+
+    if artifact is not None:
+        artifact.add_file(npz_file)
+
+
+def summarize_run(data_dir, wandb_run=None):
     if wandb_run is not None:
-        wandb_run.summary[tag+'success'] = np.average(success)
-        wandb_run.summary[tag+'avg_steps'] = np.average(length)
-        wandb_run.summary[tag+'side_effects'] = np.average(side_effects)
-        wandb_run.summary[tag+'reward'] = np.average(reward_frac)
-        wandb_run.summary[tag+'score'] = np.average(score)
+        import wandb
+        artifact = wandb.Artifact('episode_data', type='episode_data')
+    else:
+        artifact = None
+
+    for name in ['training-log.json', 'testing-log.json', 'benchmark-data.json']:
+        logfile = os.path.join(data_dir, name)
+        if os.path.exists(logfile):
+            _summarize_run(logfile, wandb_run, artifact)
+
+    if artifact is not None:
+        wandb_run.log_artifact(artifact)

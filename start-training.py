@@ -18,7 +18,6 @@ import numpy as np
 import torch
 
 
-
 parser = argparse.ArgumentParser(description="""
     Run agent training using proximal policy optimization.
 
@@ -250,16 +249,16 @@ try:
         print('')
         embed()
 
-    if config['run_type'] in ['train', 'benchmark'] and wandb:
-        benchmark_file = os.path.join(data_dir, 'benchmark-data.json')
-        summarize_run(benchmark_file, wandb.run)
-        wandb.run.summary['env_type'] = config['env_type']
 
-
+except KeyboardInterrupt:
+    logging.info("Keyboard Interrupt. Ending early.\n")
 except Exception:
-    logging.exception("Ran into an unexpected error. Aborting training.")
+    logging.exception("Ran into an unexpected error. Aborting training.\n")
     raise
 finally:
+    if config['run_type'] in ['train', 'benchmark'] and wandb:
+        summarize_run(data_dir, wandb.run)
+        wandb.run.summary['env_type'] = config['env_type']
     if tb_proc is not None:
         tb_proc.kill()
     if args.shutdown:
