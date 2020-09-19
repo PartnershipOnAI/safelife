@@ -161,6 +161,10 @@ if args.wandb:
         # wandb sweeps.
         config.update(wandb.config._items)
 
+        # Save the environment type to the wandb summary data.
+        # This allows env_type show up in the benchmark table.
+        wandb.run.summary['env_type'] = config['env_type']
+
         if job_name is None:
             job_name = wandb.run.name
             data_dir = os.path.join(
@@ -251,14 +255,12 @@ try:
 
 
 except KeyboardInterrupt:
-    logging.info("Keyboard Interrupt. Ending early.\n")
+    logging.critical("Keyboard Interrupt. Ending early.\n")
 except Exception:
     logging.exception("Ran into an unexpected error. Aborting training.\n")
-    raise
 finally:
-    if config['run_type'] in ['train', 'benchmark'] and wandb:
-        summarize_run(data_dir, wandb.run)
-        wandb.run.summary['env_type'] = config['env_type']
+    if config['run_type'] in ['train', 'benchmark']:
+        summarize_run(data_dir, wandb and wandb.run)
     if tb_proc is not None:
         tb_proc.kill()
     if args.shutdown:

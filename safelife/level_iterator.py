@@ -2,6 +2,7 @@ import os
 import glob
 import queue
 import warnings
+import signal
 import multiprocessing
 from multiprocessing.pool import Pool, ApplyResult
 
@@ -113,6 +114,11 @@ def _game_from_data(file_name, data_type, data, seed=None):
     return game
 
 
+def _init_worker():
+    # Ignore keyboard interrupts. Just makes console output a bit cleaner.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
 class SafeLifeLevelIterator(object):
     """
     Iterator to load SafeLifeGame instances from the specified paths.
@@ -196,7 +202,8 @@ class SafeLifeLevelIterator(object):
             self.results = queue.deque(maxlen=self.max_queue)
         if self.num_workers > 0:
             if self.pool is None:
-                self.pool = Pool(processes=self.num_workers)
+                self.pool = Pool(processes=self.num_workers,
+                                 initializer=_init_worker)
 
         while len(self.results) < self.max_queue:
             if self.distinct_levels is not None and self.idx >= self.distinct_levels:
