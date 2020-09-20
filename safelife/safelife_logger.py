@@ -72,6 +72,8 @@ class StreamingJSONWriter(object):
         else:
             self.file = open(filename, 'w')
             self.delimeter = '['
+            self.file.write('[]\n')
+            self.file.flush()
         self.encoder = encoder
 
     def dump(self, obj):

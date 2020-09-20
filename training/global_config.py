@@ -1,6 +1,7 @@
 from collections import defaultdict
 from functools import partial
 import inspect
+import json
 import logging
 from typing import Generic, TypeVar
 
@@ -97,7 +98,11 @@ class GlobalConfig(dict):
     """
 
     def __str__(self):
-        return "GlobalConfig(%s)" % super().__str__()
+        try:
+            s = json.dumps(dict(self), indent=1, sort_keys=True)
+        except Exception:
+            s = super().__str__()
+        return f"GlobalConfig({s})"
 
     def __init__(self, *args, **kw):
         super().__init__(*args, **kw)

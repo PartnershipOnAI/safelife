@@ -84,9 +84,10 @@ if args.seed is None:
     # doesn't have 64 bit integers.
     args.seed = np.random.randint(2**53)
 
-assert args.wandb or args.data_dir, ("Either a data directory must be set or "
-    "the wandb flag must be set. If wandb is set but there is no data "
-    "directory, then a run name will be picked automatically.")
+assert args.wandb or args.data_dir or args.run_type == 'inspect', (
+    "Either a data directory must be set or the wandb flag must be set. "
+    "If wandb is set but there is no data directory, then a run name will be "
+    "picked automatically.")
 
 if args.ensure_gpu:
     assert torch.cuda.is_available(), "CUDA support requested but not available!"
@@ -179,7 +180,8 @@ else:
 if args.extra_params is not None:
     config.add_hyperparams(args.extra_params)
 
-os.makedirs(data_dir, exist_ok=True)
+if data_dir is not None:
+    os.makedirs(data_dir, exist_ok=True)
 logger = logging_setup.setup_logging(
     data_dir, debug=(config['run_type'] == 'inspect'))
 logger.info("COMMAND ARGUMENTS: %s", ' '.join(sys.argv))
@@ -201,7 +203,7 @@ if config['deterministic']:
 
 # Run tensorboard
 
-if args.port:
+if args.port and data_dir is not None:
     tb_proc = subprocess.Popen([
         "tensorboard", "--logdir_spec",
         job_name + ':' + data_dir, '--port', str(args.port)])
@@ -241,6 +243,7 @@ try:
         wandb.config.update(config2)
 
     config.check_for_unused_hyperparams()
+    logger.info("Hyperparameters: %s\n", config)
 
     if config['run_type'] == "train":
         algo.train(int(config['steps']))
@@ -252,7 +255,6 @@ try:
         from IPython import embed
         print('')
         embed()
-
 
 except KeyboardInterrupt:
     logging.critical("Keyboard Interrupt. Ending early.\n")
