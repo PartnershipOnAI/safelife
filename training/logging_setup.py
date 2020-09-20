@@ -10,10 +10,14 @@ from .global_config import config
 
 
 def setup_logging(data_dir, debug=False):
-    logfile = os.path.join(data_dir, 'training.log')
+    if data_dir is None:
+        logfile = None
+    else:
+        logfile = os.path.join(data_dir, 'training.log')
+        if not os.path.exists(logfile):
+            open(logfile, 'w').close()  # write an empty file
 
-    if not os.path.exists(logfile):
-        open(logfile, 'w').close()  # write an empty file
+    handlers = ['console']
     logging_config = {
         'version': 1,
         'disable_existing_loggers': False,
@@ -35,30 +39,37 @@ def setup_logging(data_dir, debug=False):
                 'stream': 'ext://sys.stdout',
                 'formatter': 'simple',
             },
-            'logfile': {
-                'class': 'logging.FileHandler',
-                'level': 'INFO',
-                'formatter': 'dated',
-                'filename': logfile,
-            }
         },
         'loggers': {
             'training': {
                 'level': 'DEBUG' if debug else 'INFO',
                 'propagate': False,
-                'handlers': ['console', 'logfile'],
+                'handlers': handlers,
             },
             'safelife': {
                 'level': 'DEBUG' if debug else 'INFO',
                 'propagate': False,
-                'handlers': ['console', 'logfile'],
+                'handlers': handlers,
             }
         },
         'root': {
             'level': 'WARNING',
-            'handlers': ['console', 'logfile'],
+            'handlers': handlers,
         }
     }
+
+    if data_dir is not None:
+        logfile = os.path.join(data_dir, 'training.log')
+        if not os.path.exists(logfile):
+            open(logfile, 'w').close()  # write an empty file
+        handlers.append['logfile']
+        logging_config['handlers']['logfile'] = {
+            'class': 'logging.FileHandler',
+            'level': 'INFO',
+            'formatter': 'dated',
+            'filename': logfile,
+        }
+
     logging.config.dictConfig(logging_config)
 
     return logging.getLogger('training')
@@ -66,7 +77,8 @@ def setup_logging(data_dir, debug=False):
 
 @lru_cache(maxsize=128)  # reuse the same data logger if called multiple times
 def setup_data_logger(data_dir, episode_type):
-    os.makedirs(data_dir, exist_ok=True)
+    if data_dir is not None:
+        os.makedirs(data_dir, exist_ok=True)
 
     if config.get('_wandb'):
         import wandb
