@@ -52,7 +52,7 @@ def update_hyperparams(func=None, *, name=None):
         #   @update_hyperparams(name='foobar')
         return partial(update_hyperparams, name=name)
     if name is None:
-        name = func.__name__.lower()
+        name = func.__name__
     base_name = name + '.' if name else ''
 
     if inspect.isclass(func):
@@ -114,6 +114,7 @@ class GlobalConfig(dict):
         # things the user has tried to set as hyperparams; keep a record so
         # that we can warn if the code doesn't actually look at them
         self._expected_hyperparams = set()
+        self._defaultparams = {}
         self._checked = False
 
     def __setitem__(self, name, val):
@@ -130,16 +131,20 @@ class GlobalConfig(dict):
                 for hook in hooks:
                     hook(val)
 
+    def setdefault(self, key, val=None):
+        self._defaultparams[key] = val
+        return super().setdefault(key, val)
+
     def add_hyperparams(self, params):
         self.update(**params)
         self._expected_hyperparams.update(params)  # throws away values
 
     def check_for_unused_hyperparams(self, only_once=False):
         if not (self._checked and only_once):
-            logger.info("Checking for unused hyperparams...")
             for p in self._expected_hyperparams:
-                if p not in self._hooks:
-                    logger.warning(f"Hyperparameter {p} was set but has not been used by the code.")
+                if p not in self._defaultparams:
+                    logger.warning(f"Hyperparameter {p} was set, "
+                                   "but it has not been used by the code.")
             self._checked = True
 
     def addhook(self, name, hook):
