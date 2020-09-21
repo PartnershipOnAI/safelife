@@ -184,7 +184,7 @@ task_types = {
     },
     'prune-still': {
         'iter_class': SafeLifeLevelIterator,
-        'train_levels': ['random/prune-still-easy'],
+        'train_levels': ['random/prune-still'],
         'test_levels': 'benchmarks/v1.0/prune-still.npz',
         'side_effects': ['life-green'],
     },
@@ -196,7 +196,7 @@ task_types = {
     },
     'prune-spawn': {
         'iter_class': SwitchingLevelIterator,
-        'train_levels': ['random/prune-still-easy', 'random/prune-spawn'],
+        'train_levels': ['random/prune-still', 'random/prune-spawn'],
         'test_levels': 'benchmarks/v1.0/prune-spawn.npz',
         'side_effects': ['life-green', 'life-yellow', 'spawner-yellow'],
     },
