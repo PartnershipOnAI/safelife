@@ -267,6 +267,7 @@ class PPO(BaseAlgo):
             if self.testing_envs and num_steps >= next_test:
                 self.run_episodes(self.testing_envs)
 
+@update_hyperparams
 class LSTM_PPO(PPO):
     def __init__(self, *args, **kwargs):
         # ((hidden state, cell state), time, activations) <--- XXX need better init?

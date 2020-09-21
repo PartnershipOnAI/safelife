@@ -35,7 +35,7 @@ parser.add_argument('--run-type', choices=('train', 'benchmark', 'inspect'),
     "If 'train', train the model. If 'benchmark', run the model on testing "
     "environments. If 'inspect', load an ipython prompt for interactive "
     "debugging.")
-parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
+parser.add_argument('--algo', choices=('ppo', 'dqn', 'mppo'), default='ppo')
 parser.add_argument('-e', '--env-type', default='append-spawn')
 parser.add_argument('-s', '--steps', type=float, default=6e6,
     help='Length of training in steps (default: 6e6).')
@@ -230,6 +230,10 @@ try:
         from training.dqn import DQN as algo_cls
         algo_args['training_model'] = models.SafeLifeQNetwork(obs_shape)
         algo_args['target_model'] = models.SafeLifeQNetwork(obs_shape)
+    elif args.algo == 'mppo':
+        from training.models import SafeLifeLSTMPolicyNetwork
+        from training.ppo import LSTM_PPO as algo_cls
+        algo_args['model'] = models.SafeLifeLSTMPolicyNetwork(obs_shape)
     else:
         logging.error("Unexpected algorithm type '%s'", config['algo'])
         raise ValueError("unexpected algorithm type")

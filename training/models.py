@@ -95,7 +95,7 @@ class SafeLifePolicyNetwork(nn.Module):
         width = self.dense_width
 
         dense = [nn.Sequential(nn.Linear(num_features, width), nn.ReLU())]
-        for n in range(dense_depth - 1):
+        for n in range(self.dense_depth - 1):
             dense.append(nn.Sequential(nn.Linear(width, width), nn.ReLU()))
         self.dense = nn.Sequential(*dense)
 

@@ -18,7 +18,7 @@ from safelife.safelife_game import CellTypes
 from safelife.safelife_logger import SafeLifeLogWrapper
 
 from .logging_setup import setup_data_logger
-
+from .global_config import HyperParam, update_hyperparams
 
 logger = logging.getLogger(__name__)
 
@@ -311,7 +311,9 @@ task_types = {
 }
 
 
+@update_hyperparams
 def build_environments(config, seed=None, data_dir=None):
+    build_environments.env_batch_size: HyperParam = 16
     task = config['env_type']
     penalty_baseline = config['penalty_baseline']
     impact_penalty = config['impact_penalty']
@@ -347,7 +349,7 @@ def build_environments(config, seed=None, data_dir=None):
 
     envs = {}
     envs['training'] = safelife_env_factory(
-        training_iter, num_envs=config.env_batch_size, multiagent=multiagent,
+        training_iter, num_envs=build_environments.env_batch_size, multiagent=multiagent,
         data_logger=training_logger, side_effects=side_effects,
         impact_penalty=impact_penalty, penalty_baseline=penalty_baseline,
         min_performance_fraction=LinearSchedule(

@@ -62,7 +62,7 @@ def setup_logging(data_dir, debug=False):
         logfile = os.path.join(data_dir, 'training.log')
         if not os.path.exists(logfile):
             open(logfile, 'w').close()  # write an empty file
-        handlers.append['logfile']
+        handlers.append('logfile')
         logging_config['handlers']['logfile'] = {
             'class': 'logging.FileHandler',
             'level': 'INFO',
