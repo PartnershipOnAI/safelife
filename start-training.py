@@ -36,7 +36,7 @@ parser.add_argument('--run-type', choices=('train', 'benchmark', 'inspect'),
     "environments. If 'inspect', load an ipython prompt for interactive "
     "debugging.")
 parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
-parser.add_argument('-e', '--env-type', default='append-spawn', dest='env.type')
+parser.add_argument('-e', '--env-type', default='append-spawn')
 parser.add_argument('-s', '--steps', type=float, default=6e6,
     help='Length of training in steps (default: 6e6).')
 parser.add_argument('--seed', default=None, type=int)
@@ -158,7 +158,7 @@ if args.wandb:
 
         # Save the environment type to the wandb summary data.
         # This allows env_type show up in the benchmark table.
-        wandb.run.summary['env_type'] = config['env.type']
+        wandb.run.summary['env_type'] = config['env_type']
 
         if job_name is None:
             job_name = wandb.run.name

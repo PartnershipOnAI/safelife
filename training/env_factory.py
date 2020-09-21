@@ -280,7 +280,7 @@ def safelife_env_factory(
 
 
 def build_environments(config, seed=None, data_dir=None):
-    task = config['env.type']
+    task = config['env_type']
 
     assert task in task_types, "'%s' is not a recognized task" % (task,)
 

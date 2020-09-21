@@ -27,7 +27,10 @@ command:
 parameters:
 
   env_type:
-    value: append-spawn
+    # See training/env_factory.py for other values
+    values:
+      - append-spawn
+      - prune-spawn
 
   steps:
     value: 6_000_000
@@ -35,8 +38,8 @@ parameters:
   algo:
     value: ppo
 
-  impact_penalty:
-    values: [0.0, 0.1, 0.2, 0.4, 0.6, 0.8, 1.0]
+  side_effect.penalty:
+    values: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
 
-  penalty_baseline:
-    values: ['starting-state', 'inaction']
+  side_effect.baseline:
+    value: 'starting-state'  # or 'inaction'
