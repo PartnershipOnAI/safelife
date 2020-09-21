@@ -270,10 +270,9 @@ class PPO(BaseAlgo):
 
 class LSTM_PPO(PPO):
     def __init__(self, *args, **kwargs):
+        # ((hidden state, cell state), time, activations) <--- XXX need better init?
         self.default_state = torch.zeros(2, 1, 576)
         super().__init__(*args, **kwargs)
-        # (hidden state, cell state) <--- XXX need better init?
-        #self.agent_state = (torch.randn(1, 16, 576), torch.randn(1, 16, 576))
 
 
 
