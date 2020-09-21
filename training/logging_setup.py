@@ -10,12 +10,6 @@ from .global_config import config
 
 
 def setup_logging(data_dir, debug=False):
-    if data_dir is None:
-        logfile = None
-    else:
-        logfile = os.path.join(data_dir, 'training.log')
-        if not os.path.exists(logfile):
-            open(logfile, 'w').close()  # write an empty file
 
     handlers = ['console']
     logging_config = {

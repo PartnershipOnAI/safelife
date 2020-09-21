@@ -44,12 +44,6 @@ parser.add_argument('--deterministic', action="store_true",
     help="If set, uses deterministic cudnn routines. This may slow "
     "down training, but it should make the results reproducable.")
 
-parser.add_argument('-p', '--impact-penalty', type=float)
-parser.add_argument('--penalty-baseline',
-    choices=('starting-state', 'inaction'), default='starting-state')
-parser.add_argument('--curriculum', default="progress_estimate", type=str,
-    help='Curriculum type ("uniform" or "progress_estimate")')
-
 parser.add_argument('--port', type=int,
     help="Port on which to run tensorboard.")
 parser.add_argument('-w', '--wandb', action='store_true',
@@ -60,7 +54,6 @@ parser.add_argument('--project', default=None,
 parser.add_argument('--shutdown', action="store_true",
     help="Shut down the system when the job is complete"
     "(helpful for running remotely).")
-
 parser.add_argument('--ensure-gpu', action='store_true',
     help="Check that the machine we're running on has CUDA support")
 
@@ -133,6 +126,10 @@ else:
 
 # Setup wandb and initialize logging
 
+base_config = {
+    k: v for k, v in vars(args).items() if k not in
+    ['port', 'wandb', 'ensure_gpu', 'project', 'shutdown', 'extra_params']
+}
 if args.wandb:
     import wandb
     if wandb.login():
@@ -153,10 +150,7 @@ if args.wandb:
 
         wandb.init(
             name=job_name, notes=run_notes, project=project, entity=entity,
-            config={
-                k: v for k, v in vars(args).items() if k not in
-                ['port', 'wandb', 'ensure_gpu', 'project', 'shutdown']
-            })
+            config=base_config)
         # Note that wandb config can contain different and/or new keys that
         # aren't in the command-line arguments. This is especially true for
         # wandb sweeps.
@@ -174,7 +168,7 @@ if args.wandb:
         logging_setup.save_code_to_wandb()
 else:
     wandb = None
-    config.update(vars(args))
+    config.update(base_config)
 
 # tag any hyperparams from the commandline
 if args.extra_params is not None:
@@ -246,8 +240,10 @@ try:
         config2.pop('_wandb', None)
         wandb.config.update(config2)
 
+    print("")
+    logger.info("Hyperparameters: %s", config)
     config.check_for_unused_hyperparams()
-    logger.info("Hyperparameters: %s\n", config)
+    print("")
 
     if config['run_type'] == "train":
         algo.train(int(config['steps']))

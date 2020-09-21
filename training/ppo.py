@@ -267,14 +267,16 @@ class PPO(BaseAlgo):
             if self.testing_envs and num_steps >= next_test:
                 self.run_episodes(self.testing_envs)
 
+        self.save_checkpoint()
+
+
 @update_hyperparams
 class LSTM_PPO(PPO):
+
     def __init__(self, *args, **kwargs):
         # ((hidden state, cell state), time, activations) <--- XXX need better init?
         self.default_state = torch.zeros(2, 1, 576)
         super().__init__(*args, **kwargs)
-
-
 
     def train_batch(self, batch):
         sequence_length = 10  # hyperparam
@@ -297,5 +299,3 @@ class LSTM_PPO(PPO):
                 self.optimizer.step()
                 if self.compute_device.type == "xla":
                     xm.mark_step()
-
-

@@ -1,16 +1,19 @@
+import logging
+import os
+from collections import defaultdict
+from functools import partial
+
 from scipy import interpolate
 from scipy.special import softmax
 
 import numpy as np
 import numpy.random as npr
 
-import logging
-import os
-from collections import defaultdict
 
 from safelife import env_wrappers
 from safelife.helper_utils import load_kwargs
 from safelife.level_iterator import SafeLifeLevelIterator
+from safelife.random import coinflip
 
 from safelife.render_graphics import render_file
 from safelife.safelife_env import SafeLifeEnv
@@ -47,7 +50,7 @@ class LinearSchedule(object):
 
 class CurricularLevelIterator(SafeLifeLevelIterator):
     """
-    Iterate through a curriculum of [typically increasingly challenging] level tyepes
+    Iterate through a curriculum of [typically increasingly challenging] level types
 
     Switch safelife level type mix after a threshold of performance is reached
     at each curriculum stage.
@@ -151,74 +154,24 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
 
 class SwitchingLevelIterator(SafeLifeLevelIterator):
     """
-    Switch safelife level types after a certain number of training steps.
+    Switch safelife level types based on a coin flip.
+
+    Parameters
+    ----------
+    level1, level2 : str
+        Level files.
+    p_switch : callable
+        Probability of picking level 2 instead of level 1.
     """
-    def __init__(self, level1, level2, t_switch, logger, **kwargs):
+    def __init__(self, level1, level2, p_switch, **kwargs):
         super().__init__(level1, level2, repeat_levels=True, **kwargs)
-        self.t_switch = t_switch
-        self.logger = logger
+        self.p_switch = p_switch
 
     def get_next_parameters(self):
-        t = self.logger.cumulative_stats['training_steps']
-        if t < self.t_switch:
-            return self.file_data[0]
-        else:
+        if coinflip(self.p_switch()):
             return self.file_data[1]
-
-
-def safelife_env_factory(
-        level_iterator, *,
-        num_envs=1,
-        min_performance_fraction=None,
-        data_logger=None,
-        multiagent=False,
-        impact_penalty=None,
-        penalty_baseline='starting-state',
-        side_effects=None,
-        training=True):
-    """
-    Factory for creating SafeLifeEnv instances with useful wrappers.
-    """
-    envs = []
-    for _ in range(num_envs):
-        env = SafeLifeEnv(
-            level_iterator,
-            view_shape=(25,25),
-            single_agent=not multiagent,
-            calculate_side_effects=side_effects,
-            # This is a minor optimization, but a few of the output channels
-            # are redundant or unused for normal safelife training levels.
-            output_channels=(
-                CellTypes.alive_bit,
-                CellTypes.agent_bit,
-                CellTypes.pushable_bit,
-                CellTypes.destructible_bit,
-                CellTypes.frozen_bit,
-                CellTypes.spawning_bit,
-                CellTypes.exit_bit,
-                CellTypes.color_bit + 0,  # red
-                CellTypes.color_bit + 1,  # green
-                CellTypes.color_bit + 2,  # blue
-                CellTypes.color_bit + 16,  # red goal
-                CellTypes.color_bit + 17,  # green goal
-                CellTypes.color_bit + 18,  # blue goal
-                CellTypes.orientation_bit + 0,
-                CellTypes.orientation_bit + 1,
-            ))
-
-        if training:
-            env = env_wrappers.MovementBonusWrapper(env, as_penalty=True)
-            env = env_wrappers.ExtraExitBonus(env)
-        if impact_penalty is not None:
-            env = env_wrappers.SimpleSideEffectPenalty(
-                env, penalty_coef=impact_penalty, baseline=penalty_baseline)
-        if min_performance_fraction is not None:
-            env = env_wrappers.MinPerformanceScheduler(
-                env, min_performance_fraction=min_performance_fraction)
-        env = SafeLifeLogWrapper(env, logger=data_logger)
-        envs.append(env)
-
-    return envs
+        else:
+            return self.file_data[0]
 
 
 task_types = {
@@ -228,44 +181,36 @@ task_types = {
         'train_levels': ['random/append-still-easy'],
         'test_levels': 'benchmarks/v1.0/append-still.npz',
         'side_effects': ['life-green'],
-        'schedule': [1e6, 2e6],
     },
     'prune-still': {
         'iter_class': SafeLifeLevelIterator,
-        'train_levels': ['random/prune-still-easy'],
+        'train_levels': ['random/prune-still'],
         'test_levels': 'benchmarks/v1.0/prune-still.npz',
         'side_effects': ['life-green'],
-        'schedule': [0.5e6, 1.5e6],
     },
     'append-spawn': {
         'iter_class': SwitchingLevelIterator,
         'train_levels': ['random/append-still-easy', 'random/append-spawn'],
         'test_levels': 'benchmarks/v1.0/append-spawn.npz',
         'side_effects': ['life-green', 'life-yellow', 'spawner-yellow'],
-        'schedule': [1e6, 2e6],
-        't_switch': 1.5e6,
     },
     'prune-spawn': {
         'iter_class': SwitchingLevelIterator,
-        'train_levels': ['random/prune-still-easy', 'random/prune-spawn'],
+        'train_levels': ['random/prune-still', 'random/prune-spawn'],
         'test_levels': 'benchmarks/v1.0/prune-spawn.npz',
         'side_effects': ['life-green', 'life-yellow', 'spawner-yellow'],
-        'schedule': [0.5e6, 2e6],
-        't_switch': 1.5e6,
     },
     'curriculum-append-spawn': {
         'iter_class': CurricularLevelIterator,
         'train_levels': ['random/append-still-easy', 'random/append-spawn'],
         'test_levels': 'benchmarks/v1.0/append-spawn.npz',
         'side_effects': ['life-green', 'life-yellow', 'spawner-yellow'],
-        'schedule': [1e6, 2e6],
     },
     'navigate': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/navigation'],
         'test_levels': 'benchmarks/v1.0/navigation.npz',
         'side_effects': ['life-green', 'life-yellow', 'spawner-yellow'],
-        'schedule': [1e6, 2e6],
     },
 
     # Multi-agent tasks:
@@ -273,7 +218,6 @@ task_types = {
         'iter_class': CurricularLevelIterator,
         'train_levels': ['random/multi-agent/asym1'],
         'multiagent': True,
-        'schedule': [1e6, 2e6],
     },
     'curriculum-asym1': {
         'iter_class': CurricularLevelIterator,
@@ -282,41 +226,64 @@ task_types = {
             'random/multi-agent/asym1-pretrain-cyanonly',
             'random/multi-agent/asym1-pretrain-redonly'],
         'multiagent': True,
-        'schedule': [1e6, 2e6],
     },
     'multi-build-coop': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/multi-agent/build-coop'],
         'multiagent': True,
-        'schedule': [1.5e6, 3e6],
     },
     'multi-build-compete': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/multi-agent/build-compete'],
         'multiagent': True,
-        'schedule': [1.5e6, 3e6],
     },
     'multi-build-parallel': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/multi-agent/build-parallel'],
         'multiagent': True,
-        'schedule': [1.5e6, 3e6],
     },
     'multi-prune': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/prune-still', 'random/multi-agent/prune-still'],
         'multiagent': True,
-        'schedule': [1.5e6, 3e6],
     },
 }
+
+
+def safelife_env_factory(
+        level_iterator, *,
+        num_envs=1,
+        env_args={},
+        data_logger=None,
+        training=True,
+        exit_difficulty=1.0,
+        se_baseline='starting-state',
+        se_penalty=0.0):
+    """
+    Factory for creating SafeLifeEnv instances with useful wrappers.
+    """
+    envs = []
+    for _ in range(num_envs):
+        env = SafeLifeEnv(level_iterator, **env_args)
+
+        if training:
+            env = env_wrappers.MovementBonusWrapper(env, as_penalty=True)
+            env = env_wrappers.ExtraExitBonus(env)
+            env = env_wrappers.SimpleSideEffectPenalty(env,
+                baseline=se_baseline, penalty_coef=se_penalty)
+            env = env_wrappers.MinPerformanceScheduler(env,
+                min_performance_fraction=exit_difficulty)
+        env = SafeLifeLogWrapper(env, logger=data_logger)
+        envs.append(env)
+
+    return envs
 
 
 @update_hyperparams
 def build_environments(config, seed=None, data_dir=None):
     build_environments.env_batch_size: HyperParam = 16
     task = config['env_type']
-    penalty_baseline = config['penalty_baseline']
-    impact_penalty = config['impact_penalty']
+
     assert task in task_types, "'%s' is not a recognized task" % (task,)
 
     if not isinstance(seed, np.random.SeedSequence):
@@ -324,57 +291,97 @@ def build_environments(config, seed=None, data_dir=None):
     train_seed, test_seed = seed.spawn(2)
 
     task_data = task_types[task]
+
+    # common arguments for all environments
+    view_size = config.setdefault('env.view_size', 25)
+    common_env_args = {
+        'calculate_side_effects': task_data.get('side_effects'),
+        'single_agent': not task_data.get('multiagent'),
+        'view_shape': (view_size, view_size),
+        # This is a minor optimization, but a few of the output channels
+        # are redundant or unused for normal safelife training levels.
+        'output_channels': (
+            CellTypes.alive_bit,
+            CellTypes.agent_bit,
+            CellTypes.pushable_bit,
+            CellTypes.destructible_bit,
+            CellTypes.frozen_bit,
+            CellTypes.spawning_bit,
+            CellTypes.exit_bit,
+            CellTypes.color_bit + 0,  # red
+            CellTypes.color_bit + 1,  # green
+            CellTypes.color_bit + 2,  # blue
+            CellTypes.color_bit + 16,  # red goal
+            CellTypes.color_bit + 17,  # green goal
+            CellTypes.color_bit + 18,  # blue goal
+            CellTypes.orientation_bit + 0,
+            CellTypes.orientation_bit + 1,
+        )
+    }
+
+    # Training environments
+    training_logger = setup_data_logger(data_dir, 'training')
+    schedule = partial(LinearSchedule, training_logger)
+
     iter_class = task_data.get('iter_class', SafeLifeLevelIterator)
     iter_args = {'seed': train_seed}
-
-    training_logger = setup_data_logger(data_dir, 'training')
 
     if iter_class is CurricularLevelIterator:
         iter_args['logger'] = training_logger
         iter_args['curriculum_params'] = {
-            'curriculum_distribution': config['curriculum']
+            'curriculum_distribution': config.setdefault(
+                'env.curriculum', 'progress_estimate')
         }
     elif iter_class is SwitchingLevelIterator:
-        iter_args['t_switch'] = task_data['t_switch']
-        iter_args['logger'] = training_logger
+        task_schedule = config.setdefault('env.task_switch', {
+            't': [1e5, 1.5e6],
+            'y': [0.1, 1.0],
+        })
+        iter_args['p_switch'] = schedule(**task_schedule)
 
     training_iter = iter_class(*task_data['train_levels'], **iter_args)
 
-    schedule = task_data['schedule']
-    multiagent = task_data.get('multiagent', False)
-    if impact_penalty is not None:
-        impact_penalty = LinearSchedule(training_logger, schedule, [0, impact_penalty])
+    # Side effect penalty for training
+    se_penalty = config.setdefault('side_effect.penalty', 0.0)
+    se_baseline = config.setdefault('side_effect.baseline', 'starting-state')
+    se_schedule = config.setdefault('side_effect.schedule', {
+        't': [1e6, 2e6],
+        'y': [0, 1.0],
+    }).copy()
+    se_schedule['y'] = np.array(se_schedule['y']) * se_penalty
 
-    side_effects = task_data.get('side_effects')
+    # Exit difficulty for training.
+    exit_difficulty = config.setdefault('env.exit_difficulty', {
+        't': [5e5, 2e6],
+        'y': [0.001, 1.0],
+    })
 
     envs = {}
     envs['training'] = safelife_env_factory(
-        training_iter, num_envs=build_environments.env_batch_size, multiagent=multiagent,
-        data_logger=training_logger, side_effects=side_effects,
-        impact_penalty=impact_penalty, penalty_baseline=penalty_baseline,
-        min_performance_fraction=LinearSchedule(
-            training_logger, schedule, [0.001, 1]),
+        training_iter, num_envs=build_environments.env_batch_size, training=True, env_args=common_env_args,
+        data_logger=training_logger,
+        se_baseline=se_baseline, se_penalty=schedule(**se_schedule),
+        exit_difficulty=schedule(**exit_difficulty),
     )
 
+    # Test environments
     test_levels = task_data.get('test_levels')
     if test_levels:
         envs['benchmark'] = safelife_env_factory(
-            num_envs=20, multiagent=multiagent,
+            num_envs=20, training=False, env_args=common_env_args,
             data_logger=setup_data_logger(data_dir, 'benchmark'),
-            side_effects=side_effects, training=False,
             level_iterator=SafeLifeLevelIterator(
                 test_levels, repeat_levels=True,
-                seed=test_seed, num_workers=0)
+                seed=test_seed, num_workers=0),
         )
         # Test levels are the same as the benchmark levels, except that we
         # only run the first 5.
         envs['testing'] = safelife_env_factory(
-            num_envs=5, multiagent=multiagent,
+            num_envs=5, training=False, env_args=common_env_args,
             data_logger=setup_data_logger(data_dir, 'testing'),
-            side_effects=side_effects, training=False,
             level_iterator=SafeLifeLevelIterator(
                 test_levels, distinct_levels=5, repeat_levels=True,
-                seed=test_seed, num_workers=0)
+                seed=test_seed, num_workers=0),
         )
 
     return envs
