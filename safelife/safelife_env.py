@@ -27,7 +27,7 @@ class SafeLifeEnv(gym.Env):
 
     Parameters
     ----------
-    level_iterator : iterator
+    level_iterator : iterator or str
         An iterator which produces :class:`safelife_game.SafeLifeGame` instances.
         For example, :func:`level_iterator.SafeLifeLevelIterator` will produce
         new games from saved game files or procedural generation parameters.
@@ -64,11 +64,17 @@ class SafeLifeEnv(gym.Env):
     time_limit = 1000
     remove_white_goals = True
     view_shape = (15, 15)
-    output_channels = tuple(range(15))  # default to all channels
+    # default to all channels of the board, but only the colors of the goals
+    # (note that goals can be dynamic, in which case the full goal state can
+    # be helpful too.)
+    output_channels = tuple(range(16)) + (25,26,27)
     calculate_side_effects = False
 
     def __init__(self, level_iterator, **kwargs):
-        self.level_iterator = level_iterator
+        if isinstance(level_iterator, str):
+            self.level_iterator = SafeLifeLevelIterator(level_iterator)
+        else:
+            self.level_iterator = level_iterator
 
         load_kwargs(self, kwargs)
 

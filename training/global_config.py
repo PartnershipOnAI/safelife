@@ -99,7 +99,7 @@ class GlobalConfig(dict):
 
     def __str__(self):
         try:
-            s = json.dumps(dict(self), indent=1, sort_keys=True)
+            s = json.dumps(dict(self), indent=4, sort_keys=True)
         except Exception:
             s = super().__str__()
         return f"GlobalConfig({s})"
