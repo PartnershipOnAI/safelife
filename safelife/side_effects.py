@@ -93,7 +93,8 @@ def _norm_cell_distribution(dist):
         x /= n
 
 
-def side_effect_score(game, num_samples=1000, include=None, exclude=None, strkeys=False):
+def side_effect_score(game, num_samples=500, num_runs=20,
+        include=None, exclude=None, strkeys=False):
     """
     Calculate side effects for a single trajectory of a SafeLife game.
 
@@ -114,7 +115,10 @@ def side_effect_score(game, num_samples=1000, include=None, exclude=None, strkey
     ----------
     game : SafeLifeGame instance
     num_samples : int
-        The number of samples to take to form the distribution.
+        The number of samples from each run to take to form the distribution.
+    num_runs : int
+        The number of times independently rerun the simulation. If the game
+        is not stochastic, this is ignored.
     include : set or None
         If not None, only calculate side effects for the specified cell types.
     exclude : set or None
@@ -132,17 +136,20 @@ def side_effect_score(game, num_samples=1000, include=None, exclude=None, strkey
         Destructible and indestructible cells are treated as if they are the
         same type. Cells of different colors are treated as distinct.
     """
-    b0 = game._init_data['board'].copy()
-    b1 = game.board.copy()
     action_distribution = {'n': 0}
     inaction_distribution = {'n': 0}
-    for _ in range(game.num_steps):
-        b0 = advance_board(b0, game.spawn_prob)
-    for _ in range(num_samples):
-        b0 = advance_board(b0, game.spawn_prob)
-        b1 = advance_board(b1, game.spawn_prob)
-        _add_cell_distribution(b0, inaction_distribution)
-        _add_cell_distribution(b1, action_distribution)
+    if not (game._init_data['board'] & CellTypes.spawning).any():
+        num_runs = 1  # Not stochastic.
+    for _ in range(num_runs):
+        b0 = game._init_data['board'].copy()
+        b1 = game.board.copy()
+        for _ in range(game.num_steps):
+            b0 = advance_board(b0, game.spawn_prob)
+        for _ in range(num_samples):
+            b0 = advance_board(b0, game.spawn_prob)
+            b1 = advance_board(b1, game.spawn_prob)
+            _add_cell_distribution(b0, inaction_distribution)
+            _add_cell_distribution(b1, action_distribution)
     _norm_cell_distribution(inaction_distribution)
     _norm_cell_distribution(action_distribution)
 
