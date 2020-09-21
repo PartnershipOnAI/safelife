@@ -210,3 +210,5 @@ class DQN(BaseAlgo):
             if self.testing_envs and num_steps >= next_test:
                 self.epsilon = self.epsilon_testing
                 self.run_episodes(self.testing_envs)
+
+        self.save_checkpoint()
