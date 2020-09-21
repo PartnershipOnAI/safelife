@@ -1,5 +1,5 @@
 import logging
-import ipdb
+from ipdb import set_trace
 import numpy as np
 from collections import defaultdict
 
@@ -48,6 +48,8 @@ class PPO(BaseAlgo):
     report_interval = 960
     test_interval = 100000
 
+    default_state = None  # PPO is a stateless agent, but subclasses can change this
+
     compute_device = get_compute_device()
 
     training_envs = None
@@ -58,6 +60,7 @@ class PPO(BaseAlgo):
     def __init__(self, model, **kwargs):
         load_kwargs(self, kwargs)
         assert self.training_envs is not None
+        self.stateful = self.default_state is not None
 
         self.model = model.to(self.compute_device)
         self.optimizer = optim.Adam(
@@ -65,12 +68,20 @@ class PPO(BaseAlgo):
 
         self.load_checkpoint()
 
-    @named_output('obs actions rewards done next_obs agent_ids policies values')
+
+    @named_output('obs actions rewards done next_obs agent_ids policies values agent_state')
     def take_one_step(self, envs):
         obs, agent_ids = self.obs_for_envs(envs)
+        if self.stateful:
+            state = [getattr(e, "agent_state", self.default_state) for e in envs]
+            state = torch.stack(state)
+        else:
+            state = None
 
         tensor_obs = self.tensor(obs, torch.float32)
-        values, policies = self.model(tensor_obs)
+        values, policies, new_state = self.model(tensor_obs, state)
+        for i, e in enumerate(envs):
+            e.agent_state = new_state[i] if new_state is not None else None
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
         if self.compute_device.type == "xla":
@@ -86,9 +97,10 @@ class PPO(BaseAlgo):
 
         next_obs, rewards, done = self.act_on_envs(envs, actions)
 
-        return obs, actions, rewards, done, next_obs, agent_ids, policies, values
+        return obs, actions, rewards, done, next_obs, agent_ids, policies, values, new_state
 
-    @named_output('obs actions action_prob returns advantages values')
+
+    @named_output('obs actions action_prob returns advantages values agent_state ongoing')
     def gen_training_batch(self, steps_per_env):
         """
         Run each environment a number of steps and calculate advantages.
@@ -109,13 +121,16 @@ class PPO(BaseAlgo):
             'action_prob': [],
             'rewards': [],
             'values': [],
+            'agent_state': [],
+            'ongoing': [],
             'final_value': 0.0,
         })
 
         # Take a bunch of steps, and put them into trajectories associated with
         # each distinct agent
         for _ in range(steps_per_env):
-            step = self.take_one_step(self.training_envs)
+            with torch.no_grad():
+                step = self.take_one_step(self.training_envs)
             for k, agent_id in enumerate(step.agent_ids):
                 t = trajectories[agent_id]
                 action = step.actions[k]
@@ -124,11 +139,16 @@ class PPO(BaseAlgo):
                 t['action_prob'].append(step.policies[k, action])
                 t['rewards'].append(step.rewards[k])
                 t['values'].append(step.values[k])
+                t['ongoing'].append(not step.done[k])
+                if self.stateful:
+                    t['agent_state'].append(step.agent_state[k])  # FIXME make t() handle torch objects
+                else:
+                    t['agent_state'].append(None)
 
         # For the final step in each environment, also calculate the value
         # function associated with the next observation
         tensor_obs = self.tensor(step.next_obs, torch.float32)
-        vals = self.model(tensor_obs)[0].detach().cpu().numpy()
+        vals = self.model(tensor_obs, step.agent_state)[0].detach().cpu().numpy()
         for k, agent_id in enumerate(step.agent_ids):
             if not step.done[k]:
                 trajectories[agent_id]['final_value'] = vals[k]
@@ -154,17 +174,29 @@ class PPO(BaseAlgo):
             x = np.concatenate([d[label] for d in trajectories.values()])
             return torch.as_tensor(x, device=self.compute_device, dtype=dtype)
 
+        t_obs = t('obs')
+        if self.stateful:
+            try:
+                return_agent_state = torch.cat([torch.stack(d["agent_state"]) for d in trajectories.values()])
+            except:
+                for a, v in trajectories.items():
+                    print(a, recursive_shape(v["agent_state"]))
+                raise
+        else:
+            return_agent_state = np.array([None] * len(t_obs))
+
         return (
-            t('obs'), t('actions', torch.int64), t('action_prob'),
-            t('returns'), t('advantages'), t('values')
+            t_obs, t('actions', torch.int64), t('action_prob'),
+            t('returns'), t('advantages'), t('values'), return_agent_state, t('ongoing')
         )
 
+
     def calculate_loss(
-            self, obs, actions, old_policy, old_values, returns, advantages):
+            self, obs, actions, old_policy, old_values, returns, advantages, agent_state):
         """
         All parameters ought to be tensors on the appropriate compute device.
         """
-        values, policy = self.model(obs)
+        values, policy, state = self.model(obs, agent_state)
         a_policy = torch.gather(policy, -1, actions[..., np.newaxis])[..., 0]
 
         prob_diff = advantages.sign() * (1 - a_policy / old_policy)
@@ -182,6 +214,7 @@ class PPO(BaseAlgo):
 
         return entropy, policy_loss + value_loss * self.vf_coef + entropy_loss
 
+
     def train_batch(self, batch):
         num_samples = len(batch.obs)
         idx = np.arange(num_samples)
@@ -193,7 +226,7 @@ class PPO(BaseAlgo):
             for k in np.split(idx, splits):
                 entropy, loss = self.calculate_loss(
                     batch.obs[k], batch.actions[k], batch.action_prob[k],
-                    batch.values[k], batch.returns[k], batch.advantages[k])
+                    batch.values[k], batch.returns[k], batch.advantages[k], batch.agent_state[k])
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
@@ -237,119 +270,12 @@ class PPO(BaseAlgo):
 
 class LSTM_PPO(PPO):
     def __init__(self, *args, **kwargs):
+        self.default_state = torch.zeros(2, 1, 576)
         super().__init__(*args, **kwargs)
         # (hidden state, cell state) <--- XXX need better init?
         #self.agent_state = (torch.randn(1, 16, 576), torch.randn(1, 16, 576))
-        self.default_state = torch.zeros(2, 1, 576)
 
 
-    @named_output('obs actions rewards done next_obs agent_ids policies values agent_state')
-    def take_one_step(self, envs):
-        obs, agent_ids = self.obs_for_envs(envs)
-        state = [getattr(e, "agent_state", self.default_state) for e in envs]
-        print ("Tensorifying", recursive_shape(state))
-        state = torch.stack(state)
-        print("State shape is", state.shape)
-
-        tensor_obs = self.tensor(obs, torch.float32)
-        values, policies, new_state = self.model(tensor_obs, state)
-        for i, e in enumerate(envs):
-            print("new state is", recursive_shape(new_state))
-            e.agent_state = new_state[i]
-        values = values.detach().cpu().numpy()
-        policies = policies.detach().cpu().numpy()
-        if self.compute_device.type == "xla":
-            # correct after low precision #floatlife
-            policies = policies.astype("float16")
-        actions = []
-        for policy in policies:
-            try:
-                actions.append(get_rng().choice(len(policy), p=policy))
-            except ValueError:
-                print("Logits:", policy, "sum to", np.sum(policy))
-                raise
-
-        next_obs, rewards, done = self.act_on_envs(envs, actions)
-
-        return obs, actions, rewards, done, next_obs, agent_ids, policies, values, new_state
-
-    @named_output('obs actions action_prob returns advantages values agent_state ongoing')
-    def gen_training_batch(self, steps_per_env):
-        """
-        Run each environment a number of steps and calculate advantages.
-
-        Note that the output is flat, i.e., a single list of observations,
-        actions, etc.
-
-        Parameters
-        ----------
-        steps_per_env : int
-            Number of steps to take per environment.
-        """
-        assert steps_per_env > 0
-
-        trajectories = defaultdict(lambda: {
-            'obs': [],
-            'actions': [],
-            'action_prob': [],
-            'rewards': [],
-            'values': [],
-            'agent_state': [],
-            'ongoing': [],
-            'final_value': 0.0,
-        })
-
-        # Take a bunch of steps, and put them into trajectories associated with
-        # each distinct agent
-        for _ in range(steps_per_env):
-            with torch.no_grad():
-                step = self.take_one_step(self.training_envs)
-            for k, agent_id in enumerate(step.agent_ids):
-                t = trajectories[agent_id]
-                action = step.actions[k]
-                t['obs'].append(step.obs[k])
-                t['actions'].append(action)
-                t['action_prob'].append(step.policies[k, action])
-                t['rewards'].append(step.rewards[k])
-                t['values'].append(step.values[k])
-                t['ongoing'].append(not step.done[k])
-                t['agent_state'].append(step.agent_state[k].numpy())  # FIXME make t() handle torch objects
-
-        # For the final step in each environment, also calculate the value
-        # function associated with the next observation
-        tensor_obs = self.tensor(step.next_obs, torch.float32)
-        vals = self.model(tensor_obs, step.agent_state)[0].detach().cpu().numpy()
-        for k, agent_id in enumerate(step.agent_ids):
-            if not step.done[k]:
-                trajectories[agent_id]['final_value'] = vals[k]
-
-        # Calculate the discounted rewards for each trajectory
-        gamma = self.gamma
-        lmda = self.lmda
-        for t in trajectories.values():
-            val0 = np.array(t['values'])
-            val1 = np.append(t['values'][1:], t['final_value'])
-            rewards = returns = np.array(t['rewards'])
-            advantages = rewards + gamma * val1 - val0
-            returns[-1] += gamma * t['final_value']
-            for i in range(len(rewards) - 2, -1, -1):
-                returns[i] += gamma * returns[i+1]
-                advantages[i] += lmda * advantages[i+1]
-            t['returns'] = returns
-            t['advantages'] = advantages
-
-        self.num_steps += steps_per_env * len(self.training_envs)
-
-        def t(label, dtype=torch.float32):
-            l = [d[label] for d in trajectories.values()]
-            x = np.concatenate(l)
-            return torch.as_tensor(x, device=self.compute_device, dtype=dtype)
-
-
-        return (
-            t('obs'), t('actions', torch.int64), t('action_prob'),
-            t('returns'), t('advantages'), t('values'), t('agent_state'), t('ongoing')
-        )
 
     def train_batch(self, batch):
         sequence_length = 10  # hyperparam
@@ -373,26 +299,4 @@ class LSTM_PPO(PPO):
                 if self.compute_device.type == "xla":
                     xm.mark_step()
 
-    def calculate_loss(
-            self, obs, actions, old_policy, old_values, returns, advantages, agent_state):
-        """
-        All parameters ought to be tensors on the appropriate compute device.
-        """
-        values, policy, state = self.model(obs, agent_state)
-        a_policy = torch.gather(policy, -1, actions[..., np.newaxis])[..., 0]
-
-        prob_diff = advantages.sign() * (1 - a_policy / old_policy)
-        policy_loss = advantages.abs() * torch.clamp(prob_diff, min=-self.eps_policy)
-        policy_loss = policy_loss.mean()
-
-        v_clip = old_values + torch.clamp(
-            values - old_values, min=-self.eps_value, max=+self.eps_value)
-        value_loss = torch.max((v_clip - returns)**2, (values - returns)**2)
-        value_loss = value_loss.mean()
-
-        entropy = torch.sum(-policy * torch.log(policy + 1e-12), dim=-1)
-        entropy_loss = torch.clamp(entropy.mean(), max=self.entropy_clip)
-        entropy_loss *= -self.entropy_reg
-
-        return entropy, policy_loss + value_loss * self.vf_coef + entropy_loss
 

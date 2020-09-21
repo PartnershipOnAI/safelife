@@ -240,7 +240,7 @@ def main(args):
 if __name__ == "__main__":
     args = parse_args()
     if args.profile:
-        cProfile.run("main(args, logger)")
+        cProfile.run("main(args)")
     else:
         print(args)
         main(args)

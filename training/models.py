@@ -95,6 +95,7 @@ class SafeLifePolicyNetwork(nn.Module):
         self.value_func = nn.Linear(512, 1)
 
     def forward(self, obs, state=None):
+        "Returns (value, policy, new_agent_state)."
         # Switch observation to (c, w, h) instead of (h, w, c)
         obs = obs.transpose(-1, -3)
         x = self.cnn(obs).flatten(start_dim=1)
@@ -102,7 +103,7 @@ class SafeLifePolicyNetwork(nn.Module):
             x = layer(x)
         value = self.value_func(x)[...,0]
         policy = F.softmax(self.logits(x), dim=-1)
-        return value, policy
+        return value, policy, None
 
 class SafeLifeLSTMPolicyNetwork(nn.Module):
     def __init__(self, input_shape, dense_depth=1, lstm_shape=(3,1), dropout=0):
@@ -137,12 +138,7 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
         # print("CNN shape", x.shape)
         y = x[np.newaxis, ...]
         # print("Memory shape", y.shape)
-        # import inspect
-        # curframe = inspect.currentframe()
-        # calframe = inspect.getouterframes(curframe, 2)
-        # caller = calframe[1][3]
-        # print("Called from", caller)
-        print("Applying memory with data", obs.shape, "and state:", recursive_shape(state))
+        # print("Applying memory with data", obs.shape, "and state:", recursive_shape(state))
         state = state.permute(1, 2, 0, 3)  # move (hs, cs) to front
         y = self.memory(y, tuple(state))
         # print(recursive_shape(y))
