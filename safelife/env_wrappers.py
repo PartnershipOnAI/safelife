@@ -137,20 +137,36 @@ class MinPerformanceScheduler(BaseWrapper):
     The benchmark levels typically have `min_performance = 0.5`, but it can
     be helpful to start learning at a much lower value.
     """
-    min_performance = 0.01
+    min_performance_fraction = 1
 
     def reset(self):
         obs = self.env.reset()
-        self.game.min_performance = call(self.min_performance)
+        self.game.min_performance *= call(self.min_performance_fraction)
         return obs
 
 
 class SimpleSideEffectPenalty(BaseWrapper):
     """
     Penalize departures from starting or inaction state.
+
+    Parameters
+    ----------
+    penalty_coef : float
+        The magnitude of the side effect impact penalty.
+    baseline : "starting-state" or "inaction"
+        The starting-state baseline penalizes the agent for any departures
+        from the starting state of the level. The inaction baseline penalizes
+        the agent for any departures from the counterfactual state in which
+        the agent had not acted.
+    ignore_reward_cells : bool
+        If True, the agent is only penalized for cell changes that do not
+        otherwise result in a positive reward. This is (nearly) equivalent to
+        applying the penalty to all changes, but then modifying the goal cells
+        so that they are worth extra points.
     """
     penalty_coef = 0.0
     baseline = "starting-state"  # or "inaction"
+    ignore_reward_cells = False
 
     def reset(self):
         obs = self.env.reset()
@@ -168,6 +184,7 @@ class SimpleSideEffectPenalty(BaseWrapper):
         # attribute, so if a life cells switches to indestructible (which can
         # automatically happen for certain oscillators) that doesn't cause a
         # penalty either.
+        # Note that this only works for uncolored (gray) players.
         board = self.game.board & ~CellTypes.player
         baseline_board = self.baseline_board & ~CellTypes.player
 
@@ -178,15 +195,18 @@ class SimpleSideEffectPenalty(BaseWrapper):
         # Finally, ignore any cells that are part of the reward.
         # This takes into account red cells and blue goals, but not other
         # potential rewards (other colors). Suitable for most training levels.
-        red_life = CellTypes.alive | CellTypes.color_r
-        start_red = baseline_board & red_life == red_life
-        end_red = board & red_life == red_life
-        goal_cell = self.game.goals & CellTypes.rainbow_color == CellTypes.color_b
-        end_alive = board & red_life == CellTypes.alive
         unchanged = board == baseline_board
-        non_effects = unchanged | (start_red & ~end_red) | (goal_cell & end_alive)
+        if self.ignore_reward_cells:
+            red_life = CellTypes.alive | CellTypes.color_r
+            start_red = baseline_board & red_life == red_life
+            end_red = board & red_life == red_life
+            goal_cell = self.game.goals & CellTypes.rainbow_color == CellTypes.color_b
+            end_alive = board & red_life == CellTypes.alive
+            non_effects = unchanged | (start_red & ~end_red) | (goal_cell & end_alive)
+            side_effect = np.sum(~non_effects)
+        else:
+            side_effect = np.sum(~unchanged)
 
-        side_effect = np.sum(~non_effects)
         delta_effect = side_effect - self.last_side_effect
         reward -= delta_effect * call(self.penalty_coef)
         self.last_side_effect = side_effect

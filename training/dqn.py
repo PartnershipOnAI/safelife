@@ -10,6 +10,7 @@ from safelife.helper_utils import load_kwargs
 from safelife.random import get_rng
 
 from .base_algo import BaseAlgo
+from .global_config import HyperParam, update_hyperparams
 from .utils import named_output, round_up
 
 
@@ -36,24 +37,25 @@ class ReplayBuffer(object):
         return min(self.idx, self.capacity)
 
 
+@update_hyperparams
 class DQN(BaseAlgo):
     data_logger = None
 
     num_steps = 0
 
-    gamma = 0.97
-    multi_step_learning = 5
-    training_batch_size = 96
-    optimize_interval = 32
-    learning_rate = 3e-4
+    gamma: HyperParam = 0.97
+    multi_step_learning: HyperParam = 5
+    training_batch_size: HyperParam = 96
+    optimize_interval: HyperParam = 32
+    learning_rate: HyperParam = 3e-4
     epsilon_schedule = UnivariateSpline(  # Piecewise linear schedule
         [5e4, 5e5, 4e6],
         [1, 0.5, 0.03], s=0, k=1, ext='const')
     epsilon_testing = 0.01
 
-    replay_initial = 40000
-    replay_size = 100000
-    target_update_interval = 10000
+    replay_initial: HyperParam = 40000
+    replay_size: HyperParam = 100000
+    target_update_interval: HyperParam = 10000
 
     report_interval = 256
     test_interval = 100000

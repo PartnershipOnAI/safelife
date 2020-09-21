@@ -32,8 +32,7 @@ parser = argparse.ArgumentParser(description=textwrap.dedent("""
     """), formatter_class=argparse.RawDescriptionHelpFormatter)
 parser.add_argument('instance_name', help="name of the gcloud instance")
 parser.add_argument('job_name', help="a unique name for this training job")
-parser.add_argument('--port', default='6006',
-    help="local port used to monitor tensorboard")
+parser.add_argument('--port', help="local port used to monitor tensorboard")
 parser.add_argument('--commit-id',
     help="If supplied, the job is run from the specified commit id (or tag or "
     "branch). Otherwise, changes in the working tree are stashed and the "
@@ -45,8 +44,14 @@ parser.add_argument('--tag', nargs='?', const="auto",
 parser.add_argument('--no-shutdown', action="store_true",
     help="By default, the remote machine will shutdown when the job is "
     "complete. This flag prevents that from happening.")
+parser.add_argument('--sweep', action="store_true",
+    help="Specifies that the job is part of a wandb sweep. "
+    "The job name should correspond to the sweep id.")
 args, remaining_args = parser.parse_known_args()
 
+if args.sweep:
+    sweep_id = args.job_name
+    args.job_name = 'sweep-' + sweep_id
 src_dir = '~/' + args.job_name
 data_dir = '~/{job_name}/data/{job_name}/'.format(job_name=args.job_name)
 
@@ -57,10 +62,11 @@ quiet = {'stdout': sp.DEVNULL, 'stderr': sp.DEVNULL}
 
 if args.commit_id:
     commit_id = args.commit_id
+    new_commit = False
 else:
     result = sp.run("git stash create", shell=True, stdout=sp.PIPE, check=True)
-    commit_id = result.stdout.decode()
-    if not commit_id:
+    new_commit = commit_id = result.stdout.decode()
+    if not new_commit:
         # means there were no stashed chages. Use HEAD instead.
         result = sp.run("git rev-parse HEAD", shell=True, stdout=sp.PIPE)
         commit_id = result.stdout.decode()
@@ -100,7 +106,25 @@ try:
         print("Error cloning the repo.")
         exit(1)
 
-# Also copy over some files that are not (necessarily) in source control.
+    # Make the remote of the cloned repo match the remote of this one
+    result = sp.run("git remote get-url origin", shell=True, stdout=sp.PIPE)
+    if result.returncode == 0:
+        remote_url = result.stdout.decode().strip()
+        sp.run(
+            f"cd {tmp_repo.name} && git remote set-url origin {remote_url}",
+            shell=True, **quiet)
+    else:
+        print("Error getting the remote url.")
+
+    if new_commit:
+        # Roll back the new commit.
+        # This is so that the cloned repo matches the state of the current
+        # repo, including untracked files and HEAD commit id.
+        sp.run(
+            f"cd {tmp_repo.name} && git reset --soft HEAD~1",
+            shell=True, **quiet)
+
+    # Also copy over some files that are not (necessarily) in source control.
     extra_files = [
         'run-info.md',
         'run-notes.txt',
@@ -127,34 +151,48 @@ finally:
     tmp_repo.cleanup()
 
 print("Starting job...")
-training_cmd = ['./start-training', data_dir, '--ensure-gpu']
-training_cmd += remaining_args
-if not args.no_shutdown:
-    training_cmd.append('--shutdown')
-tmux_cmds = [
-    # Set the path variable to include conda, which contains the latest
-    # versions of python, torch, etc.
-    # This is very specific to our particular gcloud setup.
-    "PATH=/usr/local/cuda/bin:/opt/conda/bin:/opt/conda/condabin:$PATH",
 
-    # Create a "current_job" directory. This is handy for re-entering the job.
+if args.sweep:
+    training_cmd = f"wandb agent {sweep_id}"
+else:
+    training_cmd = ['python3', 'start-training.py', data_dir, '--ensure-gpu']
+    training_cmd += remaining_args
+    if args.port:
+        training_cmd.append('--port=6006')
+    training_cmd = ' '.join(training_cmd)
+
+tmux_cmds = [
+    # Activate the virtual environment.
+    "source ~/safelife-venv/bin/activate",
+    "echo $PATH",  # for debugging
+
+    # Create a "current_job" directory.
     f"ln -nsf {src_dir} ~/current_job",
 
     # Install dependencies.
     "sudo apt-get install ffmpeg --yes",
     f"pip install -r {src_dir}/requirements.txt",
 
-    # Run the training script!
-    f"cd {src_dir}", ' '.join(training_cmd),
-
-    # Finally, exit to bash. This is very useful for debugging.
-    "bash -il",
+    # Start training!
+    f"cd {src_dir}", training_cmd,
 ]
+if args.no_shutdown:
+    # Just exit to bash at the end of the run.
+    tmux_cmds.append("bash -il")
+else:
+    # Shut down the machine, but keep ssh available in case we want to
+    # quickly re-enter and cancel the shutdown. Also exit to bash.
+    tmux_cmds += [
+        "sudo shutdown +3",
+        "sudo rm -f /run/nologin",
+        "bash -il",
+    ]
 
 # Run the script remotely, tunneling tensorboard to the specified port.
 # Use tmux to prevent it from dying on hangup. Note that if this session is
 # already running, tmux should prevent us from running it again.
-sp.run([
-    ssh_cmd, args.instance_name, '-L', args.port + ':localhost:6006',
-    f"tmux new-session -s {args.job_name} \"{'; '.join(tmux_cmds)}\""
-])
+sp.run(
+    [ssh_cmd, args.instance_name] +
+    (['-L', args.port + ':localhost:6006'] if args.port else []) +
+    [f"tmux new-session -s {args.job_name} \"{'; '.join(tmux_cmds)}\""]
+)

@@ -7,6 +7,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from .global_config import HyperParam, update_hyperparams
+
 
 def safelife_cnn(input_shape):
     """
@@ -78,21 +80,27 @@ class SafeLifeQNetwork(nn.Module):
         return qval
 
 
+@update_hyperparams
 class SafeLifePolicyNetwork(nn.Module):
-    def __init__(self, input_shape, dense_depth=1):
+
+    dense_depth: HyperParam = 1
+    dense_width: HyperParam = 512
+
+    def __init__(self, input_shape):
         super().__init__()
 
         self.cnn, cnn_out_shape = safelife_cnn(input_shape)
         num_features = np.product(cnn_out_shape)
         num_actions = 9
+        width = self.dense_width
 
-        dense = [nn.Sequential(nn.Linear(num_features, 512), nn.ReLU())]
+        dense = [nn.Sequential(nn.Linear(num_features, width), nn.ReLU())]
         for n in range(dense_depth - 1):
-            dense.append(nn.Sequential(nn.Linear(512, 512), nn.ReLU()))
+            dense.append(nn.Sequential(nn.Linear(width, width), nn.ReLU()))
         self.dense = nn.Sequential(*dense)
 
-        self.logits = nn.Linear(512, num_actions)
-        self.value_func = nn.Linear(512, 1)
+        self.logits = nn.Linear(width, num_actions)
+        self.value_func = nn.Linear(width, 1)
 
     def forward(self, obs, state=None):
         "Returns (value, policy, new_agent_state)."
@@ -106,27 +114,35 @@ class SafeLifePolicyNetwork(nn.Module):
         return value, policy, None
 
 class SafeLifeLSTMPolicyNetwork(nn.Module):
-    def __init__(self, input_shape, dense_depth=1, lstm_shape=(3,1), dropout=0):
+
+    dense_depth: HyperParam = 1
+    dense_width: HyperParam = 512
+    lstm_channels: HyperParam = 3
+    lstm_depth: HyperParam = 1
+
+    def __init__(self, input_shape, dense_depth=1, dropout=0):
         super().__init__()
-        lstm_channels, lstm_depth = lstm_shape
 
         self.cnn, cnn_out_shape = safelife_cnn(input_shape)
         h, w, c = cnn_out_shape
         num_features = np.product(cnn_out_shape)
         num_actions = 9
 
-        dense = [nn.Sequential(nn.Linear(num_features + h * w * lstm_channels, 512), nn.ReLU())]
+        dense = [nn.Sequential(
+                    nn.Linear(num_features + h * w * self.lstm_channels, self.dense_width),
+                    nn.ReLU()
+                 )]
         for n in range(dense_depth - 1):
-            dense.append(nn.Sequential(nn.Linear(512, 512), nn.ReLU()))
+            dense.append(nn.Sequential(nn.Linear(self.dense_width, self.dense_width), nn.ReLU()))
         self.dense = nn.Sequential(*dense)
 
         self.memory = nn.LSTM(
-            input_size=num_features, hidden_size=h * w * lstm_channels, num_layers=lstm_depth, 
-            dropout=dropout,
+            input_size=num_features, hidden_size=h * w * self.lstm_channels,
+            num_layers=self.lstm_depth, dropout=dropout,
         )
 
-        self.logits = nn.Linear(512, num_actions)
-        self.value_func = nn.Linear(512, 1)
+        self.logits = nn.Linear(self.dense_width, num_actions)
+        self.value_func = nn.Linear(self.dense_width, 1)
 
     def forward(self, obs, state):
         check_shape(state, ("*", 2, 1,  576), "state passed to LSTM PPO")
@@ -154,6 +170,7 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
 
         rest = self.dense[1:]
         for layer in rest:
+
             x = layer(x)
         value = self.value_func(x)[...,0]
         policy = F.softmax(self.logits(x), dim=-1)

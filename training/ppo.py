@@ -1,7 +1,8 @@
 import logging
-from ipdb import set_trace
 import numpy as np
+
 from collections import defaultdict
+from ipdb import set_trace
 
 import torch
 import torch.optim as optim
@@ -9,8 +10,9 @@ import torch.optim as optim
 from safelife.helper_utils import load_kwargs
 from safelife.random import get_rng
 
-from .utils import named_output, round_up, get_compute_device, recursive_shape
 from .base_algo import BaseAlgo
+from .global_config import HyperParam, update_hyperparams
+from .utils import named_output, round_up, get_compute_device, recursive_shape
 
 try:
     import torch_xla.core.xla_model as xm
@@ -22,31 +24,28 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+@update_hyperparams
 class PPO(BaseAlgo):
     data_logger = None  # SafeLifeLogger instance
 
     num_steps = 0
 
-    steps_per_env = 20
-    num_minibatches = 4
-    epochs_per_batch = 3
+    steps_per_env: HyperParam = 20
+    num_minibatches: HyperParam = 4
+    epochs_per_batch: HyperParam = 3
 
-    gamma = 0.97
-    lmda = 0.95
-    learning_rate = 3e-4
-    entropy_reg = 0.01
-    entropy_clip = 1.0  # don't start regularization until it drops below this
-    vf_coef = 0.5
-    max_gradient_norm = 5.0
-    eps_policy = 0.2  # PPO clipping for policy loss
-    eps_value = 0.2  # PPO clipping for value loss
-    rescale_policy_eps = False
-    min_eps_rescale = 1e-3  # Only relevant if rescale_policy_eps = True
-    reward_clip = 0.0
-    policy_rectifier = 'relu'  # or 'elu' or ...more to come
+    gamma: HyperParam = 0.97
+    lmda: HyperParam = 0.95
+    learning_rate: HyperParam = 3e-4
+    entropy_reg: HyperParam = 0.01
+    # don't start regularization until entropy < entropy_clip
+    entropy_clip: HyperParam = 1.0
+    vf_coef: HyperParam = 0.5
+    eps_policy: HyperParam = 0.2  # PPO clipping for policy loss
+    eps_value: HyperParam = 0.2  # PPO clipping for value loss
 
     report_interval = 960
-    test_interval = 100000
+    test_interval = 500000
 
     default_state = None  # PPO is a stateless agent, but subclasses can change this
 

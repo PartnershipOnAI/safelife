@@ -26,6 +26,37 @@ foreground_colors = [
     '\x1b[38;5;244m',  # white / gray
 ]
 
+celltype_names = {
+    CellTypes.empty: 'empty',
+    CellTypes.life: 'life',
+    CellTypes.alive: 'hard-life',
+    CellTypes.wall: 'wall',
+    CellTypes.crate: 'crate',
+    CellTypes.plant: 'plant',
+    CellTypes.tree: 'tree',
+    CellTypes.ice_cube: 'ice-cube',
+    CellTypes.parasite: 'parasite',
+    CellTypes.weed: 'weed',
+    CellTypes.spawner: 'spawner',
+    CellTypes.hard_spawner: 'hard-spawner',
+    CellTypes.level_exit: 'exit',
+    CellTypes.fountain: 'fountain',
+}
+
+color_names = {
+    0: 'gray',
+    CellTypes.color_r: 'red',
+    CellTypes.color_g: 'green',
+    CellTypes.color_b: 'blue',
+    CellTypes.color_r | CellTypes.color_b: 'magenta',
+    CellTypes.color_g | CellTypes.color_r: 'yellow',
+    CellTypes.color_b | CellTypes.color_g: 'cyan',
+    CellTypes.rainbow_color: 'white',
+}
+
+inv_celltype_names = {v:k for k,v in celltype_names.items()}
+inv_color_names = {v:k for k,v in color_names.items()}
+
 
 def print_reward_table():
     text = ""
@@ -74,34 +105,15 @@ def render_cell(cell, goal=0, edit_color=None):
 
 
 def cell_name(cell):
-    cell_type = {
-        CellTypes.empty: 'empty',
-        CellTypes.life: 'life',
-        CellTypes.alive: 'hard-life',
-        CellTypes.wall: 'wall',
-        CellTypes.crate: 'crate',
-        CellTypes.plant: 'plant',
-        CellTypes.tree: 'tree',
-        CellTypes.ice_cube: 'ice-cube',
-        CellTypes.parasite: 'parasite',
-        CellTypes.weed: 'weed',
-        CellTypes.spawner: 'spawner',
-        CellTypes.hard_spawner: 'hard-spawner',
-        CellTypes.level_exit: 'exit',
-        CellTypes.fountain: 'fountain',
-    }.get(cell & ~CellTypes.rainbow_color,
+    cell_type = celltype_names.get(cell & ~CellTypes.rainbow_color,
         'agent' if cell & CellTypes.agent else 'unknown')
-    color = {
-        0: 'gray',
-        CellTypes.color_r: 'red',
-        CellTypes.color_g: 'green',
-        CellTypes.color_b: 'blue',
-        CellTypes.color_r | CellTypes.color_b: 'magenta',
-        CellTypes.color_g | CellTypes.color_r: 'yellow',
-        CellTypes.color_b | CellTypes.color_g: 'cyan',
-        CellTypes.rainbow_color: 'white',
-    }.get(cell & CellTypes.rainbow_color, 'x')
+    color = color_names.get(cell & CellTypes.rainbow_color, 'x')
     return cell_type + '-' + color
+
+
+def name_to_cell(name):
+    celltype, _, color = name.rpartition('-')
+    return inv_celltype_names.get(celltype, 0) | inv_color_names.get(color, 0)
 
 
 def render_board(board, goals=0, edit_loc=None, edit_color=0):

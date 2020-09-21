@@ -4,9 +4,10 @@ import gym
 from gym import spaces
 import numpy as np
 
+from .helper_utils import recenter_view, load_kwargs
 from .level_iterator import SafeLifeLevelIterator
 from .safelife_game import CellTypes
-from .helper_utils import recenter_view, load_kwargs
+from .side_effects import side_effect_score
 
 
 class SafeLifeEnv(gym.Env):
@@ -48,17 +49,23 @@ class SafeLifeEnv(gym.Env):
         If a tuple, each corresponding bit is given its own binary channel.
     view_shape : (int, int)
         Shape of the agent observation.
+    calculate_side_effects : list of cell types or 'all' or False
+        Names of cell types to include in the side effect calculation at
+        the end of every episode, e.g. "['life-green', 'crate-gray']".
+        If 'all', side effects for all cell types in the episode will be
+        recorded.
     """
 
     game = None
 
     # The following are default parameters that can be overridden during
     # initialization.
-    single_agent = False
+    single_agent = True
     time_limit = 1000
     remove_white_goals = True
     view_shape = (15, 15)
     output_channels = tuple(range(15))  # default to all channels
+    calculate_side_effects = False
 
     def __init__(self, level_iterator, **kwargs):
         self.level_iterator = level_iterator
@@ -137,34 +144,49 @@ class SafeLifeEnv(gym.Env):
         self.game.advance_board()
         self.game.update_exit_colors()
 
-        times_up = self.game.num_steps > self.time_limit
+        times_up = self.game.num_steps >= self.time_limit
         new_game_value = self.game.current_points()
         reward = (new_game_value - self._old_game_value) * self._is_active
         self._old_game_value = new_game_value
+        success = self.game.has_exited()
         done = ~self.game.agent_is_active() | times_up
 
         if self.single_agent:
             if len(reward) == 0:
                 reward = 0
                 done = True
+                success = False
             else:
                 reward = reward[0]
                 done = done[0]
+                success = success[0]
 
         reward = np.float32(reward)
         self.episode_reward += reward
         self.episode_length += self._is_active
         self._is_active &= ~done
 
+        episode_info = {
+            'length': self.episode_length,
+            'reward': self.episode_reward,
+            'success': success,
+        }
+
+        if np.all(done) and self.side_effects is None and self.calculate_side_effects:
+            if self.calculate_side_effects == 'all':
+                self.side_effects = side_effect_score(self.game, strkeys=True)
+            else:
+                self.side_effects = side_effect_score(
+                    self.game, strkeys=True, include=self.calculate_side_effects)
+        if self.side_effects is not None:
+            episode_info['side_effects'] = self.side_effects
+
         return self.get_obs(), reward, done, {
             'board': self.game.board,
             'goals': self.game.goals,
             'agent_locs': self.game.agent_locs,
             'times_up': times_up,
-            'episode': {
-                'length': self.episode_length,
-                'reward': self.episode_reward,
-            }
+            'episode': episode_info,
         }
 
     def reset(self):
@@ -181,6 +203,7 @@ class SafeLifeEnv(gym.Env):
             self._is_active = np.ones(num_agents, dtype=bool)
             self.episode_length = np.zeros(num_agents, dtype=int)
             self.episode_reward = np.zeros(num_agents, dtype=np.float32)
+        self.side_effects = None
         return self.get_obs()
 
     def render(self, mode='ansi'):
