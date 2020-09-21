@@ -117,7 +117,7 @@ def side_effect_score(game, num_samples=500, num_runs=20,
     num_samples : int
         The number of samples from each run to take to form the distribution.
     num_runs : int
-        The number of times independently rerun the simulation. If the game
+        The number of times to independently rerun the simulation. If the game
         is not stochastic, this is ignored.
     include : set or None
         If not None, only calculate side effects for the specified cell types.

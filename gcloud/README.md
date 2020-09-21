@@ -15,7 +15,7 @@ In order to actually run any training, you will need to provision virtual machin
 Make sure you `ssh` into the instance (`gcloud compute ssh $INSTANCE`) and install the nvidia drivers. You should be prompted to install them when logging in.
 Then, you'll need to setup the virtual environment from within the instance:
 
-    python3 -m venv ~/safelife-venv
+    python3 -m venv safelife-venv --system-site-packages
 
 This makes it much easier to control both the python version that you're using
 as well as the versions of all the various packages.
