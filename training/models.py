@@ -1,6 +1,6 @@
 import numpy as np
 
-from training.utils import recursive_shape
+from training.utils import recursive_shape, check_shape
 
 import torch
 
@@ -128,6 +128,8 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
         self.value_func = nn.Linear(512, 1)
 
     def forward(self, obs, state):
+        check_shape(state, ("*", 2, 1,  576), "state passed to LSTM PPO")
+
         # Switch observation to (c, w, h) instead of (h, w, c)
         obs = obs.transpose(-1, -3)
 
@@ -141,9 +143,13 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
         # caller = calframe[1][3]
         # print("Called from", caller)
         print("Applying memory with data", obs.shape, "and state:", recursive_shape(state))
-        y = self.memory(y, state)
+        state = state.permute(1, 2, 0, 3)  # move (hs, cs) to front
+        y = self.memory(y, tuple(state))
         # print(recursive_shape(y))
         y, state = y
+        state = torch.stack(state)  # (hs, cs) tuple -> tensor
+        state = state.permute(2, 0, 1, 3)  # move batch to front
+        print("return shape is", state.shape)
         y = y[0] # remove time
         # print("Merging", x.shape, y.shape)
         merged = torch.cat((x, y), dim=1)

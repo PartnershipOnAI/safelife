@@ -36,6 +36,16 @@ def named_output(names):
     return decorator
 
 
+def check_shape(tensor, shape, name=""):
+    observed = tensor.shape
+    for axis, value in enumerate(shape):
+        if type(value) is str or value is None:
+            continue
+        if value != observed[axis]:
+            raise TypeError(
+                f"Tensor passed to {name} is of shape {observed} but should be {shape}")
+
+
 def round_up(x, r):
     """
     Round x up to the nearest multiple of r.
