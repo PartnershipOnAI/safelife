@@ -745,7 +745,7 @@ def _summarize_run(logfile, wandb_run=None, artifact=None):
 
         """))
 
-    if wandb_run is not None and bare_name == 'benchmark-data':
+    if wandb_run is not None and file_name == 'benchmark-data':
         wandb_run.summary['success'] = np.average(success)
         wandb_run.summary['avg_length'] = np.average(length)
         wandb_run.summary['side_effects'] = np.average(side_effects)
