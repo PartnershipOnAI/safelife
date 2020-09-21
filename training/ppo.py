@@ -140,7 +140,7 @@ class PPO(BaseAlgo):
                 t['values'].append(step.values[k])
                 t['ongoing'].append(not step.done[k])
                 if self.stateful:
-                    t['agent_state'].append(step.agent_state[k])  # FIXME make t() handle torch objects
+                    t['agent_state'].append(step.agent_state[k])
                 else:
                     t['agent_state'].append(None)
 
@@ -169,20 +169,17 @@ class PPO(BaseAlgo):
 
         self.num_steps += steps_per_env * len(self.training_envs)
 
+        # XXX <mess>
         def t(label, dtype=torch.float32):
             x = np.concatenate([d[label] for d in trajectories.values()])
             return torch.as_tensor(x, device=self.compute_device, dtype=dtype)
 
         t_obs = t('obs')
         if self.stateful:
-            try:
-                return_agent_state = torch.cat([torch.stack(d["agent_state"]) for d in trajectories.values()])
-            except:
-                for a, v in trajectories.items():
-                    print(a, recursive_shape(v["agent_state"]))
-                raise
+            return_agent_state = torch.cat([torch.stack(d["agent_state"]) for d in trajectories.values()])
         else:
             return_agent_state = np.array([None] * len(t_obs))
+        # </mess>
 
         return (
             t_obs, t('actions', torch.int64), t('action_prob'),
