@@ -314,13 +314,6 @@ class SafeLifeLogger(BaseLogger):
         tb_data.pop('success', None)
         # Use a normalized reward
         reward_frac = reward / np.maximum(reward_possible, 1)
-        # When the agent hasn't completed a level, use NaN for length.
-        # This makes it easier on the graph to see how fast agents go when
-        # they're able to complete the level vs how often they actually
-        # complete them.
-        # This isn't necessary when logging to file because we can always
-        # reproduce this after the fact.
-        length = np.where(success, length, np.nan)
         if 'side_effects' in info:
             tb_data['side_effects'], score = combined_score({
                 'reward_possible': reward_possible, **info})
