@@ -217,7 +217,7 @@ class PPO(BaseAlgo):
             if num_steps >= next_report and self.data_logger is not None:
                 entropy, loss = self.calculate_loss(
                     batch.obs, batch.actions, batch.action_prob,
-                    batch.values, batch.returns, batch.advantages, batch.lstm_state)
+                    batch.values, batch.returns, batch.advantages, batch.agent_state)
                 loss = loss.item()
                 entropy = entropy.mean().item()
                 values = batch.values.mean().item()
@@ -239,14 +239,14 @@ class LSTM_PPO(PPO):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # (hidden state, cell state) <--- XXX need better init?
-        #self.lstm_state = (torch.randn(1, 16, 576), torch.randn(1, 16, 576))
+        #self.agent_state = (torch.randn(1, 16, 576), torch.randn(1, 16, 576))
         self.default_state = torch.zeros(2, 1, 576)
 
 
-    @named_output('obs actions rewards done next_obs agent_ids policies values lstm_state')
+    @named_output('obs actions rewards done next_obs agent_ids policies values agent_state')
     def take_one_step(self, envs):
         obs, agent_ids = self.obs_for_envs(envs)
-        state = [getattr(e, "lstm_state", self.default_state) for e in envs]
+        state = [getattr(e, "agent_state", self.default_state) for e in envs]
         print ("Tensorifying", recursive_shape(state))
         state = torch.stack(state)
         print("State shape is", state.shape)
@@ -255,7 +255,7 @@ class LSTM_PPO(PPO):
         values, policies, new_state = self.model(tensor_obs, state)
         for i, e in enumerate(envs):
             print("new state is", recursive_shape(new_state))
-            e.lstm_state = new_state[i]
+            e.agent_state = new_state[i]
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
         if self.compute_device.type == "xla":
@@ -273,7 +273,7 @@ class LSTM_PPO(PPO):
 
         return obs, actions, rewards, done, next_obs, agent_ids, policies, values, new_state
 
-    @named_output('obs actions action_prob returns advantages values lstm_state ongoing')
+    @named_output('obs actions action_prob returns advantages values agent_state ongoing')
     def gen_training_batch(self, steps_per_env):
         """
         Run each environment a number of steps and calculate advantages.
@@ -294,7 +294,7 @@ class LSTM_PPO(PPO):
             'action_prob': [],
             'rewards': [],
             'values': [],
-            'lstm_state': [],
+            'agent_state': [],
             'ongoing': [],
             'final_value': 0.0,
         })
@@ -313,12 +313,12 @@ class LSTM_PPO(PPO):
                 t['rewards'].append(step.rewards[k])
                 t['values'].append(step.values[k])
                 t['ongoing'].append(not step.done[k])
-                t['lstm_state'].append(step.lstm_state[k].numpy())  # FIXME make t() handle torch objects
+                t['agent_state'].append(step.agent_state[k].numpy())  # FIXME make t() handle torch objects
 
         # For the final step in each environment, also calculate the value
         # function associated with the next observation
         tensor_obs = self.tensor(step.next_obs, torch.float32)
-        vals = self.model(tensor_obs, step.lstm_state)[0].detach().cpu().numpy()
+        vals = self.model(tensor_obs, step.agent_state)[0].detach().cpu().numpy()
         for k, agent_id in enumerate(step.agent_ids):
             if not step.done[k]:
                 trajectories[agent_id]['final_value'] = vals[k]
@@ -348,7 +348,7 @@ class LSTM_PPO(PPO):
 
         return (
             t('obs'), t('actions', torch.int64), t('action_prob'),
-            t('returns'), t('advantages'), t('values'), t('lstm_state'), t('ongoing')
+            t('returns'), t('advantages'), t('values'), t('agent_state'), t('ongoing')
         )
 
     def train_batch(self, batch):
@@ -366,7 +366,7 @@ class LSTM_PPO(PPO):
                 k = k.flatten()
                 entropy, loss = self.calculate_loss(
                     batch.obs[k], batch.actions[k], batch.action_prob[k],
-                    batch.values[k], batch.returns[k], batch.advantages[k], batch.lstm_state[k])
+                    batch.values[k], batch.returns[k], batch.advantages[k], batch.agent_state[k])
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
@@ -374,11 +374,11 @@ class LSTM_PPO(PPO):
                     xm.mark_step()
 
     def calculate_loss(
-            self, obs, actions, old_policy, old_values, returns, advantages, lstm_state):
+            self, obs, actions, old_policy, old_values, returns, advantages, agent_state):
         """
         All parameters ought to be tensors on the appropriate compute device.
         """
-        values, policy, state = self.model(obs, lstm_state)
+        values, policy, state = self.model(obs, agent_state)
         a_policy = torch.gather(policy, -1, actions[..., np.newaxis])[..., 0]
 
         prob_diff = advantages.sign() * (1 - a_policy / old_policy)

@@ -94,7 +94,7 @@ class SafeLifePolicyNetwork(nn.Module):
         self.logits = nn.Linear(512, num_actions)
         self.value_func = nn.Linear(512, 1)
 
-    def forward(self, obs):
+    def forward(self, obs, state=None):
         # Switch observation to (c, w, h) instead of (h, w, c)
         obs = obs.transpose(-1, -3)
         x = self.cnn(obs).flatten(start_dim=1)
