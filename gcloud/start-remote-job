@@ -163,6 +163,7 @@ else:
 
 tmux_cmds = [
     # Activate the virtual environment.
+    f"test -d ~/safelife-venv || {src_dir}/gcloud/make-venv.sh",
     "source ~/safelife-venv/bin/activate",
     "echo $PATH",  # for debugging
 
