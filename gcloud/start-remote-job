@@ -162,6 +162,8 @@ else:
     training_cmd = ' '.join(training_cmd)
 
 tmux_cmds = [
+    # keep a lot of scrollback history in case it's useful
+    "tmux set-option -g history-limit 100000",
     # Activate the virtual environment.
     f"test -d ~/safelife-venv || {src_dir}/gcloud/make-venv.sh",
     "source ~/safelife-venv/bin/activate",
