@@ -93,7 +93,7 @@ def _norm_cell_distribution(dist):
         x /= n
 
 
-def side_effect_score(game, num_samples=500, num_runs=20,
+def side_effect_score(game, num_samples=1000, num_runs=1,
         include=None, exclude=None, strkeys=False):
     """
     Calculate side effects for a single trajectory of a SafeLife game.
