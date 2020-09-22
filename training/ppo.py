@@ -72,7 +72,11 @@ class PPO(BaseAlgo):
     def take_one_step(self, envs):
         obs, agent_ids = self.obs_for_envs(envs)
         if self.stateful:
-            state = [getattr(e, "agent_state", self.default_state) for e in envs]
+            state = []
+            for e in envs:
+                if not hasattr(e, "agent_state"):
+                    e.agent_state = self.default_state.to(self.compute_device)
+                state.append(e.agent_state)
             state = torch.stack(state)
         else:
             state = None

@@ -137,7 +137,7 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
         self.dense = nn.Sequential(*dense)
 
         self.memory = nn.LSTM(
-            input_size=num_features, hidden_size=h * w * self.lstm_channels,
+            input_size=int(num_features), hidden_size=h * w * self.lstm_channels,
             num_layers=self.lstm_depth, dropout=dropout,
         )
 
@@ -151,21 +151,24 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
         obs = obs.transpose(-1, -3)
 
         x = self.cnn(obs).flatten(start_dim=1)
-        # print("CNN shape", x.shape)
         y = x[np.newaxis, ...]
-        # print("Memory shape", y.shape)
         # print("Applying memory with data", obs.shape, "and state:", recursive_shape(state))
         state = state.permute(1, 2, 0, 3)  # move (hs, cs) to front
-        y = self.memory(y, tuple(state))
-        # print(recursive_shape(y))
+        try:
+            y = self.memory(y, tuple(state))
+        except RuntimeError as e:
+            # LSTMs call .view() on their state, which requires contiguous memory on GPUs
+            # since we chop and change batches around, we don't preserve this across
+            # all call sites
+            if "hx is not contiguous" in str(e):
+                state = state.contiguous()
+                y = self.memory(y, tuple(state))
         y, state = y
         state = torch.stack(state)  # (hs, cs) tuple -> tensor
         state = state.permute(2, 0, 1, 3)  # move batch to front
-        print("return shape is", state.shape)
+        #print("return shape is", state.shape)
         y = y[0] # remove time
-        # print("Merging", x.shape, y.shape)
         merged = torch.cat((x, y), dim=1)
-        # print("Merged shape", merged.shape)
         x = self.dense[0](merged)
 
         rest = self.dense[1:]
