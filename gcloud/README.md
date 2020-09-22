@@ -13,12 +13,12 @@ In order to actually run any training, you will need to provision virtual machin
     gcloud compute instances create $INSTANCE --image-family pytorch-latest-gpu --image-project deeplearning-platform-release --boot-disk-size=200GB  --accelerator type=nvidia-tesla-p100 --machine-type=n1-standard-2 --maintenance-policy TERMINATE
 
 Make sure you `ssh` into the instance (`gcloud compute ssh $INSTANCE`) and install the nvidia drivers. You should be prompted to install them when logging in.
-Then, you'll need to setup the virtual environment from within the instance:
 
-    python3 -m venv ~/safelife-venv
-
-This makes it much easier to control both the python version that you're using
-as well as the versions of all the various packages.
+The `gcloud/start-remote-job` script will use a virtual environment in `~/safelife-venv` if it
+exists, or try to create it if it doesn't.  You can replace that virtual environment with one with
+other parameters and state if necessary to resolve python and torch / CUDA issues on your system if
+they arise; the `gcloud/make-venv.sh` script is the place to edit if you need to do this across
+many cloud isntances.
 
 ## Starting new jobs
 
