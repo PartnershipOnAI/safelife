@@ -138,11 +138,12 @@ def get_compute_device():
         # import os
         # os.environ["XLA_USE_BF16"] = "1"
         return xm.xla_device()
-    except:
+    except (ModuleNotFoundError, ImportError):
         if torch.cuda.is_available():
             return torch.device("cuda")
         else:
             return torch.device("cpu")
+
 
 def recursive_shape(obj, indent=0):
     "Recursively prettyprint the shape of a hierarchical torch object."

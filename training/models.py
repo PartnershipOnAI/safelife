@@ -1,6 +1,6 @@
 import numpy as np
 
-from training.utils import recursive_shape, check_shape
+from training.utils import recursive_shape, check_shape # noqa
 
 import torch
 
@@ -113,6 +113,7 @@ class SafeLifePolicyNetwork(nn.Module):
         policy = F.softmax(self.logits(x), dim=-1)
         return value, policy, None
 
+
 class SafeLifeLSTMPolicyNetwork(nn.Module):
 
     dense_depth: HyperParam = 1
@@ -129,9 +130,9 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
         num_actions = 9
 
         dense = [nn.Sequential(
-                    nn.Linear(num_features + h * w * self.lstm_channels, self.dense_width),
-                    nn.ReLU()
-                 )]
+            nn.Linear(num_features + h * w * self.lstm_channels, self.dense_width),
+            nn.ReLU()
+        )]
         for n in range(dense_depth - 1):
             dense.append(nn.Sequential(nn.Linear(self.dense_width, self.dense_width), nn.ReLU()))
         self.dense = nn.Sequential(*dense)
@@ -145,7 +146,7 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
         self.value_func = nn.Linear(self.dense_width, 1)
 
     def forward(self, obs, state):
-        check_shape(state, ("*", 2, 1,  576), "state passed to LSTM PPO")
+        check_shape(state, ("*", 2, 1, 576), "state passed to LSTM PPO")
 
         # Switch observation to (c, w, h) instead of (h, w, c)
         obs = obs.transpose(-1, -3)
@@ -166,8 +167,8 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
         y, state = y
         state = torch.stack(state)  # (hs, cs) tuple -> tensor
         state = state.permute(2, 0, 1, 3)  # move batch to front
-        #print("return shape is", state.shape)
-        y = y[0] # remove time
+        # print("return shape is", state.shape)
+        y = y[0]  # remove time
         merged = torch.cat((x, y), dim=1)
         x = self.dense[0](merged)
 

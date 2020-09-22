@@ -12,7 +12,7 @@ from safelife.random import get_rng
 
 from .base_algo import BaseAlgo
 from .global_config import HyperParam, update_hyperparams
-from .utils import named_output, round_up, get_compute_device, recursive_shape
+from .utils import named_output, round_up, get_compute_device, recursive_shape  # noqa
 
 try:
     import torch_xla.core.xla_model as xm
@@ -67,7 +67,6 @@ class PPO(BaseAlgo):
 
         self.load_checkpoint()
 
-
     @named_output('obs actions rewards done next_obs agent_ids policies values agent_state')
     def take_one_step(self, envs):
         obs, agent_ids = self.obs_for_envs(envs)
@@ -101,7 +100,6 @@ class PPO(BaseAlgo):
         next_obs, rewards, done = self.act_on_envs(envs, actions)
 
         return obs, actions, rewards, done, next_obs, agent_ids, policies, values, new_state
-
 
     @named_output('obs actions action_prob returns advantages values agent_state ongoing')
     def gen_training_batch(self, steps_per_env):
@@ -190,7 +188,6 @@ class PPO(BaseAlgo):
             t('returns'), t('advantages'), t('values'), return_agent_state, t('ongoing')
         )
 
-
     def calculate_loss(
             self, obs, actions, old_policy, old_values, returns, advantages, agent_state):
         """
@@ -213,7 +210,6 @@ class PPO(BaseAlgo):
         entropy_loss *= -self.entropy_reg
 
         return entropy, policy_loss + value_loss * self.vf_coef + entropy_loss
-
 
     def train_batch(self, batch):
         num_samples = len(batch.obs)

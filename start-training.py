@@ -225,7 +225,6 @@ try:
         algo_args['training_model'] = models.SafeLifeQNetwork(obs_shape)
         algo_args['target_model'] = models.SafeLifeQNetwork(obs_shape)
     elif args.algo == 'mppo':
-        from training.models import SafeLifeLSTMPolicyNetwork
         from training.ppo import LSTM_PPO as algo_cls
         algo_args['model'] = models.SafeLifeLSTMPolicyNetwork(obs_shape)
     else:
