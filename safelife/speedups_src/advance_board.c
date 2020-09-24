@@ -32,10 +32,11 @@ static void combine_neighbors2(uint16_t src, uint16_t *dst) {
 }
 
 void advance_board(
-        uint16_t *b1, uint16_t *b2, int nrow, int ncol, float spawn_prob) {
+        uint16_t *b1, uint16_t *b2, int nrow, int ncol, float spawn_prob,
+        uint16_t *c0) {
     int size = nrow*ncol;
     int i, j, start_of_row, end_of_row, end_of_col;
-    uint16_t *c1 = malloc(size * sizeof(uint16_t));
+    uint16_t *c1 = c0 ? c0 : malloc(size * sizeof(uint16_t));
     memset(c1, 0, size * sizeof(uint16_t));
 
     // Adjust all of the bits in b2 so that the destructible bit overwrites
@@ -85,7 +86,9 @@ void advance_board(
         combine_neighbors2(c1[end_of_col-ncol], b2 + end_of_col);
     }
 
-    free(c1);
+    if (!c0) {
+        free(c1);
+    }
 
     // Now loop over the board and advance it.
     for (i = 0; i < size; i++) {
@@ -119,6 +122,70 @@ void advance_board(
             }
         }
     }
+}
+
+
+void advance_board_nstep(
+        uint16_t *b1, uint16_t *b2, int nrow, int ncol, float spawn_prob,
+        int n_steps) {
+    int size = nrow*ncol;
+    uint16_t *temp = malloc((n_steps > 1 ? 2 : 1) * size * sizeof(uint16_t));
+    uint16_t *b3 = temp, *c1 = temp + size;
+
+    advance_board(b1, b2, nrow, ncol, spawn_prob, temp);
+    for (int step_idx=1; step_idx < n_steps; step_idx++) {
+        if (step_idx & 1) {
+            advance_board(b2, b3, nrow, ncol, spawn_prob, c1);
+        } else {
+            advance_board(b3, b2, nrow, ncol, spawn_prob, c1);
+        }
+    }
+    if (!(n_steps & 1)) {
+        // Need to copy from b3 back to the output b2.
+        memcpy(b2, b3, size * sizeof(uint16_t));
+    }
+
+    free(temp);
+}
+
+
+
+static void accumulate_cell_types(uint16_t *board, int32_t *counts, int board_size) {
+    for (int i=0; i<board_size; i++) {
+        uint16_t cell = board[i];
+        if (cell & ALIVE && !(cell & (AGENT | EXIT | FROZEN))) {
+            uint16_t color = (cell >> COLOR_BIT) & 7;
+            counts[8*i + color]++;
+        }
+    }
+}
+
+
+void life_occupancy(
+        uint16_t *b1, int32_t *counts, int nrow, int ncol, float spawn_prob,
+        int n_steps) {
+    /*
+    Advances the board n steps, but doesn't actually store the new board.
+    Instead, it keeps a count of the number of times that each cell has been
+    occupied by life of each type (color).
+    */
+    int size = nrow*ncol;
+    uint16_t *temp = malloc((n_steps > 1 ? 3 : 2) * size * sizeof(uint16_t));
+    uint16_t *b2 = temp, *c1 = temp + size, *b3 = temp + 2*size;
+
+    advance_board(b1, b2, nrow, ncol, spawn_prob, c1);
+    accumulate_cell_types(b2, counts, size);
+    for (int step_idx=1; step_idx < n_steps; step_idx++) {
+        if (step_idx & 1) {
+            advance_board(b2, b3, nrow, ncol, spawn_prob, c1);
+            accumulate_cell_types(b3, counts, size);
+        } else {
+            advance_board(b3, b2, nrow, ncol, spawn_prob, c1);
+            accumulate_cell_types(b2, counts, size);
+        }
+    }
+
+    free(temp);
 }
 
 
