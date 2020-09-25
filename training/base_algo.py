@@ -316,3 +316,4 @@ class BaseAlgo(object):
 
         if logger is not None:
             logger.log_summary()
+            # XXX get summary from here for early stopping
