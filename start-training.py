@@ -61,6 +61,7 @@ parser.add_argument('-x', '--extra-params', default=None,
     help="Extra config values/hyperparameters. Should be loadable as JSON.")
 
 args = parser.parse_args()
+
 if args.extra_params:
     try:
         args.extra_params = json.loads(args.extra_params)
@@ -262,6 +263,8 @@ except Exception:
 finally:
     if config['run_type'] in ['train', 'benchmark']:
         summarize_run(data_dir, wandb and wandb.run)
+    if args.wandb:
+        wandb.run.finish()
     if tb_proc is not None:
         tb_proc.kill()
     if args.shutdown:
