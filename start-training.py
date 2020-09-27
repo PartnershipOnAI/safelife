@@ -305,7 +305,7 @@ def main(argv=sys.argv):
     #   cofig (global)     ->  args prepared for interaction with wandb;
     #                          wandb can add settings (eg for sweeps) and
     #                          variables of local-only relevance are removed
-    args = parse_args(agv)
+    args = parse_args(argv)
     launch_ingredients = setup_from_args(args)
     launch_training(args, launch_ingredients)
 
