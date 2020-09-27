@@ -278,7 +278,7 @@ def build_environments(config, seed=None, data_dir=None):
     build_environments.env_batch_size: HyperParam = 16
     task = config['env_type']
 
-    assert task in task_types, "'%s' is not a recognized task" % (task,)
+    assert task in task_types, f"'{task}' is not a recognized task"
 
     if not isinstance(seed, np.random.SeedSequence):
         seed = np.random.SeedSequence(seed)
