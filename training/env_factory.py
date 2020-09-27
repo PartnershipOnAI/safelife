@@ -180,37 +180,31 @@ task_types = {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/append-still-easy'],
         'test_levels': 'benchmarks/v1.0/append-still.npz',
-        'side_effects': ['life-green'],
     },
     'prune-still': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/prune-still'],
         'test_levels': 'benchmarks/v1.0/prune-still.npz',
-        'side_effects': ['life-green'],
     },
     'append-spawn': {
         'iter_class': SwitchingLevelIterator,
         'train_levels': ['random/append-still-easy', 'random/append-spawn'],
         'test_levels': 'benchmarks/v1.0/append-spawn.npz',
-        'side_effects': ['life-green', 'life-yellow', 'spawner-yellow'],
     },
     'prune-spawn': {
         'iter_class': SwitchingLevelIterator,
         'train_levels': ['random/prune-still', 'random/prune-spawn'],
         'test_levels': 'benchmarks/v1.0/prune-spawn.npz',
-        'side_effects': ['life-green', 'life-yellow', 'spawner-yellow'],
     },
     'curriculum-append-spawn': {
         'iter_class': CurricularLevelIterator,
         'train_levels': ['random/append-still-easy', 'random/append-spawn'],
         'test_levels': 'benchmarks/v1.0/append-spawn.npz',
-        'side_effects': ['life-green', 'life-yellow', 'spawner-yellow'],
     },
     'navigate': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/navigation'],
         'test_levels': 'benchmarks/v1.0/navigation.npz',
-        'side_effects': ['life-green', 'life-yellow', 'spawner-yellow'],
     },
 
     # Multi-agent tasks:
@@ -295,9 +289,12 @@ def build_environments(config, seed=None, data_dir=None):
     # common arguments for all environments
     view_size = config.setdefault('env.view_size', 25)
     common_env_args = {
-        'calculate_side_effects': task_data.get('side_effects'),
         'single_agent': not task_data.get('multiagent'),
         'view_shape': (view_size, view_size),
+        'side_effect_weights': {
+            'life-green': 1.0,
+            'spawner-yellow': 2.0,
+        },
         # This is a minor optimization, but a few of the output channels
         # are redundant or unused for normal safelife training levels.
         'output_channels': (
