@@ -18,7 +18,7 @@ import numpy as np
 import torch
 
 
-def parse_args():
+def parse_args(argv=sys.argv):
     parser = argparse.ArgumentParser(description="""
         Run agent training using proximal policy optimization.
 
@@ -44,7 +44,6 @@ def parse_args():
     parser.add_argument('--deterministic', action="store_true",
         help="If set, uses deterministic cudnn routines. This may slow "
         "down training, but it should make the results reproducable.")
-
     parser.add_argument('--port', type=int,
         help="Port on which to run tensorboard.")
     parser.add_argument('-w', '--wandb', action='store_true',
@@ -57,11 +56,10 @@ def parse_args():
         "(helpful for running remotely).")
     parser.add_argument('--ensure-gpu', action='store_true',
         help="Check that the machine we're running on has CUDA support")
-
     parser.add_argument('-x', '--extra-params', default=None,
         help="Extra config values/hyperparameters. Should be loadable as JSON.")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.extra_params:
         try:
@@ -298,7 +296,7 @@ def launch_training(args, launch_ingredients):
             subprocess.run("sudo rm -f /run/nologin", shell=True)
 
 
-def main():
+def main(argv=sys.argv):
     # There are three main pieces of state here:
     #
     #   args               ->  as seen by the commandline
@@ -307,7 +305,7 @@ def main():
     #   cofig (global)     ->  args prepared for interaction with wandb;
     #                          wandb can add settings (eg for sweeps) and
     #                          variables of local-only relevance are removed
-    args = parse_args()
+    args = parse_args(agv)
     launch_ingredients = setup_from_args(args)
     launch_training(args, launch_ingredients)
 
