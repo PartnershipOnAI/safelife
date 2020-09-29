@@ -213,7 +213,7 @@ try:
 
     algo_args = {
         'training_envs': envs['training'],
-        'testing_envs': envs.get('testing'),
+        'testing_envs': envs.get('validation'),
         'data_logger': logging_setup.setup_data_logger(data_dir, 'training'),
     }
 
