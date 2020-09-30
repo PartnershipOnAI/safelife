@@ -100,7 +100,6 @@ class BaseLogger(object):
         self.cumulative_stats = {
             'training_episodes': 0,
             'training_steps': 0,
-            'testing_episodes': 0,
         }
 
     def log_episode(self, game, info={}, history=None, training=True):
@@ -120,7 +119,7 @@ class SafeLifeLogger(BaseLogger):
         Directory to save log data.
     episode_type : str
         Label for logged episodes. Intelligent defaults for other attributes
-        get set for values "training", "testing", and "benchmark".
+        get set for values "training", "validation", and "benchmark".
     cumulative_stats : dict
         Cumulative statistics for all runs. Includes ``[episode_type]_steps``
         and ``[episode_type]_episodes``. Note that this dictionary is shared
@@ -185,12 +184,12 @@ class SafeLifeLogger(BaseLogger):
                 """[1:-1]),
             'summary_polyak': 0.99,
         },
-        'testing': {
-            'episode_logname': "testing-log.json",
-            'video_name': "test-s{training_steps}-{level_name}",
+        'validation': {
+            'episode_logname': "validation-log.json",
+            'video_name': "validation-s{training_steps}-{level_name}",
             'video_interval': 1,
             'episode_msg': textwrap.dedent("""
-                Testing episode completed.
+                Validattion episode completed.
                     level name: {level_name}
                     clock: {time}
                     length: {length}
@@ -768,7 +767,7 @@ def summarize_run(data_dir, wandb_run=None):
     else:
         artifact = None
 
-    for name in ['training-log.json', 'testing-log.json', 'benchmark-data.json']:
+    for name in ['training-log.json', 'validation-log.json', 'benchmark-data.json']:
         logfile = os.path.join(data_dir, name)
         if os.path.exists(logfile):
             summarize_run_file(logfile, wandb_run, artifact)

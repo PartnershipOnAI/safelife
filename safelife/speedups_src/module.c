@@ -21,8 +21,10 @@ static PyObject *advance_board_py(PyObject *self, PyObject *args) {
     PyObject *board_obj;
     PyArrayObject *b1, *b2;
     float spawn_prob = 0.3;
+    int n_step = 1;
 
-    if (!PyArg_ParseTuple(args, "O|f", &board_obj, &spawn_prob)) return NULL;
+    if (!PyArg_ParseTuple(args, "O|fi", &board_obj, &spawn_prob, &n_step))
+        return NULL;
     board_obj = PyArray_FROM_OTF(
         board_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
     if (!board_obj)  return NULL;
@@ -34,12 +36,12 @@ static PyObject *advance_board_py(PyObject *self, PyObject *args) {
     b2 = (PyArrayObject *)PyArray_FROM_OTF(
         board_obj, NPY_UINT16, NPY_ARRAY_ENSURECOPY);
     Py_BEGIN_ALLOW_THREADS
-    advance_board(
+    advance_board_nstep(
         (uint16_t *)PyArray_DATA(b1),
         (uint16_t *)PyArray_DATA(b2),
         PyArray_DIM(b1, 0),
         PyArray_DIM(b1, 1),
-        spawn_prob
+        spawn_prob, n_step
     );
     Py_END_ALLOW_THREADS
     Py_DECREF(board_obj);
@@ -47,8 +49,40 @@ static PyObject *advance_board_py(PyObject *self, PyObject *args) {
 }
 
 
+static PyObject *life_occupancy_py(PyObject *self, PyObject *args) {
+    PyObject *board_obj;
+    PyArrayObject *b1, *counts;
+    float spawn_prob = 0.3;
+    int n_step = 1000;
+
+    if (!PyArg_ParseTuple(args, "O|fi", &board_obj, &spawn_prob, &n_step))
+        return NULL;
+    board_obj = PyArray_FROM_OTF(
+        board_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
+    if (!board_obj)  return NULL;
+    b1 = (PyArrayObject *)board_obj;
+    if (PyArray_NDIM(b1) != 2 || PyArray_SIZE(b1) == 0) {
+        Py_DECREF(board_obj);
+        return NULL;
+    }
+    npy_intp count_dims[3] = {PyArray_DIMS(b1)[0], PyArray_DIMS(b1)[1], 8};
+    counts = (PyArrayObject *)PyArray_ZEROS(3, count_dims, NPY_INT32, 0);
+    Py_BEGIN_ALLOW_THREADS
+    life_occupancy(
+        (uint16_t *)PyArray_DATA(b1),
+        (int32_t *)PyArray_DATA(counts),
+        PyArray_DIM(b1, 0),
+        PyArray_DIM(b1, 1),
+        spawn_prob, n_step
+    );
+    Py_END_ALLOW_THREADS
+    Py_DECREF(board_obj);
+    return (PyObject *)counts;
+}
+
+
 static char alive_counts_doc[] =
-    "alice_counts(board, goals)\n--\n\n"
+    "alive_counts(board, goals)\n--\n\n"
     "Number of alive cells for each foreground/background color combination.\n"
     "\n"
     "Parameters\n"
@@ -340,7 +374,7 @@ static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {
     for (int n = 1; n < board_shape.depth; n++) {
         advance_board(
             layers + (n-1)*layer_size, layers + n*layer_size,
-            board_shape.rows, board_shape.cols, 0.0);
+            board_shape.rows, board_shape.cols, 0.0, NULL);
     }
 
     err_code = gen_pattern(
@@ -481,7 +515,12 @@ static PyObject *render_board_py(PyObject *self, PyObject *args) {
 static PyMethodDef methods[] = {
     {
         "advance_board", (PyCFunction)advance_board_py, METH_VARARGS,
-        "Advances the board one step."
+        "Advance the board one or more steps."
+    },
+    {
+        "life_occupancy", (PyCFunction)life_occupancy_py, METH_VARARGS,
+        "Find the total occupancy of different life types (colors) for \n"
+        "each point in the grid after advancing the board n steps."
     },
     {
         "alive_counts", (PyCFunction)alive_counts_py, METH_VARARGS,

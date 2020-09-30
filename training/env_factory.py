@@ -179,38 +179,45 @@ task_types = {
     'append-still': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/append-still-easy'],
-        'test_levels': 'benchmarks/v1.0/append-still.npz',
+        'validation_levels': ['random/append-still'],
+        'benchmark_levels': 'benchmarks/v1.0/append-still.npz',
     },
     'prune-still': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/prune-still'],
-        'test_levels': 'benchmarks/v1.0/prune-still.npz',
+        'validation_levels': ['random/prune-still'],
+        'benchmark_levels': 'benchmarks/v1.0/prune-still.npz',
     },
     'append-spawn': {
         'iter_class': SwitchingLevelIterator,
         'train_levels': ['random/append-still-easy', 'random/append-spawn'],
-        'test_levels': 'benchmarks/v1.0/append-spawn.npz',
+        'validation_levels': ['random/append-spawn'],
+        'benchmark_levels': 'benchmarks/v1.0/append-spawn.npz',
     },
     'prune-spawn': {
         'iter_class': SwitchingLevelIterator,
         'train_levels': ['random/prune-still', 'random/prune-spawn'],
-        'test_levels': 'benchmarks/v1.0/prune-spawn.npz',
+        'validation_levels': ['random/prune-spawn'],
+        'benchmark_levels': 'benchmarks/v1.0/prune-spawn.npz',
     },
     'curriculum-append-spawn': {
         'iter_class': CurricularLevelIterator,
         'train_levels': ['random/append-still-easy', 'random/append-spawn'],
-        'test_levels': 'benchmarks/v1.0/append-spawn.npz',
+        'validation_levels': ['random/append-spawn'],
+        'benchmark_levels': 'benchmarks/v1.0/append-spawn.npz',
     },
     'navigate': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/navigation'],
-        'test_levels': 'benchmarks/v1.0/navigation.npz',
+        'validation_levels': ['random/navigate'],
+        'benchmark_levels': 'benchmarks/v1.0/navigation.npz',
     },
 
     # Multi-agent tasks:
     'asym1': {
         'iter_class': CurricularLevelIterator,
         'train_levels': ['random/multi-agent/asym1'],
+        'validation_levels': ['random/multi-agent/asym1'],
         'multiagent': True,
     },
     'curriculum-asym1': {
@@ -219,26 +226,31 @@ task_types = {
             'random/multi-agent/asym1',
             'random/multi-agent/asym1-pretrain-cyanonly',
             'random/multi-agent/asym1-pretrain-redonly'],
+        'validation_levels': ['random/multi-agent/asym1'],
         'multiagent': True,
     },
     'multi-build-coop': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/multi-agent/build-coop'],
+        'validation_levels': ['random/multi-agent/build-coop'],
         'multiagent': True,
     },
     'multi-build-compete': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/multi-agent/build-compete'],
+        'validation_levels': ['random/multi-agent/build-compete'],
         'multiagent': True,
     },
     'multi-build-parallel': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/multi-agent/build-parallel'],
+        'validation_levels': ['random/multi-agent/build-parallel'],
         'multiagent': True,
     },
     'multi-prune': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/prune-still', 'random/multi-agent/prune-still'],
+        'validation_levels': ['random/multi-agent/prune-still'],
         'multiagent': True,
     },
 }
@@ -279,7 +291,7 @@ def build_environments(config, data_dir=None):
     assert task in task_types, "'%s' is not a recognized task" % (task,)
 
     seed = np.random.SeedSequence(config.get('seed'))
-    train_seed, test_seed = seed.spawn(2)
+    training_seed, benchmark_seed = seed.spawn(2)
 
     task_data = task_types[task]
 
@@ -314,11 +326,12 @@ def build_environments(config, data_dir=None):
     }
 
     # Training environments
+
     training_logger = setup_data_logger(data_dir, 'training')
     schedule = partial(LinearSchedule, training_logger)
 
     iter_class = task_data.get('iter_class', SafeLifeLevelIterator)
-    iter_args = {'seed': train_seed}
+    iter_args = {'seed': training_seed}
 
     if iter_class is CurricularLevelIterator:
         iter_args['logger'] = training_logger
@@ -358,24 +371,38 @@ def build_environments(config, data_dir=None):
         exit_difficulty=schedule(**exit_difficulty),
     )
 
-    # Test environments
-    test_levels = task_data.get('test_levels')
-    if test_levels:
+    # Validation environments
+
+    # Note that we typically want to keep the seed for testing environments
+    # constant so that we get the same validation levels for multiple runs.
+    # The number chosen here is just a random number. Nothing special about it.
+    validation_seed = config.setdefault('validation.env_seed', 732230218323780641)
+
+    validation_levels = task_data.get('validation_levels')
+    num_validation_levels = config.setdefault('validation.num_levels', 5)
+    if validation_levels:
+        envs['validation'] = safelife_env_factory(
+            num_envs=num_validation_levels, training=False,
+            env_args=common_env_args,
+            data_logger=setup_data_logger(data_dir, 'validation'),
+            level_iterator=SafeLifeLevelIterator(
+                *validation_levels, seed=validation_seed, num_workers=0,
+                repeat_levels=True, distinct_levels=num_validation_levels))
+
+    # Benchmark environments
+
+    # These are only run at the very end of training.
+    # The seed only matters for stochastic dynamics, because the benchmark
+    # levels themselves are fixed. The seed is spawned off of the main seed
+    # and will generally be different from run to run.
+
+    benchmark_levels = task_data.get('benchmark_levels')
+    if benchmark_levels:
         envs['benchmark'] = safelife_env_factory(
             num_envs=20, training=False, env_args=common_env_args,
             data_logger=setup_data_logger(data_dir, 'benchmark'),
             level_iterator=SafeLifeLevelIterator(
-                test_levels, repeat_levels=True,
-                seed=test_seed, num_workers=0),
-        )
-        # Test levels are the same as the benchmark levels, except that we
-        # only run the first 5.
-        envs['testing'] = safelife_env_factory(
-            num_envs=5, training=False, env_args=common_env_args,
-            data_logger=setup_data_logger(data_dir, 'testing'),
-            level_iterator=SafeLifeLevelIterator(
-                test_levels, distinct_levels=5, repeat_levels=True,
-                seed=test_seed, num_workers=0),
-        )
+                benchmark_levels, seed=benchmark_seed, num_workers=0,
+                repeat_levels=True))
 
     return envs
