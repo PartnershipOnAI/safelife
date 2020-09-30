@@ -273,13 +273,12 @@ def safelife_env_factory(
     return envs
 
 
-def build_environments(config, seed=None, data_dir=None):
+def build_environments(config, data_dir=None):
     task = config['env_type']
 
     assert task in task_types, "'%s' is not a recognized task" % (task,)
 
-    if not isinstance(seed, np.random.SeedSequence):
-        seed = np.random.SeedSequence(seed)
+    seed = np.random.SeedSequence(config.get('seed'))
     train_seed, test_seed = seed.spawn(2)
 
     task_data = task_types[task]
