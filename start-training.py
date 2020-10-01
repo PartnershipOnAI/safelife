@@ -264,7 +264,7 @@ def launch_training(config, data_dir):
         import wandb
         config2 = config.copy()
         config2.pop('_wandb', None)
-        wandb.config.update(config2)
+        wandb.config.update(config2, allow_val_change=True)
 
     print("")
     logger.info("Hyperparameters: %s", config)
