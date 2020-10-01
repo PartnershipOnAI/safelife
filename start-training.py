@@ -14,6 +14,9 @@ import sys
 import time
 import json
 
+import torch
+import numpy as np
+
 logger = logging.getLogger('training')
 safety_dir = os.path.realpath(os.path.dirname(__file__))
 
@@ -77,12 +80,10 @@ def parse_args():
         "If wandb is set but there is no data directory, then a run name will be "
         "picked automatically.")
 
+    if args.ensure_gpu:
+        assert torch.cuda.is_available(), "CUDA support requested but not available!"
+
     return args
-
-
-def check_for_gpu():
-    import torch
-    assert torch.cuda.is_available(), "CUDA support requested but not available!"
 
 
 def build_c_extensions():
@@ -199,10 +200,6 @@ def setup_config_and_wandb(args):
 
 
 def set_global_seed(config):
-    # delaying import of external packages for quicker script startup
-    import torch
-    import numpy as np
-
     from safelife.random import set_rng
 
     # Make sure the seed can be represented by floating point exactly.
@@ -318,8 +315,6 @@ def main():
     sys.path.insert(1, safety_dir)
 
     args = parse_args()
-    if args.ensure_gpu:
-        check_for_gpu()
     build_c_extensions()
     config, job_name, data_dir = setup_config_and_wandb(args)
     set_global_seed(config)
