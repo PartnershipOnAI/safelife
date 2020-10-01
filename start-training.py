@@ -292,8 +292,12 @@ def cleanup(config, data_dir, tb_proc, shutdown):
     else:
         wandb_run = None
 
-    if config['run_type'] in ['train', 'benchmark']:
-        summarize_run(data_dir, wandb_run)
+    try:
+        if config['run_type'] in ['train', 'benchmark']:
+            summarize_run(data_dir, wandb_run)
+    except:  # noqa
+        import traceback
+        logger.warn("Exception during summarization:\n", traceback.format_exc())
 
     if wandb_run is not None:
         wandb_run.finish()
