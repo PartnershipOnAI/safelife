@@ -718,6 +718,8 @@ def combined_score(data, side_effect_weights=None):
 
 def summarize_run_file(logfile, wandb_run=None, artifact=None, se_weights=None):
     data = load_safelife_log(logfile)
+    if not data:
+        return None
     bare_name = logfile.rpartition('.')[0]
     file_name = os.path.basename(bare_name)
     npz_file = bare_name + '.npz'
