@@ -138,6 +138,8 @@ def setup_config_and_wandb(args):
             elif response == 'abort':
                 print("Aborting.")
                 exit()
+    else:
+        job_name = data_dir = None
 
     # Remove some args from the config, just to make things neater.
     # These args don't actually affect the run output.

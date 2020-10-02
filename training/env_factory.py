@@ -209,7 +209,7 @@ task_types = {
     'navigate': {
         'iter_class': SafeLifeLevelIterator,
         'train_levels': ['random/navigation'],
-        'validation_levels': ['random/navigate'],
+        'validation_levels': ['random/navigation'],
         'benchmark_levels': 'benchmarks/v1.0/navigation.npz',
     },
 
