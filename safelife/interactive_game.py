@@ -521,8 +521,8 @@ class GameLoop(object):
         if self.print_only:
             output += "\n"
         else:
-            available_points = np.sum(game.initial_available_points())
-            earned_points = np.sum(game.points_earned())
+            available_points = np.average(game.initial_available_points())
+            earned_points = np.average(game.points_earned())
             pfrac = earned_points / available_points if available_points > 0 else 1.0
             output += (
                 "\n  Steps: {bold}{}{clear}"
@@ -563,7 +563,7 @@ class GameLoop(object):
             Game over!
             ----------
 
-            Final score: {}
+            Total points: {}
             Total steps: {}
             Total undos: {}
             Total side effects:
@@ -585,7 +585,7 @@ class GameLoop(object):
         if game.title:
             output = "Level: %s\n\n" % (game.title,)
         output += textwrap.dedent("""
-            Score: {} / {}
+            Points: {} / {}
             Steps: {}
             Undos: {}
 
@@ -595,8 +595,8 @@ class GameLoop(object):
 
             (hit any key to continue)
         """)[1:-1].format(
-            np.sum(game.points_earned()),
-            np.sum(game.initial_available_points()),
+            np.average(game.points_earned()),
+            np.average(game.initial_available_points() + game.points_on_level_exit),
             game.num_steps,
             state.total_undos - state.level_start_undos,
             self.print_side_effects(state.side_effects, ansi)
