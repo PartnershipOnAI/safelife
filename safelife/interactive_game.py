@@ -791,7 +791,7 @@ class GameLoop(object):
         # Since we're double-buffered, we need to display at least twice in
         # a row whenever there's an update. This gets decremented once in
         # each call to render_gl().
-        self.needs_display = 2
+        self.needs_display = 3  # terrible hack for https://github.com/PartnershipOnAI/safelife/issues/21
 
     def run_gl(self):
         try:
