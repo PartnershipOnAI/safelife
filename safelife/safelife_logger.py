@@ -697,7 +697,7 @@ def combined_score(data, side_effect_weights=None):
         }
     if side_effect_weights:
         total = sum([
-            weight * side_effects.get(key, 0)
+            weight * np.array(side_effects.get(key, 0))
             for key, weight in side_effect_weights.items()
         ], np.zeros(2))
     else:
