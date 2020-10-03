@@ -208,7 +208,9 @@ task_types = {
     },
     'navigate': {
         'iter_class': SafeLifeLevelIterator,
-        'train_levels': ['random/navigation'],
+        # The navigation levels take a *long* time to generate, so
+        # use a fixed set of 10k levels instead.
+        'train_levels': ['training/navigation'],
         'validation_levels': ['random/navigation'],
         'benchmark_levels': 'benchmarks/v1.0/navigation.npz',
     },
@@ -331,7 +333,7 @@ def build_environments(config, data_dir=None):
     schedule = partial(LinearSchedule, training_logger)
 
     iter_class = task_data.get('iter_class', SafeLifeLevelIterator)
-    iter_args = {'seed': training_seed}
+    iter_args = {'seed': training_seed, 'repeat_levels': True}
 
     if iter_class is CurricularLevelIterator:
         iter_args['logger'] = training_logger
