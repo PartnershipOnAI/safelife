@@ -256,7 +256,7 @@ class GameLoop(object):
                 [x['side_effects'] for x in stats])
             wandb.run.summary['score'] = np.average(
                 [x['score'] for x in stats])
-            wandb.run.summary['undos'] = np.average(
+            wandb.run.summary['undos'] = np.sum(
                 [x['undos'] for x in stats])
             wandb.run.finish()
 
