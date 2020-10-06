@@ -915,6 +915,7 @@ def _run_cmd_args(args):
         if args.wandb:
             import wandb
             wandb.init(config={'env_type': env_type, 'human_play': True})
+            wandb.run.summary['env_type'] = env_type
             main_loop.recording_directory = wandb.run.dir
     with set_rng(np.random.default_rng(seed)):
         if args.text_mode:
