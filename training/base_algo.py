@@ -319,11 +319,6 @@ class BaseAlgo(object):
                     new_envs.append(env)
             envs = new_envs
 
-<<<<<<< HEAD
-        if logger is not None:
-            logger.log_summary()
-            # XXX get summary from here for early stopping
-=======
         if sl_logger is not None:
             sl_logger.log_summary()
 
@@ -333,4 +328,3 @@ class BaseAlgo(object):
             if best_so_far is not False:
                 logger.info("New best performance on validation levels: %f", best_so_far)
                 self.save_checkpoint(filename="best-validation-agent.data")
->>>>>>> early-stopping
