@@ -436,10 +436,12 @@ class SafeLifeLogger(BaseLogger):
         value = self.summary_stats[criterion]
         if value > self.best_validation_performance:
             self.best_validation_performance = value
+            logger.info("New best performance on validation levels: %f", value)
             return value
         else:
+            logger.info("Performance %f did not mach previous best %f", value,
+                        self.best_validation_performance)
             return False
-
 
 
 class RemoteSafeLifeLogger(BaseLogger):

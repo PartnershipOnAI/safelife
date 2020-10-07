@@ -5,6 +5,7 @@ import logging
 import torch
 import numpy as np
 
+from .global_config import config
 from .utils import nested_getattr, nested_setattr, named_output
 
 logger = logging.getLogger(__name__)
@@ -318,6 +319,8 @@ class BaseAlgo(object):
                 else:
                     new_envs.append(env)
             envs = new_envs
+            if num_completed == 1:
+                config.check_for_unused_hyperparams()
 
         if sl_logger is not None:
             sl_logger.log_summary()
