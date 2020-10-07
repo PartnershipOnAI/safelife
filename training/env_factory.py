@@ -164,7 +164,7 @@ class SwitchingLevelIterator(SafeLifeLevelIterator):
         Probability of picking level 2 instead of level 1.
     """
     def __init__(self, level1, level2, p_switch, **kwargs):
-        super().__init__(level1, level2, repeat_levels=True, **kwargs)
+        super().__init__(level1, level2, **kwargs)
         self.p_switch = p_switch
 
     def get_next_parameters(self):
