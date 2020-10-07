@@ -79,7 +79,7 @@ class BaseAlgo(object):
         else:
             pass  # already have a recent checkpoint
 
-    def save_checkpoint(self):
+    def save_checkpoint(self, filename=None):
         chkpt_dir = self.checkpoint_directory
         if not chkpt_dir:
             return
@@ -95,7 +95,9 @@ class BaseAlgo(object):
                 val = val.state_dict()
             data[attrib] = val
 
-        path = os.path.join(chkpt_dir, 'checkpoint-%i.data' % self.num_steps)
+        if not filename:
+            filename = 'checkpoint-%i.data' % self.num_steps
+        path = os.path.join(chkpt_dir, filename)
         torch.save(data, path)
         logger.info("Saving checkpoint: '%s'", path)
 
@@ -275,7 +277,7 @@ class BaseAlgo(object):
         # return obs, actions, rewards, done, agent_ids
         raise NotImplementedError
 
-    def run_episodes(self, envs, num_episodes=None):
+    def run_episodes(self, envs, num_episodes=None, validation=False):
         """
         Run each environment to completion.
 
@@ -289,6 +291,9 @@ class BaseAlgo(object):
         num_episodes : int
             Total number of episodes to run. Defaults to the same as number
             of environments.
+        validation : bool
+            True if these are validation episodes & we should do associated
+            housekeeping.
         """
         if not envs:
             return
@@ -296,9 +301,9 @@ class BaseAlgo(object):
             num_episodes = len(envs)
         num_completed = 0
 
-        logger = getattr(envs[0], 'logger', None)
-        if logger is not None:
-            logger.reset_summary()
+        sl_logger = getattr(envs[0], 'logger', None)
+        if sl_logger is not None:
+            sl_logger.reset_summary()
 
         while num_completed < num_episodes:
             data = self.take_one_step(envs)
@@ -314,6 +319,18 @@ class BaseAlgo(object):
                     new_envs.append(env)
             envs = new_envs
 
+<<<<<<< HEAD
         if logger is not None:
             logger.log_summary()
             # XXX get summary from here for early stopping
+=======
+        if sl_logger is not None:
+            sl_logger.log_summary()
+
+        # Keep the agent that performs best on the validation ("test") levels
+        if validation:
+            best_so_far = sl_logger.check_for_best_agent()
+            if best_so_far is not False:
+                logger.info("New best performance on validation levels: %f", best_so_far)
+                self.save_checkpoint(filename="best-validation-agent.data")
+>>>>>>> early-stopping

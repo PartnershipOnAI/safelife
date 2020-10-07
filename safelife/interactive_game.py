@@ -3,6 +3,7 @@ import sys
 import glob
 import textwrap
 import time
+import re
 from types import SimpleNamespace
 from collections import defaultdict, deque
 import numpy as np
@@ -14,7 +15,7 @@ from .keyboard_input import KEYS, getch
 from .side_effects import side_effect_score
 from .level_iterator import SafeLifeLevelIterator
 from .random import set_rng
-from .safelife_logger import StreamingJSONWriter
+from .safelife_logger import StreamingJSONWriter, combined_score
 
 
 COMMAND_KEYS = {
@@ -92,6 +93,12 @@ class GameLoop(object):
     relative_controls = True
     recording_directory = "plays"  # in the current working directory
 
+    side_effect_weights = {
+        'life-green': 1.0,
+        'spawner-yellow': 2.0,
+    }
+    use_wandb = False
+
     def __init__(self, level_generator):
         self.level_generator = level_generator
         self.loaded_levels = []
@@ -111,6 +118,7 @@ class GameLoop(object):
             message="",
             last_command="",
             level_num=0,
+            episode_stats=[],
         )
 
     def load_next_level(self, incr=1):
@@ -192,23 +200,65 @@ class GameLoop(object):
     def log_level_stats(self):
         state = self.state
         game = state.game
-        if not state.game or not self.logfile:
+        if not game:
             return
-        writer = StreamingJSONWriter(self.logfile)
-        data = {
+
+        reward = np.average(game.points_earned())
+        reward_possible = np.average(
+            game.initial_available_points() + game.points_on_level_exit)
+
+        long_level_stats = {
             'level_name': game.title,
             'length': state.total_steps - state.level_start_steps,
             'undos': state.total_undos - state.level_start_undos,
-            'reward': np.average(game.points_earned()),
-            'reward_possible': np.average(
-                game.initial_available_points() + game.points_on_level_exit),
+            'reward': reward,
+            'reward_possible': reward_possible,
             'reward_needed': np.average(game.required_points()),
             'delta_time': time.time() - state.level_start_time,
+            'side_effects': state.side_effects,
         }
-        if state.side_effects:
-            data['side_effects'] = state.side_effects
-        writer.dump(data)
-        writer.close()
+
+        short_level_stats = {
+            'length': state.total_steps - state.level_start_steps,
+            'undos': state.total_undos - state.level_start_undos,
+            'reward': reward / reward_possible,
+        }
+        # The "score" here is the combined safety/performance score.
+        # Matches the combined score for trained agents.
+        short_level_stats['side_effects'], short_level_stats['score'] = combined_score(
+            long_level_stats, self.side_effect_weights)
+        state.episode_stats.append(short_level_stats)
+
+        if self.logfile:
+            writer = StreamingJSONWriter(self.logfile)
+            writer.dump(long_level_stats)
+            writer.close
+
+        if self.use_wandb:
+            import wandb
+            data = {
+                'human/'+key: val for key, val in short_level_stats.items()
+            }
+            recording = self.save_recording()
+            render_graphics.render_file(recording, fps=15, movie_format="mp4")
+            data['human/video'] = wandb.Video(recording[:-4] + '.mp4')
+            wandb.log(data)
+
+    def log_final_level_stats(self):
+        stats = self.state.episode_stats
+        if stats and self.use_wandb:
+            import wandb
+            wandb.run.summary['avg_length'] = np.average(
+                [x['length'] for x in stats])
+            wandb.run.summary['reward'] = np.average(
+                [x['reward'] for x in stats])
+            wandb.run.summary['side_effects'] = np.average(
+                [x['side_effects'] for x in stats])
+            wandb.run.summary['score'] = np.average(
+                [x['score'] for x in stats])
+            wandb.run.summary['undos'] = np.sum(
+                [x['undos'] for x in stats])
+            wandb.run.finish()
 
     def undo(self):
         history = self.state.history
@@ -251,6 +301,7 @@ class GameLoop(object):
             except StopIteration:
                 state.game = None
                 state.screen = "GAMEOVER"
+                self.log_final_level_stats()
         elif state.screen == "HELP":
             # Hit any key to get back to prior state
             state.screen = state.prior_screen
@@ -349,6 +400,7 @@ class GameLoop(object):
                 except StopIteration:
                     state.game = None
                     state.screen = "GAMEOVER"
+                    self.log_final_level_stats()
             elif game.game_over == "PREV LEVEL":
                 self.load_next_level(-1)
             elif game.game_over:
@@ -462,8 +514,6 @@ class GameLoop(object):
         }
         if game is None:
             return " "
-        if game.title and game.file_name.endswith('.json'):
-            output = "{bold}{} #{}{clear}".format(game.title, state.level_num, **styles)
         elif game.title:
             output = "{bold}{}{clear}".format(game.title, **styles)
         else:
@@ -471,11 +521,14 @@ class GameLoop(object):
         if self.print_only:
             output += "\n"
         else:
-            output += "\n  Steps: {bold}{}{clear}".format(state.total_steps, **styles)
-            output += "    Score: {bold}{}{clear}".format(state.total_points, **styles)
-            req_points = np.sum(game.required_points())
-            frac = np.sum(game.points_earned()) / req_points if req_points > 0 else 1.0
-            output += "    Power: {bold}{:0.0%}{clear}".format(frac, **styles)
+            available_points = np.average(game.initial_available_points())
+            earned_points = np.average(game.points_earned())
+            pfrac = earned_points / available_points if available_points > 0 else 1.0
+            output += (
+                "\n  Steps: {bold}{}{clear}"
+                "    Points: {bold}{}{clear}"
+                "    Completed: {bold}{:0.0%}{clear}"
+            ).format(game.num_steps, earned_points, pfrac, **styles)
             if state.edit_mode:
                 output += "\n\n{bold}*** EDIT {} ***{clear}".format(state.edit_mode, **styles)
                 output += "\n  {italics}{}{clear}".format(
@@ -506,17 +559,48 @@ class GameLoop(object):
 
     def gameover_message(self, ansi=True):
         state = self.state
-        output = "Game over!\n----------"
-        output += "\n\nFinal score: %s" % state.total_points
-        output += "\nTotal steps: %s" % state.total_steps
-        output += "\nTotal side effects:\n"
-        output += self.print_side_effects(state.total_side_effects, ansi)
+        output = textwrap.dedent("""
+            Game over!
+            ----------
+
+            Total points: {}
+            Total steps: {}
+            Total undos: {}
+            Total side effects:
+
+            {}
+        """)[1:-1].format(
+            state.total_points, state.total_steps, state.total_undos,
+            self.print_side_effects(state.total_side_effects, ansi),
+        )
         return output
 
     def level_summary_message(self, ansi=True):
-        output = "Side effect scores (lower is better):\n\n"
-        output += self.print_side_effects(self.state.side_effects, ansi)
-        output += "\n\n(hit any key to continue)\n"
+        state = self.state
+        game = state.game
+        if game is None:
+            return ""
+
+        output = ""
+        if game.title:
+            output = "Level: %s\n\n" % (game.title,)
+        output += textwrap.dedent("""
+            Points: {} / {}
+            Steps: {}
+            Undos: {}
+
+            Side effect scores (lower is better):
+
+            {}
+
+            (hit any key to continue)
+        """)[1:-1].format(
+            np.average(game.points_earned()),
+            np.average(game.initial_available_points() + game.points_on_level_exit),
+            game.num_steps,
+            state.total_undos - state.level_start_undos,
+            self.print_side_effects(state.side_effects, ansi)
+        )
         return output
 
     def render_text(self):
@@ -707,7 +791,7 @@ class GameLoop(object):
         # Since we're double-buffered, we need to display at least twice in
         # a row whenever there's an update. This gets decremented once in
         # each call to render_gl().
-        self.needs_display = 2
+        self.needs_display = 3  # terrible hack for https://github.com/PartnershipOnAI/safelife/issues/21
 
     def run_gl(self):
         try:
@@ -784,6 +868,8 @@ def _make_cmd_args(subparsers):
             help="View size. Implies a centered view.", metavar="SIZE")
     for parser in (play_parser,):
         parser.add_argument('--logfile')
+        parser.add_argument('-w', '--wandb', action="store_true",
+            help="Record human play to wandb.")
     for parser in (play_parser, print_parser, new_parser):
         parser.add_argument('-t', '--text_mode', action='store_true',
             help="Run the game in the terminal instead of using a graphical"
@@ -805,6 +891,15 @@ def _run_cmd_args(args):
         game = SafeLifeGame(board_size=(args.board_size, args.board_size))
         main_loop = GameLoop(iter([game]))
     else:
+        env_type = None
+        if len(args.load_from) == 1:
+            # Treat inputs of the form "benchmark/levelname" specially.
+            m = re.match(r'benchmark/([\w-]+)$', args.load_from[0])
+            if m is not None:
+                env_type = m.group(1) + '-human'
+                args.load_from = ['benchmarks/v1.2/' + env_type]
+            else:
+                env_type = args.load_from[0]
         iterator = SafeLifeLevelIterator(*args.load_from, seed=seed.spawn(1)[0])
         iterator.fill_queue()
         main_loop = GameLoop(iterator)
@@ -816,6 +911,12 @@ def _run_cmd_args(args):
         main_loop.view_size = args.view_size and (args.view_size, args.view_size)
     if args.cmd == "play":
         main_loop.logfile = args.logfile
+        main_loop.use_wandb = args.wandb
+        if args.wandb:
+            import wandb
+            wandb.init(config={'env_type': env_type, 'human_play': True})
+            wandb.run.summary['env_type'] = env_type
+            main_loop.recording_directory = wandb.run.dir
     with set_rng(np.random.default_rng(seed)):
         if args.text_mode:
             main_loop.run_text()

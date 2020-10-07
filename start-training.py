@@ -14,8 +14,11 @@ import sys
 import time
 import json
 
-import numpy as np
 import torch
+import numpy as np
+
+logger = logging.getLogger('training')
+safety_dir = os.path.realpath(os.path.dirname(__file__))
 
 
 def parse_args(argv=sys.argv):
@@ -69,50 +72,93 @@ def parse_args(argv=sys.argv):
             print(f"'{args.extra_params}' is not a valid JSON dictionary. "
                 "Make sure to escape your quotes!")
             exit(1)
+
+    assert args.wandb or args.data_dir or args.run_type == 'inspect', (
+        "Either a data directory must be set or the wandb flag must be set. "
+        "If wandb is set but there is no data directory, then a run name will be "
+        "picked automatically.")
+
+    if args.ensure_gpu:
+        assert torch.cuda.is_available(), "CUDA support requested but not available!"
+
     return args
 
 
-def build_and_import_modules(safety_dir):
-    "Build the C extensions and only _then_ import safelife modules."
-
+def build_c_extensions():
     subprocess.run([
         "python3", os.path.join(safety_dir, "setup.py"),
         "build_ext", "--inplace"
     ])
 
-    global config, set_rng, SafeLifeLogger, summarize_run, logging_setup, models, build_environments
 
-    from safelife.random import set_rng  # noqa
-    from safelife.safelife_logger import SafeLifeLogger, summarize_run # noqa
-    from training import logging_setup  # noqa
-    from training import models  # noqa
-    from training.env_factory import build_environments  # noqa
-    from training.global_config import config  # noqa
+def setup_config_and_wandb(args):
+    """
+    Setup wandb, the logging directory, and update the global config object.
 
+    There is a two-way sync between wandb and the parameter config.
+    Any parameters that are set in args are passed to wandb, and any parameters
+    that are set in wandb (if, e.g., this run is part of a parameter sweep) are
+    loaded back into the config.
 
-def setup_config_and_wandb(args, launch_ingredients):
-    "Setup wandb and finalise config object logging."
+    Parameters
+    ----------
+    args : Namespace
+        Values returned from parse_args
 
-    # config is a global, from training.global_config, but we fill it out here
-    # if wandb is in use, the config is synchronized with it, except these
-    # parameters:
+    Returns
+    -------
+    config : GlobalConfig
+        The global configuration object. This is a singleton and can be
+        imported directly, but it's helpful in this file to pass it around and
+        so that function inputs are made explicit.
+    job_name : str
+    data_dir : str
+        The directory where data gets written.
+    """
 
+    from training import logging_setup
+    from training.global_config import config
+
+    # Check to see if the data directory is already in use
+    # If it is, prompt the user if they want to overwrite it.
+    if args.data_dir is not None:
+        data_dir = os.path.realpath(args.data_dir)
+        job_name = os.path.basename(data_dir)
+        if os.path.exists(data_dir) and args.run_type == 'train':
+            print("The directory '%s' already exists." % data_dir)
+            print("Would you like to overwrite the old data, append to it, or abort?")
+            response = 'overwrite' if job_name.startswith('tmp') else None
+            while response not in ('overwrite', 'append', 'abort'):
+                response = input("(overwrite / append / abort) > ")
+            if response == 'overwrite':
+                print("Overwriting old data.")
+                shutil.rmtree(data_dir)
+            elif response == 'abort':
+                print("Aborting.")
+                exit()
+    else:
+        job_name = data_dir = None
+
+    # Remove some args from the config, just to make things neater.
+    # These args don't actually affect the run output.
     base_config = {
         k: v for k, v in vars(args).items() if k not in
         ['port', 'wandb', 'ensure_gpu', 'project', 'shutdown', 'extra_params']
     }
-    global wandb
+
+    # tag any hyperparams from the commandline
+    if args.extra_params is not None:
+        config.add_hyperparams(args.extra_params)
+
     if args.wandb:
         import wandb
         if wandb.login():
-            run_notes = os.path.join(launch_ingredients.safety_dir, 'run-notes.txt')
+            run_notes = os.path.join(safety_dir, 'run-notes.txt')
             if os.path.exists(run_notes):
                 run_notes = open(run_notes).read()
             else:
                 run_notes = None
 
-            # Remove some args from the wandb config, just to make things neater.
-            # These args don't actually affect the run output.
             if args.project and '/' in args.project:
                 entity, project = args.project.split("/", 1)
             elif args.project:
@@ -121,7 +167,7 @@ def setup_config_and_wandb(args, launch_ingredients):
                 entity = project = None  # use values from wandb/settings
 
             wandb.init(
-                name=launch_ingredients.job_name, notes=run_notes, project=project, entity=entity,
+                name=job_name, notes=run_notes, project=project, entity=entity,
                 config=base_config)
             # Note that wandb config can contain different and/or new keys that
             # aren't in the command-line arguments. This is especially true for
@@ -132,182 +178,165 @@ def setup_config_and_wandb(args, launch_ingredients):
             # This allows env_type show up in the benchmark table.
             wandb.run.summary['env_type'] = config['env_type']
 
-            if launch_ingredients.job_name is None:
-                launch_ingredients.job_name = wandb.run.name
-                launch_ingredients.data_dir = os.path.join(
-                    launch_ingredients.safety_dir, 'data', time.strftime("%Y-%m-%d-") + wandb.run.id)
+            if job_name is None:
+                job_name = wandb.run.name
+                data_dir = os.path.join(
+                    safety_dir, 'data', time.strftime("%Y-%m-%d-") + wandb.run.id)
 
             logging_setup.save_code_to_wandb()
     else:
-        wandb = None
         config.update(base_config)
 
+    if data_dir is not None:
+        os.makedirs(data_dir, exist_ok=True)
 
-def setup_from_args(args):
+    logging_setup.setup_logging(
+        data_dir, debug=(config['run_type'] == 'inspect'))
+    logger.info("COMMAND ARGUMENTS: %s", ' '.join(sys.argv))
+    logger.info("TRAINING RUN: %s", job_name)
+    logger.info("ON HOST: %s", platform.node())
 
-    # launch_ingredients is a place to store variables that are derived from
-    # the config but not part of it, and that are the result of our setup
-    # process
-    li = argparse.Namespace()  # aka launch_ingredients
+    return config, job_name, data_dir
 
-    if args.seed is None:
-        # Make sure the seed can be represented by floating point exactly.
-        # This is just because we may want to pass it over the web, and javascript
-        # doesn't have 64 bit integers.
-        args.seed = np.random.randint(2**53)
 
-    assert args.wandb or args.data_dir or args.run_type == 'inspect', (
-        "Either a data directory must be set or the wandb flag must be set. "
-        "If wandb is set but there is no data directory, then a run name will be "
-        "picked automatically.")
+def set_global_seed(config):
+    from safelife.random import set_rng
 
-    if args.ensure_gpu:
-        assert torch.cuda.is_available(), "CUDA support requested but not available!"
+    # Make sure the seed can be represented by floating point exactly.
+    # This is just because we want to pass it over the web, and javascript
+    # doesn't have 64 bit integers.
+    if config.get('seed') is None:
+        config['seed'] = np.random.randint(2**53)
+    seed = np.random.SeedSequence(config['seed'])
+    logger.info("SETTING GLOBAL SEED: %i", seed.entropy)
+    set_rng(np.random.default_rng(seed))
+    torch.manual_seed(seed.entropy & (2**31 - 1))
 
-    li.safety_dir = os.path.realpath(os.path.dirname(__file__))
-    sys.path.insert(1, li.safety_dir)  # ensure current directory is on the path
-    build_and_import_modules(li.safety_dir)
-
-    # Check to see if the data directory is already in use
-
-    if args.data_dir is not None:
-        li.data_dir = os.path.realpath(args.data_dir)
-        li.job_name = os.path.basename(li.data_dir)
-        if os.path.exists(li.data_dir) and args.run_type == 'train':
-            print("The directory '%s' already exists." % li.data_dir)
-            print("Would you like to overwrite the old data, append to it, or abort?")
-            response = 'overwrite' if li.job_name.startswith('tmp') else None
-            while response not in ('overwrite', 'append', 'abort'):
-                response = input("(overwrite / append / abort) > ")
-            if response == 'overwrite':
-                print("Overwriting old data.")
-                shutil.rmtree(li.data_dir)
-            elif response == 'abort':
-                print("Aborting.")
-                exit()
-    else:
-        li.data_dir = li.job_name = None
-
-    setup_config_and_wandb(args, li)
-
-    # tag any hyperparams from the commandline
-    if args.extra_params is not None:
-        config.add_hyperparams(args.extra_params)
-
-    if li.data_dir is not None:
-        os.makedirs(li.data_dir, exist_ok=True)
-    li.logger = logging_setup.setup_logging(
-        li.data_dir, debug=(config['run_type'] == 'inspect'))
-    li.logger.info("COMMAND ARGUMENTS: %s", ' '.join(sys.argv))
-    li.logger.info("TRAINING RUN: %s", li.job_name)
-    li.logger.info("ON HOST: %s", platform.node())
-
-    # Set the global seed
-
-    li.main_seed = np.random.SeedSequence(config['seed'])
-    li.logger.info("SETTING GLOBAL SEED: %i", li.main_seed.entropy)
-    set_rng(np.random.default_rng(li.main_seed))
-    torch.manual_seed(li.main_seed.entropy & (2**31 - 1))
     if config['deterministic']:
         # Note that this may slow down performance
         # See https://pytorch.org/docs/stable/notes/randomness.html#cudnn
         torch.backends.cudnn.deterministic = True
 
-    # Run tensorboard
 
-    if args.port and li.data_dir is not None:
-        li.tb_proc = subprocess.Popen([
+def launch_tensorboard(job_name, data_dir, port):
+    """
+    Launch tensorboard as a subprocess.
+
+    Note that this process must be killed before the script exits.
+    """
+    if port and data_dir is not None:
+        return subprocess.Popen([
             "tensorboard", "--logdir_spec",
-            li.job_name + ':' + li.data_dir, '--port', str(args.port)])
+            job_name + ':' + data_dir, '--port', str(port)])
     else:
-        li.tb_proc = None
-
-    return li
+        return None
 
 
-# Start training!
+def launch_training(config, data_dir):
+    from training import logging_setup
+    from training import models
+    from training.env_factory import build_environments
 
-def launch_training(args, launch_ingredients):
+    envs = build_environments(config, data_dir)
+    obs_shape = envs['training'][0].observation_space.shape
+
+    algo_args = {
+        'training_envs': envs['training'],
+        'testing_envs': envs.get('validation'),
+        'data_logger': logging_setup.setup_data_logger(data_dir, 'training'),
+    }
+
+    if config['algo'] == 'ppo':
+        from training.ppo import PPO as algo_cls
+        algo_args['model'] = models.SafeLifePolicyNetwork(obs_shape)
+    elif config['algo'] == 'dqn':
+        from training.dqn import DQN as algo_cls
+        algo_args['training_model'] = models.SafeLifeQNetwork(obs_shape)
+        algo_args['target_model'] = models.SafeLifeQNetwork(obs_shape)
+    elif config['algo'] == 'mppo':
+        from training.ppo import LSTM_PPO as algo_cls
+        algo_args['model'] = models.SafeLifeLSTMPolicyNetwork(obs_shape)
+    else:
+        logger.error("Unexpected algorithm type '%s'", config['algo'])
+        raise ValueError("unexpected algorithm type")
+
+    algo = algo_cls(**algo_args)
+
+    if config.get('_wandb') is not None:
+        # Before we start running things, save the config object back to wandb.
+        import wandb
+        config2 = config.copy()
+        config2.pop('_wandb', None)
+        wandb.config.update(config2, allow_val_change=True)
+
+    print("")
+    logger.info("Hyperparameters: %s", config)
+    config.check_for_unused_hyperparams()
+    print("")
+
+    if config['run_type'] == "train":
+        algo.train(int(config['steps']))
+        if 'benchmark' in envs:
+            # "Early stopping"... load the best agent from training for the benchmark run
+            algo.load_checkpoint("best-validation-agent.data")
+            algo.run_episodes(envs['benchmark'], num_episodes=1000)
+    elif config['run_type'] == "benchmark" and "benchmark" in envs:
+        algo.run_episodes(envs['benchmark'], num_episodes=1000)
+    elif config['run_type'] == "inspect":
+        from IPython import embed
+        print('')
+        embed()
+
+
+def cleanup(config, data_dir, tb_proc, shutdown):
+    from safelife.safelife_logger import summarize_run
+
+    if config.get('_wandb') is not None:
+        import wandb
+        wandb_run = wandb.run
+    else:
+        wandb_run = None
 
     try:
-        envs = build_environments(config, launch_ingredients.main_seed, launch_ingredients.data_dir)
-        obs_shape = envs['training'][0].observation_space.shape
-
-        algo_args = {
-            'training_envs': envs['training'],
-            'testing_envs': envs.get('testing'),
-            'data_logger': logging_setup.setup_data_logger(launch_ingredients.data_dir, 'training'),
-        }
-
-        if config['algo'] == 'ppo':
-            from training.ppo import PPO as algo_cls
-            algo_args['model'] = models.SafeLifePolicyNetwork(obs_shape)
-        elif config['algo'] == 'dqn':
-            from training.dqn import DQN as algo_cls
-            algo_args['training_model'] = models.SafeLifeQNetwork(obs_shape)
-            algo_args['target_model'] = models.SafeLifeQNetwork(obs_shape)
-        elif config['algo'] == 'mppo':
-            from training.ppo import LSTM_PPO as algo_cls
-            algo_args['model'] = models.SafeLifeLSTMPolicyNetwork(obs_shape)
-        else:
-            logging.error("Unexpected algorithm type '%s'", config['algo'])
-            raise ValueError("unexpected algorithm type")
-
-        algo = algo_cls(**algo_args)
-
-        if args.wandb:
-            # Before we start running things, save the config object back to wandb.
-            config2 = config.copy()
-            config2.pop('_wandb', None)
-            wandb.config.update(config2)
-
-        print("")
-        logging.info("Hyperparameters: %s", config)
-        config.check_for_unused_hyperparams()
-        print("")
-
-        if config['run_type'] == "train":
-            algo.train(int(config['steps']))
-            if 'benchmark' in envs:
-                algo.run_episodes(envs['benchmark'], num_episodes=1000)
-        elif config['run_type'] == "benchmark" and "benchmark" in envs:
-            algo.run_episodes(envs['benchmark'], num_episodes=1000)
-        elif config['run_type'] == "inspect":
-            from IPython import embed
-            print('')
-            embed()
-
-    except KeyboardInterrupt:
-        logging.critical("Keyboard Interrupt. Ending early.\n")
-    except Exception:
-        logging.exception("Ran into an unexpected error. Aborting training.\n")
-    finally:
         if config['run_type'] in ['train', 'benchmark']:
-            summarize_run(launch_ingredients.data_dir, wandb and wandb.run)
-        if args.wandb:
-            wandb.run.finish()
-        if launch_ingredients.tb_proc is not None:
-            launch_ingredients.tb_proc.kill()
-        if args.shutdown:
-            # Shutdown in 3 minutes.
-            # Enough time to recover if it crashed at the start.
-            subprocess.run("sudo shutdown +3", shell=True)
-            logging.critical("Shutdown commenced, but keeping ssh available...")
-            subprocess.run("sudo rm -f /run/nologin", shell=True)
+            summarize_run(data_dir, wandb_run)
+    except:  # noqa
+        import traceback
+        logger.warn("Exception during summarization:\n", traceback.format_exc())
+
+    if wandb_run is not None:
+        wandb_run.finish()
+
+    if tb_proc is not None:
+        tb_proc.kill()
+
+    if shutdown:
+        # Shutdown in 3 minutes.
+        # Enough time to recover if it crashed at the start.
+        subprocess.run("sudo shutdown +3", shell=True)
+        logger.critical("Shutdown commenced, but keeping ssh available...")
+        subprocess.run("sudo rm -f /run/nologin", shell=True)
 
 
-def main(argv=sys.argv):
-    # There are three main pieces of state here:
-    #
-    #   args               ->  as seen by the commandline
-    #   launch_ingredients ->  derived from args in preparation for training
-    #                          (eg, directories that definitely exist)
-    #   cofig (global)     ->  args prepared for interaction with wandb;
-    #                          wandb can add settings (eg for sweeps) and
-    #                          variables of local-only relevance are removed
-    args = parse_args(argv)
-    launch_ingredients = setup_from_args(args)
-    launch_training(args, launch_ingredients)
+def main():
+    # We'll be importing safelife modules, so we need to make
+    # sure that the safelife package is on the import path
+    sys.path.insert(1, safety_dir)
+
+    args = parse_args()
+    build_c_extensions()
+    config, job_name, data_dir = setup_config_and_wandb(args)
+    set_global_seed(config)
+    tb_proc = launch_tensorboard(job_name, data_dir, args.port)
+
+    try:
+        launch_training(config, data_dir)
+    except KeyboardInterrupt:
+        logger.critical("Keyboard Interrupt. Ending early.\n")
+    except Exception:
+        logger.exception("Ran into an unexpected error. Aborting training.\n")
+    finally:
+        cleanup(config, data_dir, tb_proc, args.shutdown)
 
 
 if __name__ == "__main__":

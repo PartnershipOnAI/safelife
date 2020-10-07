@@ -262,7 +262,7 @@ class PPO(BaseAlgo):
                 }, num_steps, 'ppo')
 
             if self.testing_envs and num_steps >= next_test:
-                self.run_episodes(self.testing_envs)
+                self.run_episodes(self.testing_envs, validation=True)
 
         self.save_checkpoint()
 

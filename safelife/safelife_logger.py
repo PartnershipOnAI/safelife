@@ -100,7 +100,6 @@ class BaseLogger(object):
         self.cumulative_stats = {
             'training_episodes': 0,
             'training_steps': 0,
-            'testing_episodes': 0,
         }
 
     def log_episode(self, game, info={}, history=None, training=True):
@@ -120,7 +119,7 @@ class SafeLifeLogger(BaseLogger):
         Directory to save log data.
     episode_type : str
         Label for logged episodes. Intelligent defaults for other attributes
-        get set for values "training", "testing", and "benchmark".
+        get set for values "training", "validation", and "benchmark".
     cumulative_stats : dict
         Cumulative statistics for all runs. Includes ``[episode_type]_steps``
         and ``[episode_type]_episodes``. Note that this dictionary is shared
@@ -165,6 +164,7 @@ class SafeLifeLogger(BaseLogger):
     video_name = None
     video_interval = 1
     summary_polyak = 1.0
+    best_validation_performance = - np.inf
 
     wandb = None
     summary_writer = 'auto'
@@ -185,12 +185,12 @@ class SafeLifeLogger(BaseLogger):
                 """[1:-1]),
             'summary_polyak': 0.99,
         },
-        'testing': {
-            'episode_logname': "testing-log.json",
-            'video_name': "test-s{training_steps}-{level_name}",
+        'validation': {
+            'episode_logname': "validation-log.json",
+            'video_name': "validation-s{training_steps}-{level_name}",
             'video_interval': 1,
             'episode_msg': textwrap.dedent("""
-                Testing episode completed.
+                Validation episode completed.
                     level name: {level_name}
                     clock: {time}
                     length: {length}
@@ -430,6 +430,17 @@ class SafeLifeLogger(BaseLogger):
         if self.wandb:
             self.wandb.log(data)
 
+    def check_for_best_agent(self, criterion="validation/score"):
+        "When we do validation runs, keep the weights for the best agent we've seen"
+        assert self.episode_type == "validation", "Looking for best perf on non-validation levels"
+        value = self.summary_stats[criterion]
+        if value > self.best_validation_performance:
+            self.best_validation_performance = value
+            return value
+        else:
+            return False
+
+
 
 class RemoteSafeLifeLogger(BaseLogger):
     """
@@ -485,7 +496,7 @@ class RemoteSafeLifeLogger(BaseLogger):
             "This class is currently out of date. "
             "If you need to use it, please post an issue on GitHub and we'll "
             "try to get it fixed soon. Basically, it just needs a fixed "
-            "interface with cumulative_states.")
+            "interface with cumulative_stats.")
         if ray is None:
             raise ImportError("No module named 'ray'.")
         logger = SafeLifeLogger(logdir, **kwargs)
@@ -698,7 +709,7 @@ def combined_score(data, side_effect_weights=None):
         }
     if side_effect_weights:
         total = sum([
-            weight * side_effects.get(key, 0)
+            weight * np.array(side_effects.get(key, 0))
             for key, weight in side_effect_weights.items()
         ], np.zeros(2))
     else:
@@ -719,6 +730,8 @@ def combined_score(data, side_effect_weights=None):
 
 def summarize_run_file(logfile, wandb_run=None, artifact=None, se_weights=None):
     data = load_safelife_log(logfile)
+    if not data:
+        return None
     bare_name = logfile.rpartition('.')[0]
     file_name = os.path.basename(bare_name)
     npz_file = bare_name + '.npz'
@@ -768,7 +781,7 @@ def summarize_run(data_dir, wandb_run=None):
     else:
         artifact = None
 
-    for name in ['training-log.json', 'testing-log.json', 'benchmark-data.json']:
+    for name in ['training-log.json', 'validation-log.json', 'benchmark-data.json']:
         logfile = os.path.join(data_dir, name)
         if os.path.exists(logfile):
             summarize_run_file(logfile, wandb_run, artifact)
