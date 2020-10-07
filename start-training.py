@@ -271,7 +271,7 @@ def launch_training(config, data_dir):
 
     print("")
     logger.info("Hyperparameters: %s", config)
-    config.check_for_unused_hyperparams()
+    #config.check_for_unused_hyperparams()
     print("")
 
     if config['run_type'] == "train":

@@ -318,6 +318,8 @@ class BaseAlgo(object):
                 else:
                     new_envs.append(env)
             envs = new_envs
+            if num_completed == 1:
+                config.check_for_unused_hyperparams()
 
         if sl_logger is not None:
             sl_logger.log_summary()
