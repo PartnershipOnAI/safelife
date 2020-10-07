@@ -91,6 +91,7 @@ class GameLoop(object):
     gen_params = None
     print_only = False
     relative_controls = True
+    can_edit = True
     recording_directory = "plays"  # in the current working directory
 
     side_effect_weights = {
@@ -312,7 +313,9 @@ class GameLoop(object):
             else:
                 state.message = "Nothing to record."
         elif key in TOGGLE_EDIT:
-            if not state.edit_mode:
+            if not self.can_edit:
+                state.message = "edit mode disabled"
+            elif not state.edit_mode:
                 state.edit_mode = "BOARD"
                 if state.game and len(state.game.agent_locs) > 0:
                     state.game.edit_loc = tuple(state.game.agent_locs[0])
@@ -359,9 +362,16 @@ class GameLoop(object):
                     is_repeatable_key = True
                 else:
                     self.record_frame()
+            elif COMMAND_KEYS.get(key) in ("NEXT LEVEL", "PREV LEVEL"):
+                command = COMMAND_KEYS[key]
+                state.last_command = command
+                if not self.can_edit:
+                    state.message = "Level skipping is disabled."
+                else:
+                    state.total_points += game.execute_action(command)
             elif not state.edit_mode and key in COMMAND_KEYS:
                 command = COMMAND_KEYS[key]
-                needs_board_advance = command not in ("NEXT LEVEL", "PREV LEVEL")
+                needs_board_advance = True
                 if command in ("LEFT", "RIGHT", "UP", "DOWN"):
                     command_orientation = ORIENTATION[command]
                     if self.relative_controls and command in ("LEFT", "RIGHT"):
@@ -846,9 +856,12 @@ def _make_cmd_args(subparsers):
         parser.add_argument('load_from',
             nargs='*', help="Load levels from file(s)."
             " Note that files can either be archived SafeLife board (.npz)"
-            " or they can be parameters for procedural generation (.json)."
+            " or they can be parameters for procedural generation (.yaml)."
             " Files will be searched for in the 'levels'"
             " folder if not found in the current working directory."
+            " Inputs of the form 'benchmark-[level]' will be treated specially,"
+            " and will look for the associated benchmark file with the 'human'"
+            " tag appended to it."
             " If no files are provided, a new board will be randomly generated"
             " with the default parameters.")
     for parser in (new_parser,):
@@ -893,11 +906,11 @@ def _run_cmd_args(args):
     else:
         env_type = None
         if len(args.load_from) == 1:
-            # Treat inputs of the form "benchmark/levelname" specially.
-            m = re.match(r'benchmark/([\w-]+)$', args.load_from[0])
+            # Treat inputs of the form "benchmark-levelname" specially.
+            m = re.match(r'benchmark-([\w-]+)$', args.load_from[0])
             if m is not None:
                 env_type = m.group(1) + '-human'
-                args.load_from = ['benchmarks/v1.2/' + env_type]
+                args.load_from = [os.path.join('benchmarks', 'v1.2', env_type)]
             else:
                 env_type = args.load_from[0]
         iterator = SafeLifeLevelIterator(*args.load_from, seed=seed.spawn(1)[0])
@@ -917,6 +930,7 @@ def _run_cmd_args(args):
             wandb.init(config={'env_type': env_type, 'human_play': True})
             wandb.run.summary['env_type'] = env_type
             main_loop.recording_directory = wandb.run.dir
+            main_loop.can_edit = False
     with set_rng(np.random.default_rng(seed)):
         if args.text_mode:
             main_loop.run_text()
