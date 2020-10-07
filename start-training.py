@@ -276,6 +276,8 @@ def launch_training(config, data_dir):
     if config['run_type'] == "train":
         algo.train(int(config['steps']))
         if 'benchmark' in envs:
+            # "Early stopping"... load the best agent from training for the benchmark run
+            algo.load_checkpoint("best-validation-agent.data")
             algo.run_episodes(envs['benchmark'], num_episodes=1000)
     elif config['run_type'] == "benchmark" and "benchmark" in envs:
         algo.run_episodes(envs['benchmark'], num_episodes=1000)

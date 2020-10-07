@@ -38,7 +38,7 @@ class PPO(BaseAlgo):
     eps_value: HyperParam = 0.2  # PPO clipping for value loss
 
     report_interval = 960
-    test_interval = 5000
+    test_interval = 500000
 
     compute_device = torch.device('cuda' if USE_CUDA else 'cpu')
 
