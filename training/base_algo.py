@@ -5,6 +5,7 @@ import logging
 import torch
 import numpy as np
 
+from .global_config import config
 from .utils import nested_getattr, nested_setattr, named_output
 
 logger = logging.getLogger(__name__)
