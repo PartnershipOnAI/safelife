@@ -875,7 +875,7 @@ def _make_cmd_args(subparsers):
             " up/down move the agent forwards/backwards. In absolute controls,"
             " arrow keys either make the agent face or move in the direction"
             " indicated.")
-        parser.add_argument('--centered', action='store_true',
+        parser.add_argument('-c', '--centered', action='store_true',
             help="If set, the board is always centered on the agent.")
         parser.add_argument('--view_size', type=int, default=None,
             help="View size. Implies a centered view.", metavar="SIZE")

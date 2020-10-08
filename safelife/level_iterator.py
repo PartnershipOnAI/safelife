@@ -261,7 +261,7 @@ class SafeLifeLevelIterator(object):
         if (self.distinct_levels is not None
                 and len(self.level_cache) < self.distinct_levels):
             if data[1] == "procgen":
-                data = (data[0], "static", result.serialize())
+                data = (data[0], "static", result.serialize(), result.seed)
             self.level_cache.append(data)
         return result
 
