@@ -45,6 +45,12 @@ class BaseAlgo(object):
     _last_checkpoint = -1
     _checkpoint_directory = None
 
+    default_agent_state = None  # Can be overridden for stateful agents
+
+    @property
+    def stateful(self):
+        return self.default_agent_state is not None
+
     @property
     def checkpoint_directory(self):
         return self._checkpoint_directory or (
@@ -173,6 +179,8 @@ class BaseAlgo(object):
                 done = env.last_done
             else:
                 obs = env.reset()
+                if self.stateful:
+                    env.agent_state = self.default_agent_state.to(self.compute_device)
                 if getattr(env, 'single_agent', True):
                     obs = np.asanyarray(obs)[np.newaxis]
                 env.last_done = done = np.tile(False, len(obs))
@@ -233,6 +241,8 @@ class BaseAlgo(object):
 
             if np.all(done):
                 obs = env.reset()
+                if self.stateful:
+                    env.agent_state = self.default_agent_state.to(self.compute_device)
                 if getattr(env, 'single_agent', True):
                     obs = np.asanyarray(obs)[np.newaxis]
                 done = np.tile(False, len(obs))
@@ -289,7 +299,8 @@ class BaseAlgo(object):
         Parameters
         ----------
         envs : list
-            List of environments to run in parallel.
+            List of environments to run in parallel. These pull new episodes
+            in as needed.
         num_episodes : int
             Total number of episodes to run. Defaults to the same as number
             of environments.
@@ -312,7 +323,7 @@ class BaseAlgo(object):
             num_in_progress = len(envs)
             new_envs = []
             for env, done in zip(envs, data.done):
-                done = np.all(done)
+                done = np.all(done)  # for all agents in a [multiagent] env
                 if done:
                     num_completed += 1
                 if done and num_in_progress + num_completed > num_episodes:
