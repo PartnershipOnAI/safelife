@@ -278,6 +278,7 @@ class BaseAlgo(object):
         # return obs, actions, rewards, done, agent_ids
         raise NotImplementedError
 
+    @torch.no_grad()
     def run_episodes(self, envs, num_episodes=None, validation=False):
         """
         Run each environment to completion.
