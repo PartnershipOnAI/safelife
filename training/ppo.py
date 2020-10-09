@@ -47,8 +47,6 @@ class PPO(BaseAlgo):
     report_interval = 960
     test_interval = 500000
 
-    default_state = None  # PPO is a stateless agent, but subclasses can change this
-
     compute_device = get_compute_device()
 
     training_envs = None
@@ -59,7 +57,6 @@ class PPO(BaseAlgo):
     def __init__(self, model, **kwargs):
         load_kwargs(self, kwargs)
         assert self.training_envs is not None
-        self.stateful = self.default_state is not None
 
         self.model = model.to(self.compute_device)
         self.optimizer = optim.Adam(
@@ -70,15 +67,8 @@ class PPO(BaseAlgo):
     @named_output('obs actions rewards done next_obs agent_ids policies values agent_state')
     def take_one_step(self, envs):
         obs, agent_ids = self.obs_for_envs(envs)
-        if self.stateful:
-            state = []
-            for e in envs:
-                if not hasattr(e, "agent_state"):
-                    e.agent_state = self.default_state.to(self.compute_device)
-                state.append(e.agent_state)
-            state = torch.stack(state)
-        else:
-            state = None
+
+        state = torch.stack([e.agent_state for e in envs]) if self.stateful else None
 
         tensor_obs = self.tensor(obs, torch.float32)
         values, policies, new_state = self.model(tensor_obs, state)
@@ -272,7 +262,7 @@ class LSTM_PPO(PPO):
 
     def __init__(self, *args, **kwargs):
         # ((hidden state, cell state), time, activations) <--- XXX need better init?
-        self.default_state = torch.zeros(2, 1, 576)
+        self.default_agent_state = torch.zeros(2, 1, 576)
         super().__init__(*args, **kwargs)
 
     def train_batch(self, batch):
