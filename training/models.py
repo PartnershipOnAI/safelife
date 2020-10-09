@@ -3,6 +3,8 @@ import numpy as np
 from torch import nn
 from torch.nn import functional as F
 
+from .global_config import HyperParam, update_hyperparams
+
 
 def safelife_cnn(input_shape):
     """
@@ -74,7 +76,12 @@ class SafeLifeQNetwork(nn.Module):
         return qval
 
 
+@update_hyperparams
 class SafeLifePolicyNetwork(nn.Module):
+
+    dense_depth: HyperParam = 1
+    dense_width: HyperParam = 512
+
     def __init__(self, input_shape):
         super().__init__()
 
@@ -82,18 +89,20 @@ class SafeLifePolicyNetwork(nn.Module):
         num_features = np.product(cnn_out_shape)
         num_actions = 9
 
-        self.dense = nn.Sequential(
-            nn.Linear(num_features, 512),
-            nn.ReLU(),
-        )
-        self.logits = nn.Linear(512, num_actions)
-        self.value_func = nn.Linear(512, 1)
+        dense = [nn.Sequential(nn.Linear(num_features, self.dense_width), nn.ReLU())]
+        for n in range(self.dense_depth - 1):
+            dense.append(nn.Sequential(nn.Linear(self.dense_width, self.dense_width), nn.ReLU()))
+        self.dense = nn.Sequential(*dense)
+
+        self.logits = nn.Linear(self.dense_width, num_actions)
+        self.value_func = nn.Linear(self.dense_width, 1)
 
     def forward(self, obs):
         # Switch observation to (c, w, h) instead of (h, w, c)
         obs = obs.transpose(-1, -3)
         x = self.cnn(obs).flatten(start_dim=1)
-        x = self.dense(x)
+        for layer in self.dense:
+            x = layer(x)
         value = self.value_func(x)[...,0]
         policy = F.softmax(self.logits(x), dim=-1)
         return value, policy

@@ -1,5 +1,7 @@
 *.pyc
 __pycache__/
+data/
+venv/
 dist/
 .DS_Store
 *.egg-info
@@ -7,3 +9,6 @@ build
 run-info.txt
 plays
 *.so
+.*.swp
+wandb/
+./tmp/

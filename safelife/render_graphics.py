@@ -68,9 +68,13 @@ background_colors = np.array([
 
 
 def render_board(board, goals, orientation, edit_loc=None, edit_color=0):
-    img = speedups._render_board(board, goals, orientation, sprite_sheet)
+    if orientation is not None:
+        orientation = np.array(orientation, dtype=np.uint16)
+        board = board & ~(CellTypes.orientation_mask)
+        board += orientation[...,None,None] << CellTypes.orientation_bit
+    img = speedups._render_board(board, goals, sprite_sheet)
     if edit_loc is not None:
-        x, y = edit_loc
+        y, x = edit_loc
         edit_cell = img[...,
             y*SPRITE_SIZE:(y+1)*SPRITE_SIZE,
             x*SPRITE_SIZE:(x+1)*SPRITE_SIZE, :]
@@ -103,13 +107,15 @@ def render_game(game, view_size=None, edit_mode=None):
     if view_size is not None:
         if edit_mode:
             center = game.edit_loc
-            edit_loc = view_size[1] // 2, view_size[0] // 2
+            edit_loc = view_size[0] // 2, view_size[1] // 2
         else:
-            center = game.agent_loc
+            if len(game.agent_locs) > 0:
+                center = game.agent_locs[0]
+            else:
+                center = (0, 0)
             edit_loc = None
-        center = game.edit_loc if edit_mode else game.agent_loc
-        board = recenter_view(game.board, view_size, center[::-1], game.exit_locs)
-        goals = recenter_view(game.goals, view_size, center[::-1])
+        board = recenter_view(game.board, view_size, center, game.exit_locs)
+        goals = recenter_view(game.goals, view_size, center)
     else:
         board = game.board
         goals = game.goals
@@ -118,8 +124,8 @@ def render_game(game, view_size=None, edit_mode=None):
         (game.edit_color & CellTypes.rainbow_color) >> 9] * 255
     if edit_mode == "GOALS":
         # Render goals instead. Swap board and goals.
-        board, goals = goals, board
-    return render_board(board, goals, game.orientation, edit_loc, edit_color)
+        board = goals
+    return render_board(board, goals, None, edit_loc, edit_color)
 
 
 def _save_movie_data(fname, data, fps, fmt):
@@ -156,7 +162,7 @@ def render_file(fname, fps=30, data=None, movie_format="gif"):
         return
 
     rgb_array = render_board(
-        data['board'], data['goals'], data['orientation'][..., None, None])
+        data['board'], data['goals'], data.get('orientation'))
     if rgb_array.ndim == 3:
         imageio.imwrite(bare_fname+'.png', rgb_array)
     elif rgb_array.ndim == 4:

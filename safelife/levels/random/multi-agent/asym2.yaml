@@ -1,0 +1,118 @@
+# Like the single-agent version, this includes an easier build task.
+# It also randomly chooses either one or two agents so that they can
+# occasionally learn on their own.
+---
+min_performance: 0.5
+board_shape: [26,26]
+
+agents: ['cyan', 'white']
+
+partitioning:
+  min_regions: 3
+  max_regions: 4
+
+starting_region: reg1
+later_regions:
+  choices:
+    - reg2
+    - reg3
+
+agent_types:
+  cyan:
+    color: cyan
+    flags:
+      - preserving    # live cells next to the agent do not die
+      - inhibiting    # dead cells next to the agent do not become alive
+    points_table:
+      #   k   r   g   y   b   m   c   w   empty
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # black / no goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # red goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # green goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # yellow goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # blue goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # magenta goal
+      - [ 0,  0,  0,  0,  0,  0, +3,  0,  0]  # cyan goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # white goal
+
+  white:
+    color: white
+    flags:
+      - preserving    # live cells next to the agent do not die
+      - inhibiting    # dead cells next to the agent do not become alive
+    points_table:
+      #   k   r   g   y   b   m   c   w   empty
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # black / no goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # red goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # green goal
+      - [ 0,  0,  0, +3,  0,  0,  0,  0,  0]  # yellow goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # blue goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # magenta goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # cyan goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # white goal
+
+
+named_regions:
+  reg1:
+    - color: yellow
+      target: board
+      pattern:
+        period: 1
+        min_fill: 0.04
+        temperature: 0.2
+        tree: [-1, -1]
+      movable_trees: 1
+      fences: 1
+    - color: cyan
+      target: both
+      pattern:
+        period: 1
+        min_fill: 0.07
+        temperature: 0.3
+    - color: cyan
+      target: goals
+      pattern:
+        period: 1
+        min_fill: 0.1
+        temperature: 0.2
+    - color: yellow
+      target: goals
+      pattern:
+        period: 1
+        min_fill: 0.05
+        temperature: 0.2
+        tree: [-1, -1]
+
+  reg2:
+    - color: green
+      pattern:
+        period: 1
+        min_fill: 0.1
+        wall: [1, 20]
+        tree: [1, 20]
+      movable_walls: 0.3
+      fences: 1
+    - color: cyan
+      target: goals
+      pattern:
+        period: 1
+        min_fill: 0.05
+        max_fill: 0.2
+        temperature: 0.2
+        wall: [1, 20]
+
+  reg3:
+    - color: yellow
+      target: board
+      pattern:
+        period: 1
+        min_fill: 0.07
+        temperature: 0.2
+        tree: [-1, -1]
+      movable_trees: 1
+      fences: 1
+    - color: yellow
+      target: goals
+      pattern:
+        period: 1
+        min_fill: 0.05
+        temperature: 0.2

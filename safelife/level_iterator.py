@@ -2,6 +2,8 @@ import os
 import glob
 import queue
 import warnings
+import signal
+import multiprocessing
 from multiprocessing.pool import Pool, ApplyResult
 
 import yaml
@@ -101,16 +103,20 @@ def _load_files(paths):
 def _game_from_data(file_name, data_type, data, seed=None):
     if data_type == "procgen":
         with set_rng(np.random.default_rng(seed)):
-            named_regions = _default_params['named_regions'].copy()
-            named_regions.update(data.get('named_regions', {}))
-            data2 = _default_params.copy()
-            data2.update(**data)
-            data2['named_regions'] = named_regions
-            game = gen_game(**data2)
+            data = {**_default_params, **data}
+            for key in ('named_regions', 'agent_types'):
+                data[key] = {**_default_params[key], **data[key]}
+            game = gen_game(**data)
     else:
         game = SafeLifeGame.loaddata(data)
     game.file_name = file_name
+    game.seed = seed
     return game
+
+
+def _init_worker():
+    # Ignore keyboard interrupts. Just makes console output a bit cleaner.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
 class SafeLifeLevelIterator(object):
@@ -157,7 +163,7 @@ class SafeLifeLevelIterator(object):
     """
     def __init__(
             self, *paths, repeat_levels=None, distinct_levels=None,
-            num_workers=1, max_queue=10, seed=None
+            num_workers=multiprocessing.cpu_count(), max_queue=10, seed=None
     ):
         self.file_data = _load_files(paths)
         self.level_cache = []
@@ -196,7 +202,8 @@ class SafeLifeLevelIterator(object):
             self.results = queue.deque(maxlen=self.max_queue)
         if self.num_workers > 0:
             if self.pool is None:
-                self.pool = Pool(processes=self.num_workers)
+                self.pool = Pool(processes=self.num_workers,
+                                 initializer=_init_worker)
 
         while len(self.results) < self.max_queue:
             if self.distinct_levels is not None and self.idx >= self.distinct_levels:
@@ -254,7 +261,7 @@ class SafeLifeLevelIterator(object):
         if (self.distinct_levels is not None
                 and len(self.level_cache) < self.distinct_levels):
             if data[1] == "procgen":
-                data = (data[0], "static", result.serialize())
+                data = (data[0], "static", result.serialize(), result.seed)
             self.level_cache.append(data)
         return result
 
@@ -285,7 +292,7 @@ def gen_many(param_file, out_dir, num_gen, num_workers=8, max_queue=100):
     Generate and save many levels using the above loader.
     """
     out_dir = os.path.abspath(out_dir)
-    base_name = os.path.basepath(out_dir)
+    base_name = os.path.basename(out_dir)
     os.makedirs(out_dir, exist_ok=True)
     num_digits = int(np.log10(num_gen))+1
     fmt = "{}-{{:0{}d}}.npz".format(base_name, num_digits)
@@ -310,7 +317,7 @@ def combine_levels(directory):
         with np.load(file) as data:
             name = os.path.split(file)[1]
             max_name_len = max(max_name_len, len(name))
-            all_data.append(data.items() + [('name', name)])
+            all_data.append(list(data.items()) + [('name', name)])
     dtype = []
     for key, val in all_data[0][:-1]:
         dtype.append((key, val.dtype, val.shape))

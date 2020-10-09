@@ -14,11 +14,17 @@ In order to actually run any training, you will need to provision virtual machin
 
 Make sure you `ssh` into the instance (`gcloud compute ssh $INSTANCE`) and install the nvidia drivers. You should be prompted to install them when logging in.
 
+The `gcloud/start-remote-job` script will use a virtual environment in `~/safelife-venv` if it
+exists, or try to create it if it doesn't.  You can replace that virtual environment with one with
+other parameters and state if necessary to resolve python and torch / CUDA issues on your system if
+they arise; the `gcloud/make-venv.sh` script is the place to edit if you need to do this across
+many cloud isntances.
+
 ## Starting new jobs
 
 Jobs run on gcloud instances, so first make sure that your instance is running. Use `gcloud compute instances list` to view the status of all of your instances, and `gcloud compute instances start $INSTANCE` to start a particular instance. Once the instance is up and running you can start a job using e.g.
 
-    gcloud/start-remote-job $INSTANCE $JOB_NAME --port=6006
+    gcloud/start-remote-job $INSTANCE $JOB_NAME --wandb
 
 That will copy over the benchmarks directory into the appropriately named folder and set up port forwarding for tensorboard onto the specified local port. It will then run `./start-training $JOB_NAME` on the remote instance inside of a `tmux` session. To (gracefully) close the connection, hit `ctrl-b, d`.
 

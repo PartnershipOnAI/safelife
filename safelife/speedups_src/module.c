@@ -21,8 +21,10 @@ static PyObject *advance_board_py(PyObject *self, PyObject *args) {
     PyObject *board_obj;
     PyArrayObject *b1, *b2;
     float spawn_prob = 0.3;
+    int n_step = 1;
 
-    if (!PyArg_ParseTuple(args, "O|f", &board_obj, &spawn_prob)) return NULL;
+    if (!PyArg_ParseTuple(args, "O|fi", &board_obj, &spawn_prob, &n_step))
+        return NULL;
     board_obj = PyArray_FROM_OTF(
         board_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
     if (!board_obj)  return NULL;
@@ -34,16 +36,169 @@ static PyObject *advance_board_py(PyObject *self, PyObject *args) {
     b2 = (PyArrayObject *)PyArray_FROM_OTF(
         board_obj, NPY_UINT16, NPY_ARRAY_ENSURECOPY);
     Py_BEGIN_ALLOW_THREADS
-    advance_board(
+    advance_board_nstep(
         (uint16_t *)PyArray_DATA(b1),
         (uint16_t *)PyArray_DATA(b2),
         PyArray_DIM(b1, 0),
         PyArray_DIM(b1, 1),
-        spawn_prob
+        spawn_prob, n_step
     );
     Py_END_ALLOW_THREADS
     Py_DECREF(board_obj);
     return (PyObject *)b2;
+}
+
+
+static PyObject *life_occupancy_py(PyObject *self, PyObject *args) {
+    PyObject *board_obj;
+    PyArrayObject *b1, *counts;
+    float spawn_prob = 0.3;
+    int n_step = 1000;
+
+    if (!PyArg_ParseTuple(args, "O|fi", &board_obj, &spawn_prob, &n_step))
+        return NULL;
+    board_obj = PyArray_FROM_OTF(
+        board_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
+    if (!board_obj)  return NULL;
+    b1 = (PyArrayObject *)board_obj;
+    if (PyArray_NDIM(b1) != 2 || PyArray_SIZE(b1) == 0) {
+        Py_DECREF(board_obj);
+        return NULL;
+    }
+    npy_intp count_dims[3] = {PyArray_DIMS(b1)[0], PyArray_DIMS(b1)[1], 8};
+    counts = (PyArrayObject *)PyArray_ZEROS(3, count_dims, NPY_INT32, 0);
+    Py_BEGIN_ALLOW_THREADS
+    life_occupancy(
+        (uint16_t *)PyArray_DATA(b1),
+        (int32_t *)PyArray_DATA(counts),
+        PyArray_DIM(b1, 0),
+        PyArray_DIM(b1, 1),
+        spawn_prob, n_step
+    );
+    Py_END_ALLOW_THREADS
+    Py_DECREF(board_obj);
+    return (PyObject *)counts;
+}
+
+
+static char alive_counts_doc[] =
+    "alive_counts(board, goals)\n--\n\n"
+    "Number of alive cells for each foreground/background color combination.\n"
+    "\n"
+    "Parameters\n"
+    "----------\n"
+    "board : ndarray\n"
+    "goals : ndarray\n"
+    "\n"
+    "Returns\n"
+    "-------\n"
+    "counts : ndarray of shape (8,8)\n"
+    "    Rows index the background color, columns the foreground color.\n";
+
+
+static PyObject *alive_counts_py(PyObject *self, PyObject *args) {
+    PyObject *board_obj, *goals_obj;
+    PyArrayObject *board, *goals, *out;
+
+    if (!PyArg_ParseTuple(args, "OO", &board_obj, &goals_obj)) return NULL;
+
+    board = (PyArrayObject *)PyArray_FROM_OTF(
+        board_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
+    goals = (PyArrayObject *)PyArray_FROM_OTF(
+        goals_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
+    const npy_intp out_dims[2] = {8,9};
+    out = (PyArrayObject *)PyArray_ZEROS(2, out_dims, NPY_INT64, 0);
+
+    if (PyArray_SIZE(board) != PyArray_SIZE(goals)) {
+        PY_VAL_ERROR("Board and goals must have same size.");
+    }
+
+    alive_counts(
+        (uint16_t *)PyArray_DATA(board),
+        (uint16_t *)PyArray_DATA(goals),
+        PyArray_SIZE(board),
+        (int64_t *)PyArray_DATA(out)
+    );
+
+    Py_DECREF((PyObject *)board);
+    Py_DECREF((PyObject *)goals);
+    return (PyObject *)out;
+
+    error:
+    Py_XDECREF((PyObject *)board);
+    Py_XDECREF((PyObject *)goals);
+    Py_XDECREF((PyObject *)out);
+    return NULL;
+}
+
+
+static char execute_actions_doc[] =
+    "execute_actions(board, locations, actions)\n--\n\n"
+    "Perform an action for each agent.\n"
+    "\n"
+    "Parameters\n"
+    "----------\n"
+    "board : ndarray\n"
+    "locations : ndarray\n"
+    "    Location of each agent on the board. Shape (n_agents, 2).\n"
+    "    Coordinates are x,y (column, row).\n"
+    "actions : ndarray\n"
+    "    One-dimensional, values 0-8.\n"
+    "    0 = no action, 1-4 = move, 5-8 = toggle."
+    "\n"
+    "Returns\n"
+    "-------\n"
+    "counts : ndarray of shape (8,8)\n"
+    "    Rows index the background color, columns the foreground color.\n";
+
+
+static PyObject *execute_actions_py(PyObject *self, PyObject *args) {
+    PyObject *board_obj, *locations_obj, *actions_obj;
+    PyArrayObject *board, *locations, *actions;
+    int height, width, n_agents, n_actions;
+
+    if (!PyArg_ParseTuple(args, "OOO", &board_obj, &locations_obj, &actions_obj))
+        return NULL;
+
+    board = (PyArrayObject *)PyArray_FROM_OTF(
+        board_obj, NPY_UINT16, NPY_ARRAY_INOUT_ARRAY);
+    locations = (PyArrayObject *)PyArray_FROM_OTF(
+        locations_obj, NPY_INT64, NPY_ARRAY_INOUT_ARRAY);
+    actions = (PyArrayObject *)PyArray_FROM_OTF(
+        actions_obj, NPY_INT64, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
+
+    if (PyArray_NDIM(board) != 2)
+        PY_VAL_ERROR("Board should be 2-dimensional.");
+    height = PyArray_DIM(board, 0);
+    width = PyArray_DIM(board, 1);
+    if (height < 3 || width < 3)
+        PY_VAL_ERROR("Board must be at least 3x3.");
+    n_agents = PyArray_SIZE(locations) / 2;
+    n_actions = PyArray_SIZE(actions);
+    if (n_actions != n_agents && n_actions != 1)
+        PY_VAL_ERROR("Locations should be shape (n_agent, 2).");
+
+    execute_actions(
+        (uint16_t *)PyArray_DATA(board), width, height,
+        (int64_t *)PyArray_DATA(locations),
+        (int64_t *)PyArray_DATA(actions),
+        n_agents, (n_actions == n_agents) ? 1 : 0
+    );
+
+    PyArray_ResolveWritebackIfCopy(board);
+    PyArray_ResolveWritebackIfCopy(locations);
+
+    Py_DECREF((PyObject *)board);
+    Py_DECREF((PyObject *)locations);
+    Py_DECREF((PyObject *)actions);
+    Py_INCREF(Py_None);
+    return Py_None;
+
+    error:
+    Py_XDECREF((PyObject *)board);
+    Py_XDECREF((PyObject *)locations);
+    Py_XDECREF((PyObject *)actions);
+    return NULL;
 }
 
 
@@ -219,7 +374,7 @@ static PyObject *gen_pattern_py(PyObject *self, PyObject *args, PyObject *kw) {
     for (int n = 1; n < board_shape.depth; n++) {
         advance_board(
             layers + (n-1)*layer_size, layers + n*layer_size,
-            board_shape.rows, board_shape.cols, 0.0);
+            board_shape.rows, board_shape.cols, 0.0, NULL);
     }
 
     err_code = gen_pattern(
@@ -281,17 +436,16 @@ static PyObject *set_bit_generator_py(PyObject *self, PyObject *args) {
 
 
 static PyObject *render_board_py(PyObject *self, PyObject *args) {
-    PyObject *board_obj, *goals_obj, *orientation_obj, *sprites_obj;
+    PyObject *board_obj, *goals_obj, *sprites_obj;
     PyArrayObject
         *board = NULL,
         *goals = NULL,
-        *orientation = NULL,
         *sprites = NULL,
         *out = NULL;
 
     if (!PyArg_ParseTuple(
-            args, "OOOO",
-            &board_obj, &goals_obj, &orientation_obj, &sprites_obj)) {
+            args, "OOO",
+            &board_obj, &goals_obj, &sprites_obj)) {
         return NULL;
     }
 
@@ -299,13 +453,11 @@ static PyObject *render_board_py(PyObject *self, PyObject *args) {
         board_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
     goals = (PyArrayObject *)PyArray_FROM_OTF(
         goals_obj, NPY_UINT16, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
-    orientation = (PyArrayObject *)PyArray_FROM_OTF(
-        orientation_obj, NPY_UINT8, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
     sprites = (PyArrayObject *)PyArray_FROM_OTF(
         sprites_obj, NPY_FLOAT32, NPY_ARRAY_IN_ARRAY | NPY_ARRAY_FORCECAST);
 
     // bunch of error checking
-    if (!board || !goals || !orientation || !sprites) {
+    if (!board || !goals || !sprites) {
         PY_VAL_ERROR("All inputs must be numpy arrays.");
     }
     int ndim = PyArray_NDIM(board);
@@ -316,9 +468,6 @@ static PyObject *render_board_py(PyObject *self, PyObject *args) {
     int depth = PyArray_SIZE(board) / (dims[ndim-1] * dims[ndim-2]);
     if (PyArray_SIZE(board) != PyArray_SIZE(goals)) {
         PY_VAL_ERROR("Board and goals must have same size.");
-    }
-    if (PyArray_SIZE(orientation) != depth) {
-        PY_VAL_ERROR("Only one orientation allowed per board.");
     }
     if (PyArray_SIZE(sprites) != 70*70*4) {
         PY_VAL_ERROR("Sprites should have shape (70, 70, 4).");
@@ -343,7 +492,6 @@ static PyObject *render_board_py(PyObject *self, PyObject *args) {
     render_board(
         (uint16_t *)PyArray_DATA(board),
         (uint16_t *)PyArray_DATA(goals),
-        (uint8_t *)PyArray_DATA(orientation),
         dims[ndim-1], dims[ndim-2], depth,
         (float *)PyArray_DATA(sprites),
         (uint8_t *)PyArray_DATA(out)
@@ -352,14 +500,12 @@ static PyObject *render_board_py(PyObject *self, PyObject *args) {
 
     Py_DECREF((PyObject *)board);
     Py_DECREF((PyObject *)goals);
-    Py_DECREF((PyObject *)orientation);
     Py_DECREF((PyObject *)sprites);
     return (PyObject *)out;
 
     error:
     Py_XDECREF((PyObject *)board);
     Py_XDECREF((PyObject *)goals);
-    Py_XDECREF((PyObject *)orientation);
     Py_XDECREF((PyObject *)sprites);
     Py_XDECREF((PyObject *)out);
     return NULL;
@@ -369,19 +515,31 @@ static PyObject *render_board_py(PyObject *self, PyObject *args) {
 static PyMethodDef methods[] = {
     {
         "advance_board", (PyCFunction)advance_board_py, METH_VARARGS,
-        "Advances the board one step."
+        "Advance the board one or more steps."
     },
     {
-        "gen_pattern", (PyCFunction)gen_pattern_py,
-        METH_VARARGS | METH_KEYWORDS, gen_pattern_doc
+        "life_occupancy", (PyCFunction)life_occupancy_py, METH_VARARGS,
+        "Find the total occupancy of different life types (colors) for \n"
+        "each point in the grid after advancing the board n steps."
     },
     {
-        "wrapped_label", (PyCFunction)wrapped_label_py,
-        METH_VARARGS | METH_KEYWORDS, wrapped_label_doc
+        "alive_counts", (PyCFunction)alive_counts_py, METH_VARARGS,
+        alive_counts_doc
     },
     {
-        "_render_board", (PyCFunction)render_board_py,
-        METH_VARARGS | METH_KEYWORDS, NULL
+        "execute_actions", (PyCFunction)execute_actions_py, METH_VARARGS,
+        execute_actions_doc
+    },
+    {
+        "gen_pattern", (PyCFunction)gen_pattern_py, METH_VARARGS | METH_KEYWORDS,
+        gen_pattern_doc
+    },
+    {
+        "wrapped_label", (PyCFunction)wrapped_label_py, METH_VARARGS,
+        wrapped_label_doc
+    },
+    {
+        "_render_board", (PyCFunction)render_board_py, METH_VARARGS, NULL
     },
     {
         "seed", (PyCFunction)seed_py, METH_VARARGS,

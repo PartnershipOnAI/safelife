@@ -1,6 +1,7 @@
 #include "fast_render.h"
 
 #define COLOR_BIT 9
+#define ORIENT_BIT 12
 
 const int SPRITE_SIZE = 14;
 
@@ -27,18 +28,25 @@ float background_colors[] = {
 };
 
 uint16_t color_mask = 7 << COLOR_BIT;
+uint16_t orient_mask = 3 << ORIENT_BIT;
 
 static inline void draw_sprite(
-        uint16_t cell, uint16_t goal, uint8_t orientation,
+        uint16_t cell, uint16_t goal,
         float *sprites, uint8_t *out, int row_stride) {
     float *fg_color = foreground_colors + ((cell & color_mask) >> COLOR_BIT) * 3;
     float *bg_color = background_colors + ((goal & color_mask) >> COLOR_BIT) * 3;
-    cell &= ~color_mask;
+    uint16_t orientation = (cell & orient_mask) >> ORIENT_BIT;
+    uint16_t old_cell = cell;
+    cell &= ~(color_mask | orient_mask);
 
     int row, col;
     switch (cell) {
         case 0:  // empty
-            row = 0; col = 0; break;
+            if (old_cell) {
+                row = 3; col = 4; break;
+            } else {
+                row = 0; col = 0; break;
+            }
 
         case 9:  // life
             row = 1; col = 0; break;
@@ -99,14 +107,13 @@ static inline void draw_sprite(
 
 
 void render_board(
-        uint16_t *board, uint16_t *goals, uint8_t *orientation,
+        uint16_t *board, uint16_t *goals,
         int width, int height, int depth,
         float *sprites, uint8_t *out) {
 
     // Shapes should be:
     //     board = (depth, height, width)
     //     goals = (depth, height, width)
-    //     orientation = (depth,)
     //     sprites = (5 * SPRITE_SIZE, 5 * SPRITE_SIZE, 4)
     //     out = (depth, height * SPRITE_SIZE, width * SPRITE_SIZE, 3)
 
@@ -115,13 +122,12 @@ void render_board(
     for (int i=0; i < depth; i++) {
         for (int j=0; j < height; j++) {
             for (int k=0; k < width; k++) {
-                draw_sprite(*board, *goals, *orientation, sprites, out, out_stride);
+                draw_sprite(*board, *goals, sprites, out, out_stride);
                 board++;
                 goals++;
                 out += SPRITE_SIZE * 3;
             }
             out += out_stride * (SPRITE_SIZE - 1);
         }
-        orientation++;
     }
 }

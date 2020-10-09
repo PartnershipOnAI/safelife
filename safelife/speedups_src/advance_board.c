@@ -32,10 +32,11 @@ static void combine_neighbors2(uint16_t src, uint16_t *dst) {
 }
 
 void advance_board(
-        uint16_t *b1, uint16_t *b2, int nrow, int ncol, float spawn_prob) {
+        uint16_t *b1, uint16_t *b2, int nrow, int ncol, float spawn_prob,
+        uint16_t *c0) {
     int size = nrow*ncol;
     int i, j, start_of_row, end_of_row, end_of_col;
-    uint16_t *c1 = malloc(size * sizeof(uint16_t));
+    uint16_t *c1 = c0 ? c0 : malloc(size * sizeof(uint16_t));
     memset(c1, 0, size * sizeof(uint16_t));
 
     // Adjust all of the bits in b2 so that the destructible bit overwrites
@@ -85,7 +86,9 @@ void advance_board(
         combine_neighbors2(c1[end_of_col-ncol], b2 + end_of_col);
     }
 
-    free(c1);
+    if (!c0) {
+        free(c1);
+    }
 
     // Now loop over the board and advance it.
     for (i = 0; i < size; i++) {
@@ -121,3 +124,177 @@ void advance_board(
     }
 }
 
+
+void advance_board_nstep(
+        uint16_t *b1, uint16_t *b2, int nrow, int ncol, float spawn_prob,
+        int n_steps) {
+    int size = nrow*ncol;
+    uint16_t *temp = malloc((n_steps > 1 ? 2 : 1) * size * sizeof(uint16_t));
+    uint16_t *b3 = temp, *c1 = temp + size;
+
+    advance_board(b1, b2, nrow, ncol, spawn_prob, temp);
+    for (int step_idx=1; step_idx < n_steps; step_idx++) {
+        if (step_idx & 1) {
+            advance_board(b2, b3, nrow, ncol, spawn_prob, c1);
+        } else {
+            advance_board(b3, b2, nrow, ncol, spawn_prob, c1);
+        }
+    }
+    if (!(n_steps & 1)) {
+        // Need to copy from b3 back to the output b2.
+        memcpy(b2, b3, size * sizeof(uint16_t));
+    }
+
+    free(temp);
+}
+
+
+
+static void accumulate_cell_types(uint16_t *board, int32_t *counts, int board_size) {
+    for (int i=0; i<board_size; i++) {
+        uint16_t cell = board[i];
+        if (cell & ALIVE && !(cell & (AGENT | EXIT | FROZEN))) {
+            uint16_t color = (cell >> COLOR_BIT) & 7;
+            counts[8*i + color]++;
+        }
+    }
+}
+
+
+void life_occupancy(
+        uint16_t *b1, int32_t *counts, int nrow, int ncol, float spawn_prob,
+        int n_steps) {
+    /*
+    Advances the board n steps, but doesn't actually store the new board.
+    Instead, it keeps a count of the number of times that each cell has been
+    occupied by life of each type (color).
+    */
+    int size = nrow*ncol;
+    uint16_t *temp = malloc((n_steps > 1 ? 3 : 2) * size * sizeof(uint16_t));
+    uint16_t *b2 = temp, *c1 = temp + size, *b3 = temp + 2*size;
+
+    advance_board(b1, b2, nrow, ncol, spawn_prob, c1);
+    accumulate_cell_types(b2, counts, size);
+    for (int step_idx=1; step_idx < n_steps; step_idx++) {
+        if (step_idx & 1) {
+            advance_board(b2, b3, nrow, ncol, spawn_prob, c1);
+            accumulate_cell_types(b3, counts, size);
+        } else {
+            advance_board(b3, b2, nrow, ncol, spawn_prob, c1);
+            accumulate_cell_types(b2, counts, size);
+        }
+    }
+
+    free(temp);
+}
+
+
+void alive_counts(uint16_t *board, uint16_t *goals, int n, int64_t *out) {
+    uint16_t b, g, b_color, g_color;
+    uint16_t movable = DESTRUCTIBLE | PUSHABLE | PULLABLE;
+    for (int i=0; i<n; i++) {
+        b = board[i];
+        g = goals[i];
+        b_color = ((b & COLORS) >> COLOR_BIT);
+        g_color = ((g & COLORS) >> COLOR_BIT);
+        if ((b & movable) || !(b & FROZEN)) {
+            // Don't add to counts if it's immovable and frozen,
+            // as there isn't any way for an agent to change such a cell.
+            out[b_color + 9*g_color] += b & ALIVE;
+            out[8 + 9*g_color] += 1 - (b & ALIVE);
+        }
+    }
+}
+
+
+static int clip(int x, int width) {
+    while (x < 0) x += width;
+    while (x >= width) x -= width;
+    return x;
+}
+
+
+void execute_actions(
+        uint16_t *board, int w, int h,
+        int64_t *locations, int64_t *actions, int n_agents, int action_stride) {
+    for (int k=0; k < n_agents; k++) {
+        int64_t action = *actions;
+        actions += action_stride;
+        if (action == 0) continue;
+
+        int direction = (action - 1) & 3;
+        int dx, dy;
+        if (direction & 1) {
+            dx = 2 - direction;
+            dy = 0;
+        } else {
+            dx = 0;
+            dy = direction - 1;
+        }
+        int y0 = locations[2*k] % h;
+        int x0 = locations[2*k+1] % w;
+        uint16_t *p0 = board + (x0 + y0*w);
+        uint16_t *p1 = board + (clip(x0+dx, w) + clip(y0+dy, h)*w);
+        uint16_t *p2 = board + (clip(x0+2*dx, w) + clip(y0+2*dy, h)*w);
+        uint16_t *p3 = board + (clip(x0-dx, w) + clip(y0-dy, h)*w);
+
+        if (!(*p0 & AGENT)) continue;
+
+        // Re-orient the agent.
+        *p0 &= ~ORIENTATION_MASK;
+        *p0 |= direction << ORIENTATION_BIT;
+
+
+        if(action >= 5) {  // toggle action
+            if (!(*p1)) {  // empty block. Add a life cell.
+                *p1 = ALIVE | DESTRUCTIBLE | (*p0 & COLORS);
+            } else if (*p1 & DESTRUCTIBLE) {
+                if (*p1 & AGENT) {
+                    // Destroyed agents instead turn into blocks.
+                    *p1 ^= AGENT | DESTRUCTIBLE;
+                    *p1 |= FROZEN;
+                } else {
+                    *p1 = 0;
+                }
+            } else if (~*p0 & *p1 & PUSHABLE) {
+                // "shove" the block without moving
+                if (!(*p2)) {
+                    *p2 = *p1;
+                    *p1 = 0;
+                } else if (*p2 & EXIT) {
+                    // Push the block out the exit
+                    *p1 = 0;
+                }
+            }
+        } else {  // move action
+            if (~*p0 & *p1 & PUSHABLE) {
+                // Agent can only push pushable blocks, but only if it
+                // is not itself pushable.
+                if (!(*p2)) {
+                    *p2 = *p1;
+                    goto move;
+                } else if (*p2 & EXIT) {
+                    // Push the block out the exit
+                    goto move;
+                }
+            } else if (!(*p1)) {
+                goto move;
+            } else if ((*p0 & *p1 & EXIT) && !(*p1 & AGENT)) {
+                goto exit_move;
+            }
+            continue;
+
+            move:
+            *p1 = *p0;
+            exit_move:
+            locations[2*k] = clip(y0 + dy, h);
+            locations[2*k+1] = clip(x0 + dx, w);
+            if (~*p0 & *p3 & PULLABLE) {
+                *p0 = *p3;
+                *p3 = 0;
+            } else {
+                *p0 = 0;
+            }
+        }
+    }
+}

@@ -1,0 +1,15 @@
+# Like the single-agent version, this includes an easier build task.
+# It also randomly chooses either one or two agents so that they can
+# occasionally learn on their own.
+---
+min_performance: 0.5
+board_shape: [26,26]
+
+agents: ['default', 'default']
+
+partitioning:
+  min_regions: 2
+  max_regions: 3
+
+starting_region: null
+later_regions: build easy

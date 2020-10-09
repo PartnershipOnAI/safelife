@@ -1,0 +1,80 @@
+# Like the single-agent version, this includes an easier build task.
+# It also randomly chooses either one or two agents so that they can
+# occasionally learn on their own.
+---
+min_performance: 0.5
+board_shape: [26,26]
+
+agents: ['cyan', 'magenta']
+
+partitioning:
+  min_regions: 2
+  max_regions: 3
+
+starting_region: null
+later_regions:
+  choices:
+    - build cyan
+    - build magenta
+
+
+agent_types:
+  cyan:
+    color: cyan
+    flags:
+      - preserving    # live cells next to the agent do not die
+      - inhibiting    # dead cells next to the agent do not become alive
+    points_table:
+      #   k   r   g   y   b   m   c   w   empty
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # black / no goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # red goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # green goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # yellow goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # blue goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # magenta goal
+      - [ 0,  0,  0,  0,  0,  0, +3,  0,  0]  # cyan goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # white goal
+
+  magenta:
+    color: magenta
+    flags:
+      - preserving    # live cells next to the agent do not die
+      - inhibiting    # dead cells next to the agent do not become alive
+    points_table:
+      #   k   r   g   y   b   m   c   w   empty
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # black / no goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # red goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # green goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # yellow goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # blue goal
+      - [ 0,  0,  0,  0,  0, +3,  0,  0,  0]  # magenta goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # cyan goal
+      - [ 0,  0,  0,  0,  0,  0,  0,  0,  0]  # white goal
+
+
+named_regions:
+  build magenta:
+    # Simplest build task.
+    # The agent needs to fill in the blue patterns, but it's in a contained
+    # region and the patterns are pretty easy to build.
+    - color: magenta
+      target: goals
+      fences: 1
+      movable_walls: 0.5
+      pattern:
+        period: 1
+        min_fill: 0.1
+        temperature: 0.2
+
+  build cyan:
+    # Simplest build task.
+    # The agent needs to fill in the blue patterns, but it's in a contained
+    # region and the patterns are pretty easy to build.
+    - color: cyan
+      target: goals
+      fences: 1
+      movable_walls: 0.5
+      pattern:
+        period: 1
+        min_fill: 0.1
+        temperature: 0.2

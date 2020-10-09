@@ -23,6 +23,23 @@ COLORS = {
     'white': CellTypes.rainbow_color
 }
 
+AGENT_PROPERTIES = {
+    "alive": CellTypes.alive,
+    "pushable": CellTypes.pushable,
+    "pullable": CellTypes.pullable,
+    "destructible": CellTypes.destructible,
+    "frozen": CellTypes.frozen,
+    "preserving": CellTypes.preserving,
+    "inhibiting": CellTypes.inhibiting,
+    "spawning": CellTypes.spawning,
+}
+
+DEFAULT_AGENT = {
+    'color': 'black',
+    'flags': ['preserving', 'inhibiting'],
+    'points_table': SafeLifeGame.default_points_table,
+}
+
 
 def make_partioned_regions(shape, alpha=1.0, max_regions=5, min_regions=2):
     """
@@ -157,7 +174,8 @@ def _fix_random_values(val):
         choices = val['choices']
         if isinstance(choices, list):
             keys = choices
-            vals = np.ones(len(choices))
+            vals = val.get('weights') or np.ones(len(choices))
+            vals = np.asanyarray(vals)
         elif isinstance(choices, dict):
             keys = list(choices.keys())
             vals = np.array(list(choices.values()))
@@ -471,10 +489,94 @@ def populate_region(mask, layer_params):
     return board, goals
 
 
+def add_agents_and_exit(board, regions, agents, agent_types):
+    """
+    Add agents and exits to the board.
+
+    This modifies both the board and regions in place.
+
+    Parameters
+    ----------
+    board : ndarray
+    regions : ndarray
+    agents : [str]
+        List of agent names, each name corresponding to one of the types in
+        agent_types. Both the names themselves and the entire list can be
+        randomized.
+    agent_types : dict
+        Map of agent names to agent properties. Properties can include 'color'
+        (black, red, green, blue, magenta, cyan, or white), 'flags' (a list of
+        strings), and 'points_table' (a 8x9 matrix). See
+        "levels/random/_defaults.yaml" for an example.
+
+    Returns
+    -------
+    agent_locs : ndarray
+        Location of agents placed on the board.
+    points_table : ndarray
+        Points table for this agent.
+    agent_names : [str]
+        Names associated with agents.
+    """
+    agent_vals = []
+    point_tables = []
+    agent_names = []
+    agent_types = {'default': DEFAULT_AGENT, **agent_types}
+    for agent_type in _fix_random_values(agents):
+        agent_type = _fix_random_values(agent_type)
+        if agent_type not in agent_types:
+            continue
+        agent = {**DEFAULT_AGENT, **agent_types[agent_type]}
+        agent_val = CellTypes.agent | CellTypes.frozen
+        if agent['color'] in COLORS:
+            agent_val |= COLORS[agent['color']]
+        else:
+            logger.error("Invalid agent color: '%s'", agent['color'])
+        for flag in agent['flags']:
+            if flag in AGENT_PROPERTIES:
+                agent_val |= AGENT_PROPERTIES[flag]
+            else:
+                logger.error("Invalid agent property '%s'", flag)
+        agent_vals.append(agent_val)
+        point_tables.append(agent['points_table'])
+        agent_names.append(agent_type)
+
+    if not agent_vals:
+        return np.zeros((0,2), dtype=int), np.zeros((0,8,9), dtype=int)
+
+    # Add agents to the board
+    zero_reg = (regions == 0)
+    zero_idx = np.array(np.nonzero(zero_reg)).T
+    # ensure that there are not more agents than places to put them:
+    agent_vals = agent_vals[:len(zero_idx)]
+    agent_locs = zero_idx[
+        get_rng().choice(len(zero_idx), len(agent_vals), replace=False)]
+    board[tuple(agent_locs.T)] = agent_vals
+
+    # Find the location that's as far away from agents as possible while still
+    # in the buffer region.
+    row_dist = np.abs(np.arange(board.shape[0])[:, np.newaxis] - agent_locs[:,0])
+    col_dist = np.abs(np.arange(board.shape[1])[:, np.newaxis] - agent_locs[:,1])
+    row_dist = np.sum(np.minimum(row_dist, board.shape[0] - row_dist), axis=-1)
+    col_dist = np.sum(np.minimum(col_dist, board.shape[1] - col_dist), axis=-1)
+    dist = (row_dist[:, np.newaxis] + col_dist[np.newaxis, :]) * zero_reg
+    k = np.argmax(dist)
+    exit_loc = k // board.shape[1], k % board.shape[1]
+    board[exit_loc] = CellTypes.level_exit | CellTypes.color_r
+
+    # Ensure that the player and exit aren't touching any other region
+    all_locs = np.append(agent_locs, [exit_loc], axis=0)
+    n = np.array([[-1,0,1,-1,0,1,-1,0,1],[-1,-1,-1,0,0,0,1,1,1]]).T
+    new_locs = (all_locs[:,np.newaxis] + n).reshape(-1, 2) % board.shape
+    regions[tuple(new_locs.T)] = -1
+
+    return agent_locs, point_tables, agent_names
+
+
 def gen_game(
         board_shape=(25,25), min_performance=-1, partitioning={},
         starting_region=None, later_regions=None, buffer_region=None,
-        named_regions={}, **etc):
+        named_regions={}, agents=['default'], agent_types={}, **etc):
     """
     Randomly generate a new SafeLife game board.
 
@@ -521,6 +623,13 @@ def gen_game(
         A dictionary of region types to region parameters. Each set of region
         parameters should consist of a list of layer parameters. See
         :func:`populate_region` for more details.
+    agents : list
+        Types of agents to add to the board, each expressed as a string.
+    agent_types : dict
+        Map of agent names to agent properties. Properties can include 'color'
+        (black, red, green, blue, magenta, cyan, or white), 'flags' (a list of
+        strings), and 'points_table' (a 8x9 matrix). See
+        "levels/random/_defaults.yaml" for an example.
 
     Returns
     -------
@@ -535,26 +644,8 @@ def gen_game(
     goals = np.zeros(board_shape, dtype=np.uint16)
 
     # Create locations for the player and the exit
-    zero_reg = regions == 0
-    i, j = np.nonzero(zero_reg)
-    k1 = get_rng().choice(len(i))
-    i1, j1 = i[k1], j[k1]
-    board[i1, j1] = CellTypes.player
-    # Make the exit as far away from the player as possible
-    row_dist = np.abs(np.arange(board_shape[0])[:, np.newaxis] - i1)
-    col_dist = np.abs(np.arange(board_shape[1])[np.newaxis, :] - j1)
-    row_dist = np.minimum(row_dist, board_shape[0] - row_dist)
-    col_dist = np.minimum(col_dist, board_shape[1] - col_dist)
-    dist = (row_dist + col_dist) * zero_reg
-    k2 = np.argmax(dist)
-    i2 = k2 // board_shape[1]
-    j2 = k2 % board_shape[1]
-    board[i2, j2] = CellTypes.level_exit | CellTypes.color_r
-
-    # Ensure that the player and exit aren't touching any other region
-    n = np.array([[-1,-1,-1],[0,0,0],[1,1,1]])
-    regions[(i1+n) % board.shape[0], (j1+n.T) % board.shape[1]] = -1
-    regions[(i2+n) % board.shape[0], (j2+n.T) % board.shape[1]] = -1
+    agent_locs, points_table, agent_names = add_agents_and_exit(
+        board, regions, agents, agent_types)
 
     # and fill in the regions...
     for k in np.unique(regions)[2:]:
@@ -587,8 +678,10 @@ def gen_game(
     game.deserialize({
         'board': board,
         'goals': goals,
-        'agent_loc': (j[k1], i[k1]),
+        'agent_locs': agent_locs,
+        'agent_names': agent_names,
         'min_performance': min_performance,
+        'points_table': points_table,
         'orientation': 1,
     })
     return game

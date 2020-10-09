@@ -26,6 +26,37 @@ foreground_colors = [
     '\x1b[38;5;244m',  # white / gray
 ]
 
+celltype_names = {
+    CellTypes.empty: 'empty',
+    CellTypes.life: 'life',
+    CellTypes.alive: 'hard-life',
+    CellTypes.wall: 'wall',
+    CellTypes.crate: 'crate',
+    CellTypes.plant: 'plant',
+    CellTypes.tree: 'tree',
+    CellTypes.ice_cube: 'ice-cube',
+    CellTypes.parasite: 'parasite',
+    CellTypes.weed: 'weed',
+    CellTypes.spawner: 'spawner',
+    CellTypes.hard_spawner: 'hard-spawner',
+    CellTypes.level_exit: 'exit',
+    CellTypes.fountain: 'fountain',
+}
+
+color_names = {
+    0: 'gray',
+    CellTypes.color_r: 'red',
+    CellTypes.color_g: 'green',
+    CellTypes.color_b: 'blue',
+    CellTypes.color_r | CellTypes.color_b: 'magenta',
+    CellTypes.color_g | CellTypes.color_r: 'yellow',
+    CellTypes.color_b | CellTypes.color_g: 'cyan',
+    CellTypes.rainbow_color: 'white',
+}
+
+inv_celltype_names = {v:k for k,v in celltype_names.items()}
+inv_color_names = {v:k for k,v in color_names.items()}
+
 
 def print_reward_table():
     text = ""
@@ -40,19 +71,21 @@ def print_reward_table():
 
 
 @np.vectorize
-def render_cell(cell, goal=0, orientation=0, edit_color=None):
+def render_cell(cell, goal=0, edit_color=None):
     cell_color = (cell & CellTypes.rainbow_color) >> CellTypes.color_bit
     goal_color = (goal & CellTypes.rainbow_color) >> CellTypes.color_bit
     val = background_colors[goal_color]
     val += ' ' if edit_color is None else foreground_colors[edit_color] + '∎'
     val += foreground_colors[cell_color]
 
-    if cell & CellTypes.agent:
-        arrow = '⋀>⋁<'[orientation]
-        val += '\x1b[1m' + arrow
+    gray_cell = cell & ~CellTypes.rainbow_color
+    if gray_cell & CellTypes.agent:
+        orientation = (gray_cell >> CellTypes.orientation_bit) & 3
+        val += '\x1b[1m' + '⋀>⋁<'[orientation]
     else:
-        gray_cell = cell & ~CellTypes.rainbow_color
         val += {
+            CellTypes.agent: '',
+            CellTypes.agent: '',
             CellTypes.empty: '.' if cell_color else ' ',
             CellTypes.life: 'z',
             CellTypes.alive: 'Z',
@@ -72,36 +105,18 @@ def render_cell(cell, goal=0, orientation=0, edit_color=None):
 
 
 def cell_name(cell):
-    cell_type = {
-        CellTypes.empty: 'empty',
-        CellTypes.life: 'life',
-        CellTypes.alive: 'hard-life',
-        CellTypes.wall: 'wall',
-        CellTypes.crate: 'crate',
-        CellTypes.plant: 'plant',
-        CellTypes.tree: 'tree',
-        CellTypes.ice_cube: 'ice-cube',
-        CellTypes.parasite: 'parasite',
-        CellTypes.weed: 'weed',
-        CellTypes.spawner: 'spawner',
-        CellTypes.hard_spawner: 'hard-spawner',
-        CellTypes.level_exit: 'exit',
-        CellTypes.fountain: 'fountain',
-    }.get(cell & ~CellTypes.rainbow_color, 'unknown')
-    color = {
-        0: 'gray',
-        CellTypes.color_r: 'red',
-        CellTypes.color_g: 'green',
-        CellTypes.color_b: 'blue',
-        CellTypes.color_r | CellTypes.color_b: 'magenta',
-        CellTypes.color_g | CellTypes.color_r: 'yellow',
-        CellTypes.color_b | CellTypes.color_g: 'cyan',
-        CellTypes.rainbow_color: 'white',
-    }.get(cell & CellTypes.rainbow_color, 'x')
+    cell_type = celltype_names.get(cell & ~CellTypes.rainbow_color,
+        'agent' if cell & CellTypes.agent else 'unknown')
+    color = color_names.get(cell & CellTypes.rainbow_color, 'x')
     return cell_type + '-' + color
 
 
-def render_board(board, goals=0, orientation=0, edit_loc=None, edit_color=0):
+def name_to_cell(name):
+    celltype, _, color = name.rpartition('-')
+    return inv_celltype_names.get(celltype, 0) | inv_color_names.get(color, 0)
+
+
+def render_board(board, goals=0, edit_loc=None, edit_color=0):
     """
     Just render the board itself. Doesn't require game state.
     """
@@ -115,11 +130,11 @@ def render_board(board, goals=0, orientation=0, edit_loc=None, edit_color=0):
     screen[:,0] = screen[:,-2] = ' |'
     screen[:,-1] = '\n'
     screen[0,0] = screen[0,-2] = screen[-1,0] = screen[-1,-2] = ' +'
-    screen[1:-1,1:-2] = render_cell(board, goals, orientation)
+    screen[1:-1,1:-2] = render_cell(board, goals)
 
     if edit_loc:
-        x1, y1 = edit_loc
-        val = render_cell(board[y1, x1], goals[y1, x1], orientation, edit_color)
+        y1, x1 = edit_loc
+        val = render_cell(board[y1, x1], goals[y1, x1], edit_color)
         screen[y1+1, x1+1] = str(val)
     return ''.join(screen.ravel())
 
@@ -145,11 +160,13 @@ def render_game(game, view_size=None, edit_mode=None):
             center = game.edit_loc
             edit_loc = view_size[1] // 2, view_size[0] // 2
         else:
-            center = game.agent_loc
+            if len(game.agent_locs) > 0:
+                center = game.agent_locs[0]
+            else:
+                center = (0, 0)
             edit_loc = None
-        center = game.edit_loc if edit_mode else game.agent_loc
-        board = recenter_view(game.board, view_size, center[::-1], game.exit_locs)
-        goals = recenter_view(game.goals, view_size, center[::-1])
+        board = recenter_view(game.board, view_size, center, game.exit_locs)
+        goals = recenter_view(game.goals, view_size, center)
     else:
         board = game.board
         goals = game.goals
@@ -157,14 +174,15 @@ def render_game(game, view_size=None, edit_mode=None):
     edit_color = (game.edit_color & CellTypes.rainbow_color) >> CellTypes.color_bit
     if edit_mode == "GOALS":
         # Render goals instead. Swap board and goals.
-        board, goals = goals, board
+        board = goals
 
-    return render_board(board, goals, game.orientation, edit_loc, edit_color)
+    return render_board(board, goals, edit_loc, edit_color)
 
 
 def agent_powers(game):
-    x0, y0 = game.agent_loc
-    agent = game.board[y0, x0]
+    if len(game.agent_locs) == 0:
+        return 'none'
+    agent = game.board[game.agent_locs_idx][0]
     power_names = [
         (CellTypes.alive, 'alive'),
         (CellTypes.preserving, 'preserving'),
@@ -173,6 +191,44 @@ def agent_powers(game):
     ]
     powers = [txt for val, txt in power_names if agent & val]
     return ', '.join(powers) or 'none'
+
+
+def edit_details(game, edit_mode="BOARD"):
+    vals = []
+    properties = {
+        CellTypes.alive: 'alive',
+        CellTypes.pushable: 'pushable',
+        CellTypes.pullable: 'pullable',
+        CellTypes.destructible: 'destructible',
+        CellTypes.frozen: 'frozen',
+        CellTypes.preserving: 'preserves',
+        CellTypes.inhibiting: 'inhibits',
+        CellTypes.spawning: 'spawns',
+        CellTypes.exit: 'exit',
+    }
+    if edit_mode == "BOARD":
+        cell = game.board[game.edit_loc]
+
+        matching_locs = []
+        for loc_num, loc in enumerate(game.agent_locs):
+            if tuple(loc) == game.edit_loc:
+                matching_locs.append(str(loc_num))
+        if matching_locs:
+            vals.append('A' + ','.join(matching_locs))
+
+    elif edit_mode == "GOALS":
+        cell = game.goals[game.edit_loc]
+    else:
+        return ''
+
+    vals.insert(0, cell_name(cell))
+    for mask, label in properties.items():
+        if cell & mask:
+            vals.append(label)
+    if len(vals) > 1:
+        vals[0] += ':'
+
+    return ' '.join(vals)
 
 
 if __name__ == "__main__":
