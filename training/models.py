@@ -1,4 +1,5 @@
 import numpy as np
+import subprocess
 
 from training.utils import recursive_shape, check_shape # noqa
 
@@ -163,7 +164,11 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
             # all call sites
             if "hx is not contiguous" in str(e):
                 state = state.contiguous()
-                y = self.memory(y, tuple(state))
+                try:
+                    y = self.memory(y, tuple(state))
+                except RuntimeError:
+                    subprocess.call("nvidia-smi")
+                    raise
         y, state = y
         state = torch.stack(state)  # (hs, cs) tuple -> tensor
         state = state.permute(2, 0, 1, 3)  # move batch to front
