@@ -227,10 +227,11 @@ class SafeLifeLevelIterator(object):
         if self.num_workers > 0:
             # Don't pickle the multiprocessing pool, and wait on all queued results.
             state['pool'] = None
-            state['results'] = queue.deque([
-                r.get() if isinstance(r, ApplyResult) else r
-                for r in self.results
-            ], maxlen=self.max_queue)
+            if state['results'] is not None:
+                state['results'] = queue.deque([
+                    (data, r.get() if isinstance(r, ApplyResult) else r)
+                    for data, r in self.results
+                ], maxlen=self.max_queue)
 
         return state
 
