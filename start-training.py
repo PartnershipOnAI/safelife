@@ -21,7 +21,7 @@ logger = logging.getLogger('training')
 safety_dir = os.path.realpath(os.path.dirname(__file__))
 
 
-def parse_args(argv=sys.argv):
+def parse_args(argv=sys.argv[1:]):
     parser = argparse.ArgumentParser(description="""
         Run agent training using proximal policy optimization.
 
@@ -61,10 +61,10 @@ def parse_args(argv=sys.argv):
         help="Check that the machine we're running on has CUDA support")
     parser.add_argument('-x', '--extra-params', default=None,
         help="Extra config values/hyperparameters. Should be loadable as JSON.")
-    parser.add_argument("-f", "--fff", help=argparse.SUPPRESS, default=None) # handle being called inside a colab notebook
+    #parser.add_argument("-f", "--fff", help=argparse.SUPPRESS, default=None) # handle being called inside a colab notebook
 
 
-    args = parser.parse_args(sys.argv[1:])
+    args = parser.parse_args(argv)
 
     if args.extra_params:
         try:
@@ -78,7 +78,7 @@ def parse_args(argv=sys.argv):
     assert args.wandb or args.data_dir or args.run_type == 'inspect', (
         "Either a data directory must be set or the wandb flag must be set. "
         "If wandb is set but there is no data directory, then a run name will be "
-        "picked automatically.")
+        "picked automatically. %s" % args)
 
     if args.ensure_gpu:
         assert torch.cuda.is_available(), "CUDA support requested but not available!"
