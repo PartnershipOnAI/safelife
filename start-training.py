@@ -71,7 +71,7 @@ def parse_args(argv=sys.argv):
         except (json.JSONDecodeError, AssertionError):
             print(f"'{args.extra_params}' is not a valid JSON dictionary. "
                 "Make sure to escape your quotes!")
-            exit(1)
+            sys.exit(1)
 
     assert args.wandb or args.data_dir or args.run_type == 'inspect', (
         "Either a data directory must be set or the wandb flag must be set. "
