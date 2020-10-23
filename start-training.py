@@ -61,6 +61,8 @@ def parse_args(argv=sys.argv):
         help="Check that the machine we're running on has CUDA support")
     parser.add_argument('-x', '--extra-params', default=None,
         help="Extra config values/hyperparameters. Should be loadable as JSON.")
+    parser.add_argument("-f", "--fff", help=argparse.SUPPRESS, default=None) # handle being called inside a colab notebook
+
 
     args = parser.parse_args(sys.argv[1:])
 
