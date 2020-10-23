@@ -21,7 +21,7 @@ logger = logging.getLogger('training')
 safety_dir = os.path.realpath(os.path.dirname(__file__))
 
 
-def parse_args():
+def parse_args(argv=sys.argv[1:]):
     parser = argparse.ArgumentParser(description="""
         Run agent training using proximal policy optimization.
 
@@ -64,7 +64,7 @@ def parse_args():
     parser.add_argument('-x', '--extra-params', default=None,
         help="Extra config values/hyperparameters. Should be loadable as JSON.")
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.extra_params:
         try:
