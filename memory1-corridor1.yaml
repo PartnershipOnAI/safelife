@@ -20,7 +20,7 @@
 program: start-training.py
 method: grid
 entity: safelife
-project: memory-test1-corridor1
+project: memory1-corridor1
 command:
   - python3
   - start-training.py
@@ -30,7 +30,7 @@ parameters:
 
   env_type:
     # See training/env_factory.py for other values
-    value: "corridor1"
+    value: "experiments/corridor1"
 
   steps:
     value: 9e6
