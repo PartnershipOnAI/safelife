@@ -214,6 +214,16 @@ task_types = {
         'validation_levels': ['random/navigation'],
         'benchmark_levels': 'benchmarks/v1.0/navigation.npz',
     },
+    'corridor1': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['experiments/corridor1']
+    },
+
+    'memory-redblue': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['experiments/lstm-memory']
+    },
+
 
     # Multi-agent tasks:
     'asym1': {
