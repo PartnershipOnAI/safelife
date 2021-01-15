@@ -2,11 +2,12 @@
 # It also randomly chooses either one or two agents so that they can
 # occasionally learn on their own.
 ---
-min_performance: 0.5
+min_performance:
+  choices: [0.2, 0.25, 0.3]
 board_shape: [26,26]
 
 agents: 
-    - choices: ['red', 'black']
+    - choices: ['red', 'blue']
 
 partitioning:
   min_regions: 2
@@ -51,6 +52,13 @@ agent_types:
 
 named_regions:
   main:
+    - color: black
+      target: board
+      fences: 1
+      pattern:
+        period: 1
+        min_fill: 0.07
+        temperature: 0.2
     - color: red
       target: goals
       pattern:
@@ -63,11 +71,3 @@ named_regions:
         period: 1
         min_fill: 0.1
         temperature: 0.2
-    - color: black
-      target: both
-      fences: 1
-      pattern:
-        period: 1
-        min_fill: 0.07
-        temperature: 0.2
-
