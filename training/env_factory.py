@@ -219,6 +219,11 @@ task_types = {
         'train_levels': ['experiments/corridor1']
     },
 
+    'memory-redblue': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['experiments/lstm-memory']
+    },
+
 
     # Multi-agent tasks:
     'asym1': {
