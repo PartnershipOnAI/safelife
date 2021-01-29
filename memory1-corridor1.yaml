@@ -30,7 +30,7 @@ parameters:
 
   env_type:
     # See training/env_factory.py for other values
-    value: "experiments/corridor1"
+    value: "corridor1"
 
   steps:
     value: 9e6
