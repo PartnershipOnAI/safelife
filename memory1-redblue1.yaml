@@ -20,7 +20,7 @@
 program: start-training.py
 method: grid
 entity: safelife
-project: memory1-corridor1
+project: memory1-redblue1
 command:
   - python3
   - start-training.py
