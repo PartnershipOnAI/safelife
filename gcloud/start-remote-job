@@ -168,6 +168,9 @@ else:
         training_cmd.append('--port=6006')
     training_cmd = ' '.join(training_cmd)
 
+key = os.environ.get("WANDB_API_KEY")
+wandb_login = f"wandb login {key}" if key else ""
+
 tmux_cmds = [
     # keep a lot of scrollback history in case it's useful
     "tmux set-option -g history-limit 100000",
@@ -183,6 +186,7 @@ tmux_cmds = [
     "sudo apt-get install ffmpeg --yes",
     f"pip install -U wandb",
     f"pip install -r {src_dir}/requirements.txt",
+    wandb_login,
 
     # Start training!
     f"cd {src_dir}", training_cmd,
