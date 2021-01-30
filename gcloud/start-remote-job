@@ -46,7 +46,7 @@ parser.add_argument('--no-shutdown', action="store_true",
     "complete. This flag prevents that from happening.")
 parser.add_argument('--sweep', action="store_true",
     help="Specifies that the job is part of a wandb sweep. "
-    "The job name should correspond to the sweep id.")
+    'The job name should be of the form "entity/project/sweepid"')
 args, remaining_args = parser.parse_known_args()
 
 if args.sweep:
