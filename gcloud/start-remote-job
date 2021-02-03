@@ -46,7 +46,7 @@ parser.add_argument('--no-shutdown', action="store_true",
     "complete. This flag prevents that from happening.")
 parser.add_argument('--sweep', action="store_true",
     help="Specifies that the job is part of a wandb sweep. "
-    "The job name should correspond to the sweep id.")
+    'The job name should be of the form "entity/project/sweepid"')
 args, remaining_args = parser.parse_known_args()
 
 if args.sweep:
@@ -137,12 +137,19 @@ try:
             os.makedirs(os.path.dirname(dst_file), exist_ok=True)
             shutil.copyfile(src_file, dst_file)
 
-    print("Syncing repo to the cloud...")
+    print("Creating", src_dir)
+    if result.returncode != 0:
+        exit(1)
+    result = sp.run([ssh_cmd, args.instance_name, "mkdir", "-p",  src_dir])
+    if result.returncode != 0:
+        exit(1)
+    print("Syncing repo to the cloud...", [ 'rsync', '--rsh', ssh_cmd, '-ra', tmp_repo.name + '/', args.instance_name + ':' + src_dir])
     result = sp.run([
         'rsync', '--rsh', ssh_cmd, '-ra',
         tmp_repo.name + '/', args.instance_name + ':' + src_dir])
     if result.returncode != 0:
         exit(1)
+    print("...")
 finally:
     if not args.tag:
         print("Removing temporary tag...")

@@ -5,6 +5,7 @@ Main entry point for starting a training job.
 """
 
 import argparse
+import datetime
 import logging
 import os
 import platform
@@ -51,6 +52,8 @@ def parse_args(argv=sys.argv[1:]):
         help="Port on which to run tensorboard.")
     parser.add_argument('-w', '--wandb', action='store_true',
         help='Use wandb for analytics.')
+    parser.add_argument('--resume', type=str,
+        help='Wandb run ID to resume.')
     parser.add_argument('--project', default=None,
         help='[Entity and] project for wandb. '
         'Eg: "safelife/multiagent" or "multiagent"')
@@ -170,7 +173,7 @@ def setup_config_and_wandb(args):
 
             wandb.init(
                 name=job_name, notes=run_notes, project=project, entity=entity,
-                config=base_config)
+                config=base_config if not args.resume else None, resume=args.resume)
             # Note that wandb config can contain different and/or new keys that
             # aren't in the command-line arguments. This is especially true for
             # wandb sweeps.
@@ -182,8 +185,10 @@ def setup_config_and_wandb(args):
 
             if job_name is None:
                 job_name = wandb.run.name
-                data_dir = os.path.join(
-                    safety_dir, 'data', time.strftime("%Y-%m-%d-") + wandb.run.id)
+                date = datetime.datetime.fromtimestamp(
+                    wandb.run.start_time).strftime("%Y-%m-%d-")
+                slug = date + wandb.run.id
+                data_dir = os.path.join(safety_dir, 'data', slug)
 
             logging_setup.save_code_to_wandb()
     else:
@@ -270,6 +275,7 @@ def launch_training(config, data_dir):
         config2 = config.copy()
         config2.pop('_wandb', None)
         wandb.config.update(config2, allow_val_change=True)
+        wandb.watch(algo_args['model'])
 
     print("")
     logger.info("Hyperparameters: %s", config)
