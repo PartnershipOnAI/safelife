@@ -55,6 +55,8 @@ def parse_args(argv=sys.argv[1:]):
     parser.add_argument('--project', default=None,
         help='[Entity and] project for wandb. '
         'Eg: "safelife/multiagent" or "multiagent"')
+    parser.add_argument('--resume-id', default=None,
+        help='Resume a prior wandb run.')
     parser.add_argument('--shutdown', action="store_true",
         help="Shut down the system when the job is complete"
         "(helpful for running remotely).")
@@ -147,6 +149,7 @@ def setup_config_and_wandb(args):
         k: v for k, v in vars(args).items() if k not in
         ['port', 'wandb', 'ensure_gpu', 'project', 'shutdown', 'extra_params']
     }
+    base_config['run_date'] = time.strftime("%Y-%m-%d-")
 
     # tag any hyperparams from the commandline
     if args.extra_params is not None:
@@ -168,9 +171,13 @@ def setup_config_and_wandb(args):
             else:
                 entity = project = None  # use values from wandb/settings
 
-            wandb.init(
-                name=job_name, notes=run_notes, project=project, entity=entity,
-                config=base_config)
+            if args.resume_id:
+                wandb.init(resume="must", id=args.resume_id)
+            else:
+                wandb.init(
+                    name=job_name, notes=run_notes,
+                    project=project, entity=entity,
+                    config=base_config)
             # Note that wandb config can contain different and/or new keys that
             # aren't in the command-line arguments. This is especially true for
             # wandb sweeps.
@@ -183,7 +190,7 @@ def setup_config_and_wandb(args):
             if job_name is None:
                 job_name = wandb.run.name
                 data_dir = os.path.join(
-                    safety_dir, 'data', time.strftime("%Y-%m-%d-") + wandb.run.id)
+                    safety_dir, 'data', config['run_date'] + '-' + wandb.run.id)
 
             logging_setup.save_code_to_wandb()
     else:
