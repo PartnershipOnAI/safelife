@@ -5,7 +5,6 @@ Main entry point for starting a training job.
 """
 
 import argparse
-import datetime
 import logging
 import os
 import platform
@@ -64,11 +63,9 @@ def parse_args(argv=sys.argv[1:]):
         help="Check that the machine we're running on has CUDA support")
     parser.add_argument('-x', '--extra-params', default=None,
         help="Extra config values/hyperparameters. Should be loadable as JSON.")
-    #parser.add_argument("-f", "--fff", help=argparse.SUPPRESS, default=None) # handle being called inside a colab notebook
 
 
     args = parser.parse_args(argv)
-
     if args.extra_params:
         try:
             args.extra_params = json.loads(args.extra_params)
@@ -150,6 +147,7 @@ def setup_config_and_wandb(args):
         k: v for k, v in vars(args).items() if k not in
         ['port', 'wandb', 'ensure_gpu', 'project', 'shutdown', 'extra_params']
     }
+    base_config['run_date'] = time.strftime("%Y-%m-%d")
 
     # tag any hyperparams from the commandline
     if args.extra_params is not None:
@@ -185,9 +183,7 @@ def setup_config_and_wandb(args):
 
             if job_name is None:
                 job_name = wandb.run.name
-                date = datetime.datetime.fromtimestamp(
-                    wandb.run.start_time).strftime("%Y-%m-%d-")
-                slug = date + wandb.run.id
+                slug = config['run_date'] + '-' + wandb.run.id
                 data_dir = os.path.join(safety_dir, 'data', slug)
 
             logging_setup.save_code_to_wandb()
