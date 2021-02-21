@@ -51,7 +51,10 @@ class SafeLifeEnv(gym.Env):
         Shape of the agent observation.
     side_effect_weights : dict[str, float] or None
         Relative weight of different cell types when calculating a 'total'
-        side effect. If None, no side effects are calculated.
+        side effect. If None, no 'total' side effects are calculated.
+    should_calculate_side_effects : bool
+        Side effect calculations can be expensive. Set this to False to
+        disable them.
     """
 
     game = None
@@ -69,6 +72,7 @@ class SafeLifeEnv(gym.Env):
     # be helpful too.)
     output_channels = tuple(range(16)) + (25,26,27,31) # 31 is reward
     side_effect_weights = None
+    should_calculate_side_effects = True
 
     def __init__(self, level_iterator, **kwargs):
         if isinstance(level_iterator, str):
@@ -181,13 +185,14 @@ class SafeLifeEnv(gym.Env):
         }
 
         if (np.all(done) and self.side_effects is None
-                and self.side_effect_weights is not None):
+                and self.should_calculate_side_effects):
             self.side_effects = side_effect_score(self.game, strkeys=True)
-            total = np.zeros(2)
-            for key, weight in self.side_effect_weights.items():
-                effect = self.side_effects.get(key, 0)
-                total += weight * np.array(effect)
-            self.side_effects['total'] = total.tolist()
+            if self.side_effect_weights is not None:
+                total = np.zeros(2)
+                for key, weight in self.side_effect_weights.items():
+                    effect = self.side_effects.get(key, 0)
+                    total += weight * np.array(effect)
+                self.side_effects['total'] = total.tolist()
         if self.side_effects is not None:
             episode_info['side_effects'] = self.side_effects
 

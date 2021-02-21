@@ -30,7 +30,7 @@ A paper describing the SafeLife environment is available [on arXiv](https://arxi
 
 ### Standard installation
 
-SafeLife requires Python 3.5 or better. If you wish to install in a clean environment, it's recommended to use [python virtual environments](https://docs.python.org/3/library/venv.html). You can then install SafeLife using
+SafeLife requires Python 3.6 or better. If you wish to install in a clean environment, it's recommended to use [python virtual environments](https://docs.python.org/3/library/venv.html). You can then install SafeLife using
 
     pip3 install safelife
 
@@ -63,9 +63,16 @@ All of the puzzle levels are solvable. See if you can do it without disturbing t
 
 The `start-training` script is an easy way to get agents up and running using the default proximal policy optimization implementation. Just run
 
-    ./start-training my-training-run
+    ./start-training.py my-training-run
 
 to start training locally with all saved files going into a new "my-training-run" directory. See below or `./start-training --help` for more details.
+
+
+### Weights & Biases integration
+
+If you specify the `--wandb` flag when running `start-training.py`, training data will also be logged to [Weights & Biases](https://www.wandb.com) for easy online analysis. The `start-training.py` script is compatible with wandb parameter sweeps; there is an [example sweep configuration](training/example-sweep.yaml) in the `training` directory which should help you get started.
+
+Once you've logged a few runs, you're encouraged to submit your best one to the [SafeLife Weights & Biases benchmark](https://wandb.ai/safelife/v1dot2/benchmark). This is a great way to share your progress and solicit feedback on new methods.
 
 
 ## Contributing
@@ -111,7 +118,7 @@ Finally, to simplify computation (and to prevent players from getting lost), Saf
 
 ### Classes and code
 
-All of these rule are encapsulated by the `safelife.safelife_game.SafeLifeGame` class. That class is responsible for maintaining the game state associated with each SafeLife level, changing the state in response to player actions, and updating the state at each time step. It also has functions for serializing and de-serializing the state (saving and loading).
+All of these rules are encapsulated by the `safelife.safelife_game.SafeLifeGame` class. That class is responsible for maintaining the game state associated with each SafeLife level, changing the state in response to player actions, and updating the state at each time step. It also has functions for serializing and de-serializing the state (saving and loading).
 
 Actions in `SafeLifeGame` do not typically result in any direct rewards (there is a small bonus for successfully reaching a level exit). Instead, each board state is worth a certain number of points, and agent actions can increase or reduce that point value.
 
@@ -133,7 +140,9 @@ After registration, one can create new environment instances using e.g. `gym.mak
 In addition, there are a number of environment wrappers in the `safelife.env_wrappers` module which can be useful for training. These include wrappers to incentivize agent movement, to incentivize the agent to reach the level exit, and to add a simple side effect impact penalty. The `safelife.safelife_logger` module contains classes and and environment wrapper to easily log episode statistics and record videos of agent trajectories. Finally, the `training.env_factory` along with the `start-training` script provide an example of how these components are put together in practice.
 
 
-## Level editing
+## SafeLife levels
+
+### Level editing
 
 To start, create an empty level using
 
@@ -150,13 +159,18 @@ SafeLife levels consist of foreground cells, including the player, and backgroun
 More complex edits can be performed in an interactive IPython shell by hitting backslash (`\`). Make edits to the `game` variable and then `quit` to affect the current level.
 
 
-## Train and benchmark levels
+### Procedural level generation
+
+One of the core features of SafeLife is the ability to generate a nearly infinite number of different levels on which one can train agents and challenge humans. Each level is made up of a number of different randomly-shaped regions, and each region can have several layers of procedural generation applied to it. There are a _lot_ of ways to tweak the procedural generation to get qualitatively different outcomes and puzzles to solve. A number of different level types are specified in [safelife/levels/random](safelife/levels/random) (the readme in that directory contains more information), but you should feel free to edit them or create your own level types.
+
+
+### Train and benchmark levels
 
 We focus on three distinct tasks for agents to accomplish:
 
-- in *build* tasks, the agent tries to match blue goal cells with its own gray life cells;
-- in *destroy* tasks, the agent tries to remove red cells from the board;
-- in the *navigate* task, the agent just tries to get to the level exit, but there may be obstacles in the way.
+- in *pattern creation* ("append") tasks, the agent tries to match blue goal cells with its own gray life cells;
+- in *pattern removal* ("prune") tasks, the agent tries to remove red cells from the board;
+- in the *navigation* task, the agent just tries to get to the level exit, but there may be obstacles in the way.
 
 In all tasks there can also be green or yellow life cells on the board. The agent's principal reward function is silent on the utility of these other cells, but a safe agent should be able to avoid disrupting them.
 
@@ -168,6 +182,18 @@ To play them interactively, use `play` instead of `print`.
 
 A set of benchmark levels is supplied in `safelife/levels/benchmarks/v1.0/`. These levels are fixed to make it easy to gauge progress in both agent performance and agent safety.
 Each set of benchmarks consists of 100 different levels for each benchmark task, with an agent's benchmark score as its average performance across all levels in each set.
+
+
+### Multi-agent levels
+
+SafeLife is not limited to a single agent! By default, there is only a single agent in each SafeLife level, but it's easy to add multiple agents during procedural generation. A number of sample levels can be found in [safelife/levels/random/multi-agent](safelife/levels/random/multi-agent). In order to build a multi-agent level, just specify more than one agent in the `agents` field of the proc gen yaml file. Different agents can be specified in `agent_types` field, and different agents can have different colors, abilities, and goals.
+
+In order to run environments with multiple agents, make sure you set the `SafeLifeEnv.single_agent` flag to `False`. This will change the environment interface: with `single_agent = False`, the `SafeLifeEnv.step()` function will return an _array_ of observations, rewards, and done flags, one for each agent, and the input to the step function should likewise be an array of different agent actions.
+
+Note that there are currently no benchmark levels for multi-agent play.
+
+Although you can play multi-agent levels interactively (as a human), the agent will be limited to taking the same action at each step, and editing support is limited. No such limitations apply to trained agents.
+
 
 ## Side Effects
 
@@ -193,9 +219,7 @@ There are a few import parameters and functions that deserve special attention.
 For all other parameters, see the code and the documentation therein.
 To train an agent using these classes, just instantiate the class and run the `train()` method. Note that only one instance should be created per process.
 
-Our default training script (`start-training`) was used to train agents for our v1 benchmark results. These agents are also given a training-time impact penalty (see `env_wrappers.SimpleSideEffectPenalty`). The penalty is designed to punish any departure from the starting state, except for states that represent the completion of some goal. Every time a cell changes away from the starting state the agent receives a fixed penalty ε, and, conversely, if a cell is restored to its starting state it receives a commensurate reward. This is generally not a good way to deal with side effects! It's only used here as a point of comparison and to show the weakness of such a simple penalty.
-
-Note that the custom PPO implementation has a few non-standard features. The clipped objective function is somewhat modified, and the value function is normalized by the entropy. We will be standardizing the training algorithms in the next release.
+Our default training script (`start-training`) was used to train agents for our v1 benchmark results. These agents are also given a training-time impact penalty (see `env_wrappers.SimpleSideEffectPenalty`). The penalty is designed to punish any departure from the starting state. Every time a cell changes away from the starting state the agent receives a fixed penalty λ, and, conversely, if a cell is restored to its starting state it receives a commensurate reward. This is generally not a good way to deal with side effects! It's only used here as a point of comparison and to show the weakness of such a simple penalty.
 
 
 ### Results
@@ -257,13 +281,3 @@ The final task we present to our agents is to navigate to a level exit in an env
 Both of the above agents are trained without an impact penalty, and both are unsurprisingly unsafe. The first level shows an example of oscillators that tend to collapse when interrupted, whereas the second level shows an example of oscillators that grow chaotically. The latter can be quite hard to navigate, although both agents do eventually find the level exit.
 
 Even a very slight impact penalty added during training completely destroys the agents' abilities to find the level exit without making the agent appreciably safer.
-
-
-## Roadmap
-
-With version 1.0 complete, all of the basic game rules, environmental code, and procedural generation are set. We do not anticipate making any big changes to them in the near term. The next steps mostly involve training better agents.
-
-- The custom PPO implementation was great for experimentation, but it'd be better to use a more standard implementation. Version 1.1 will include new training methods, algorithms, and results.
-- We are working on better side effect impact measures, like [Attainable Utility Preservation](https://arxiv.org/abs/1902.09725.)
-
-Eventually, we hope to extend SafeLife to include different aspects of AI safety, including robustness to distributional shift, safe exploration, and potentially multi-agent systems.

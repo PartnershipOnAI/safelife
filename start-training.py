@@ -64,7 +64,6 @@ def parse_args(argv=sys.argv[1:]):
     parser.add_argument('-x', '--extra-params', default=None,
         help="Extra config values/hyperparameters. Should be loadable as JSON.")
 
-
     args = parser.parse_args(argv)
     if args.extra_params:
         try:

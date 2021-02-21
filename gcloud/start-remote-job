@@ -23,7 +23,7 @@ parser = argparse.ArgumentParser(description=textwrap.dedent("""
         d. starts training via the `start-training` script.
 
     Note that the `start-training` script will shut down the remote instance
-    with a 10 minute lag before the script exits, whether via error or normal
+    with a 3 minute lag before the script exits, whether via error or normal
     completion. The shutdown is there to prevent machine from idling and
     running up large bills, while the lag is designed so that it's possible
     to abort the shutdown by sshing into the remote machine and running

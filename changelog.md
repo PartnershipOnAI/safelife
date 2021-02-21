@@ -1,3 +1,44 @@
+# Version 1.2
+
+SafeLife v1.2 introduces multi-agent training and [Weights & Biases](https://www.wandb.com) integration, as well as support for the [Weights & Biases SafeLife benchmark](https://wandb.ai/safelife/v1dot2/benchmark). There are a slew of other changes as well.
+
+- The board state now includes two orientation bits; orientation is no longer tracked as a separate array.
+- The core of `SafeLifeGame.execute_action` has been moved into a C extension. It should now be faster, and importantly, it can now handle multiple agents acting simultaneously.
+- The PPO and DQN algorithms have been refactored to be able to handle multi-agent training.
+- Agent scoring tables are now able to be set in the procedural generation yaml files. The scoring tables determine how many points an agent gets for having life of a particular color on a background of a particular color. Different agents can have different scoring functions.
+- Added experimental curricular level iterators to `training/env_factory.py`. These environments track agent progress and ramp up level difficulty accordingly.
+- Changed `env_factory.py:SwitchingLevelIterator` to switch between two levels with a variable probability, rather than suddenly switching from one level type to another at a pre-specified time.
+- Refactor `SafeLifeLogger` to include logging to wandb.
+- Deprecate `RemoteSafeLifeLogger`. Some of the other changes were hard to translate to this class, and it was not used elsewhere in the code so it was hard to keep it up to date. We may resurrect this class in a future release.
+- A more robust `start-remote-job` script that `git clone`s the current directory, including any changes, into a temporary directory that is then rsynced to the remote machine. This makes it easier to keep track of commit ids and makes the general process of starting new jobs less buggy.
+- Updated `.gitignore` to include some common files and directories.
+- Require different instances of `SafeLifeLogger` for different run types (`training`, `validation`, and `benchmark`). Cumulative stats (e.g., `training-steps`, `validation-episodes`) are shared between logger instances.
+- Keep track of average summary statistics in each `SafeLifeLogger`.
+- More consistent behavior with random seeds.
+- Hyperparameter tracking with a `global_config` object. This requires Python 3.6 for function and class annotations.
+- Move side effect calculations from `SafeLifeLogger` into the environment itself. Side effects are now returned at the end of each episode in the `info` dictionary.
+- Added a _benchmark score_: `score = 75 reward + 25 speed - 200 (side effects)`, where _reward_ is the normalized score for each episode, _speed_ is `1 - (episode length) / 1000`, and _side effects_ are normalized and include only effects due to changes in green life cells and spawners. See the [Weights & Biases SafeLife benchmark](https://wandb.ai/safelife/v1dot2/benchmark) for more info.
+- Major refactor of the `start-training` script (now `start-training.py`). It is now broken into several functions, includes wandb integration, and allows the user to pass in arbitrary hyperparameters. It no longer performs a training loop over different impact penalties; the impact penalty is just one of many hyperparameters that can be varied.
+- Added an example wandb sweep configuration file (`training/example-sweep.yaml`). Sweeps make it easy to run multiple training sessions with different hyperparameters.
+- Nicer handling of keyboard interrupts.
+- Make sure to save a model checkpoint at the very end of training.
+- Move parts of the side effect calculations into C code.
+- Automatically run benchmark episodes at the end of training.
+- Slight change to the `env_wrappers.MovementBonusWrapper` such that, by default, there is no penalty at all for non-zero movement speed.
+- In `env_wrappers.MinPerformanceScheduler`, `min_performance` has been replaced with `min_performance_fraction`. This way, different levels can have different values of `min_performance` even if the environment is wrapped with `MinPerformanceScheduler`.
+- `env_wrappers.SimpleSideEffectPenalty` no longer ignores side effects goals by default.
+- Better logging of episode statistics in interactive play.
+- Improved level editing in interactive mode. It should now be easier to change cell colors.
+- Added human benchmark levels for interactive play.
+- Change the number of default workers in `SafeLifeLevelIterator` to match the number of available CPUs.
+- Instances of `SafeLifeGame` now maintain their own RNGs and their random seeds for reproducible stochastic dynamics.
+- When `SafeLifeLevelIterator` has `distinct_levels > 0`, the seed for each level (used in stochastic dynamics) is reused whenever the level reappears.
+- Use 32 bit ints (rather than 16 bits) to represent the board plus goal state in `SafeLifeEnv` when `output_channels` is None.
+- Movable blocks can now be "shoved" by agents without the agents themselves moving.
+- `SafeLifeGame.current_points()` now includes points for agents reaching the level exit.
+- `SafeLifeGame.point_table` has been renamed to `SafeLifeGame.points_table`, and it now contains an extra dimension for extra agents. There is now a `default_points_table` attribute which is used when no agent-specific point tables are specified.
+
+
 # Version 1.1.2
 
 Fixes a compatibility bug on Windows when compiling with Microsoft Visual C++.

@@ -23,7 +23,7 @@ with open(os.path.join(base_dir, "README.md"), "rt", encoding="utf-8") as fh:
 
 setuptools.setup(
     name='safelife',
-    version='1.1.2',
+    version='1.2.1',
     author="Carroll L. Wainwright",
     author_email="carroll@partnershiponai.org",
     description="Safety benchmarks for reinforcement learning",
@@ -44,9 +44,11 @@ setuptools.setup(
     ext_modules=[
         setuptools.Extension(
             'safelife.speedups',
+            py_limited_api=True,
             define_macros=[
                 ('PY_ARRAY_UNIQUE_SYMBOL', 'safelife_speedups'),
-                ('NPY_NO_DEPRECATED_API', 'NPY_1_11_API_VERSION')
+                ('NPY_NO_DEPRECATED_API', 'NPY_1_11_API_VERSION'),
+                ('Py_LIMITED_API', '0x03060000'),
             ],
             include_dirs=[ext_path, get_numpy_include()],
             sources=glob.glob(os.path.join(ext_path, '*.c')),
