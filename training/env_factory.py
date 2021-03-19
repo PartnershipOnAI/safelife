@@ -65,7 +65,7 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
     curriculum_distribution = "progress_estimate"  # or "uniform"
 
     def __init__(self, *levels, logger, curriculum_params={}, **kwargs):
-        super().__init__(*levels, repeat_levels=True, **kwargs)
+        super().__init__(*levels, **kwargs)
         self.logger = logger
         self.curriculum_stage = 0
         self.max_stage = len(levels) - 1
