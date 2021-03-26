@@ -298,8 +298,7 @@ def safelife_env_factory(
 
 
 @update_hyperparams
-def build_environments(config, data_dir=None):
-    build_environments.env_batch_size: HyperParam = 16
+def build_environments(config, data_dir=None, env_batch_size: HyperParam = 16):
     task = config['env_type']
 
     assert task in task_types, f"'{task}' is not a recognized task"
@@ -379,7 +378,7 @@ def build_environments(config, data_dir=None):
 
     envs = {}
     envs['training'] = safelife_env_factory(
-        training_iter, num_envs=build_environments.env_batch_size, training=True, env_args=common_env_args,
+        training_iter, num_envs=env_batch_size, training=True, env_args=common_env_args,
         data_logger=training_logger,
         se_baseline=se_baseline, se_penalty=schedule(**se_schedule),
         exit_difficulty=schedule(**exit_difficulty),
