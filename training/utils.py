@@ -131,6 +131,9 @@ def nested_setattr(obj, key, val):
 
 
 def get_compute_device():
+    """
+    Try first to get TPU, then cuda, then CPU.
+    """
     import torch
     try:
         # TPU
@@ -146,7 +149,9 @@ def get_compute_device():
 
 
 def recursive_shape(obj, indent=0):
-    "Recursively prettyprint the shape of a hierarchical torch object."
+    """
+    Recursively prettyprint the shape of a hierarchical torch object.
+    """
     s = ""
     if isinstance(obj, list) or isinstance(obj, tuple):
         c1, c2 = ["[", "]"] if isinstance(obj, list) else ["(", ")"]
