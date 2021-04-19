@@ -1,8 +1,6 @@
 import logging
 import numpy as np
-
 from collections import defaultdict
-# from ipdb import set_trace
 
 import torch
 import torch.optim as optim
@@ -66,16 +64,18 @@ class PPO(BaseAlgo):
 
     @named_output('obs actions rewards done next_obs agent_ids policies values agent_state')
     def take_one_step(self, envs):
-        obs, agent_ids = self.obs_for_envs(envs)
-
-        state = torch.stack([e.agent_state for e in envs]) if self.stateful else None
+        obs, agent_ids, agent_states = self.obs_for_envs(envs, return_states=True)
 
         tensor_obs = self.tensor(obs, torch.float32)
-        values, policies, new_state = self.model(tensor_obs, state)
-        for i, e in enumerate(envs):
-            e.agent_state = new_state[i] if new_state is not None else None
+        if self.stateful:
+            state = torch.stack(agent_states)
+            values, policies, new_state = self.model(tensor_obs, state)
+        else:
+            values, policies = self.model(tensor_obs)
+            new_state = [None] * len(values)
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
+
         if self.compute_device.type == "xla":
             # correct after low precision #floatlife
             policies = policies.astype("float16")
@@ -84,7 +84,7 @@ class PPO(BaseAlgo):
             try:
                 actions.append(get_rng().choice(len(policy), p=policy))
             except ValueError:
-                print("Logits:", policy, "sum to", np.sum(policy))
+                logger.error("Logits:", policy, "sum to", np.sum(policy))
                 raise
 
         next_obs, rewards, done = self.act_on_envs(envs, actions)
@@ -131,15 +131,16 @@ class PPO(BaseAlgo):
                 t['rewards'].append(step.rewards[k])
                 t['values'].append(step.values[k])
                 t['ongoing'].append(not step.done[k])
-                if self.stateful:
-                    t['agent_state'].append(step.agent_state[k])
-                else:
-                    t['agent_state'].append(None)
+                t['agent_state'].append(step.agent_state[k])
 
         # For the final step in each environment, also calculate the value
         # function associated with the next observation
         tensor_obs = self.tensor(step.next_obs, torch.float32)
-        vals = self.model(tensor_obs, step.agent_state)[0].detach().cpu().numpy()
+        if self.stateful:
+            vals = self.model(tensor_obs, step.agent_state)[0]
+        else:
+            vals = self.model(tensor_obs)[0]
+        vals = vals.detach().cpu().numpy()
         for k, agent_id in enumerate(step.agent_ids):
             if not step.done[k]:
                 trajectories[agent_id]['final_value'] = vals[k]

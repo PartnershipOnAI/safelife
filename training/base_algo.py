@@ -158,7 +158,27 @@ class BaseAlgo(object):
         data = np.asanyarray(data)
         return torch.as_tensor(data, device=self.compute_device, dtype=dtype)
 
-    def obs_for_envs(self, envs):
+    def reset_env(self, env):
+        """
+        Reset the environment and appropriately set the state on it.
+        """
+        obs = env.reset()
+        if getattr(env, 'single_agent', True):
+            obs = np.asanyarray(obs)[np.newaxis]
+        env.last_done = np.tile(False, len(obs))
+        # Agent state will either be a torch tensor or None, so we store
+        # it in a regular list.
+        if self.stateful:
+            state = self.default_agent_state.to(self.compute_device)
+        else:
+            state = None
+        env.agent_state = [state] * len(obs)
+        if hasattr(env, 'num_resets'):
+            env.num_resets += 1
+        else:
+            env.num_resets = 0
+
+    def obs_for_envs(self, envs, return_states=False):
         """
         Return current observations and agent ids for a list of environments.
 
@@ -173,33 +193,32 @@ class BaseAlgo(object):
         obs_list = []
         active = []
         agent_ids = []
+        agent_states = []
         for env in envs:
-            if hasattr(env, 'last_obs'):
-                obs = env.last_obs
-                done = env.last_done
-            else:
-                obs = env.reset()
-                if self.stateful:
-                    env.agent_state = self.default_agent_state.to(self.compute_device)
-                if getattr(env, 'single_agent', True):
-                    obs = np.asanyarray(obs)[np.newaxis]
-                env.last_done = done = np.tile(False, len(obs))
-                env.num_resets = 0
-            for k in range(len(obs)):
+            if not hasattr(env, 'last_obs'):
+                # Starting with a fresh environment. Need to setup the state.
+                self.reset_env(env)
+            obs_list.append(env.last_obs)
+            active.append(~env.last_done)
+            for k in range(len(env.last_obs)):
                 agent_ids.append((id(env), env.num_resets, k))
-            obs_list.append(obs)
-            active.append(~done)
+                if not env.last_done[k]:
+                    agent_states.append(env.agent_state[k])
 
         obs_list = np.concatenate(obs_list)
         active = np.concatenate(active)
+
         # Make an array of agent ids, but keep each element of the array
         # a tuple so that they can be used as dictionary keys.
         agent_id_arr = np.zeros(len(agent_ids), dtype=object)
         agent_id_arr[:] = agent_ids
 
-        return obs_list[active], agent_id_arr[active]
+        if return_states:
+            return obs_list[active], agent_id_arr[active], agent_states
+        else:
+            return obs_list[active], agent_id_arr[active]
 
-    def act_on_envs(self, envs, actions):
+    def act_on_envs(self, envs, actions, agent_states=None):
         """
         Return observations, rewards, and done flags for each environment.
 
@@ -210,10 +229,16 @@ class BaseAlgo(object):
         This should be used in conjunction with `obs_for_envs()`.
         Note that together they add attributes `last_obs`, `last_done`, and
         `num_resets` to the environment itself.
+
+        The 'agent_states' parameter is optional. If provided, the state
+        (typically a tensor) of each agent will be stored in the environment.
         """
         obs_list = []
         reward_list = []
         done_list = []
+
+        if agent_states is None:  # old call signature
+            agent_states = [None] * len(actions)
 
         k = 0
         for env in envs:
@@ -223,7 +248,9 @@ class BaseAlgo(object):
             if num_active == 0:
                 continue
             active_actions = actions[k:k+num_active]
+            active_states = agent_states[k:k+num_active]
             assert len(active_actions) == num_active
+            assert len(active_states) == num_active
             action_shape = (len(active),) + np.asanyarray(active_actions[0]).shape
             env_actions = np.zeros_like(active_actions[0], shape=action_shape)
             env_actions[active] = active_actions
@@ -239,16 +266,13 @@ class BaseAlgo(object):
             reward_list.append(reward[active])
             done_list.append(done[active])
 
-            if np.all(done):
-                obs = env.reset()
-                if self.stateful:
-                    env.agent_state = self.default_agent_state.to(self.compute_device)
-                if getattr(env, 'single_agent', True):
-                    obs = np.asanyarray(obs)[np.newaxis]
-                done = np.tile(False, len(obs))
-                env.num_resets += 1
             env.last_obs = obs
             env.last_done = done
+            for i, state in zip(np.nonzero(active)[0], active_states):
+                env.agent_state[i] = state
+
+            if np.all(done):
+                self.reset_env(env)
 
         return (
             np.concatenate(obs_list),
