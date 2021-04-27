@@ -87,7 +87,7 @@ class PPO(BaseAlgo):
                 logger.error("Logits:", policy, "sum to", np.sum(policy))
                 raise
 
-        next_obs, rewards, done = self.act_on_envs(envs, actions)
+        next_obs, rewards, done = self.act_on_envs(envs, actions, new_state)
 
         return obs, actions, rewards, done, next_obs, agent_ids, policies, values, new_state
 

@@ -166,6 +166,7 @@ class BaseAlgo(object):
         if getattr(env, 'single_agent', True):
             obs = np.asanyarray(obs)[np.newaxis]
         env.last_done = np.tile(False, len(obs))
+        env.last_obs = obs
         # Agent state will either be a torch tensor or None, so we store
         # it in a regular list.
         if self.stateful:
