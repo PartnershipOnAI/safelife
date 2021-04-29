@@ -30,6 +30,7 @@ class PPO(BaseAlgo):
 
     steps_per_env: HyperParam = 20
     num_minibatches: HyperParam = 4
+    training_sequence_length: HyperParam = 1
     epochs_per_batch: HyperParam = 3
 
     gamma: HyperParam = 0.97
@@ -71,7 +72,7 @@ class PPO(BaseAlgo):
             state = torch.stack(agent_states)
             values, policies, new_state = self.model(tensor_obs, state)
         else:
-            values, policies = self.model(tensor_obs)
+            values, policies = self.model(tensor_obs)[:2]
             new_state = [None] * len(values)
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
@@ -162,21 +163,24 @@ class PPO(BaseAlgo):
 
         self.num_steps += steps_per_env * len(self.training_envs)
 
-        # XXX <mess>
         def t(label, dtype=torch.float32):
             x = np.concatenate([d[label] for d in trajectories.values()])
             return torch.as_tensor(x, device=self.compute_device, dtype=dtype)
 
-        t_obs = t('obs')
+        # Create a linearized *list* of agent states.
+        agent_states = sum((d['agent_state'] for d in trajectories.values()), [])
         if self.stateful:
-            return_agent_state = torch.cat([torch.stack(d["agent_state"]) for d in trajectories.values()])
+            # Each item in agent_states is a tensor. Stack them.
+            # N.B. this requires that the agent states each be *single*
+            # tensor objects. Might want to relax this in the future to allow
+            # for a tuple of agent states (different shapes at different layers).
+            agent_states = torch.stack(agent_states)
         else:
-            return_agent_state = np.array([None] * len(t_obs))
-        # </mess>
+            agent_states = torch.zeros(len(agent_states))
 
         return (
-            t_obs, t('actions', torch.int64), t('action_prob'),
-            t('returns'), t('advantages'), t('values'), return_agent_state, t('ongoing')
+            t('obs'), t('actions', torch.int64), t('action_prob'),
+            t('returns'), t('advantages'), t('values'), agent_states, t('ongoing')
         )
 
     def calculate_loss(
@@ -184,7 +188,7 @@ class PPO(BaseAlgo):
         """
         All parameters ought to be tensors on the appropriate compute device.
         """
-        values, policy, state = self.model(obs, agent_state)
+        values, policy, new_state = self.model(obs, agent_state)
         a_policy = torch.gather(policy, -1, actions[..., np.newaxis])[..., 0]
 
         prob_diff = advantages.sign() * (1 - a_policy / old_policy)
@@ -200,22 +204,31 @@ class PPO(BaseAlgo):
         entropy_loss = torch.clamp(entropy.mean(), max=self.entropy_clip)
         entropy_loss *= -self.entropy_reg
 
-        return entropy, policy_loss + value_loss * self.vf_coef + entropy_loss
+        total_loss = policy_loss + value_loss * self.vf_coef + entropy_loss
 
-    def train_batch(self, batch):
+        return entropy, total_loss, new_state
+
+    def train_batch(self, batch, seq_length):
         num_samples = len(batch.obs)
-        idx = np.arange(num_samples)
-        splits = np.linspace(
-            0, num_samples, self.num_minibatches+2, dtype=int)[1:-1]
+        num_samples -= num_samples % seq_length
+        idx = np.arange(0, num_samples, seq_length)
+        splits = np.linspace(0, len(idx), self.num_minibatches+2, dtype=int)[1:-1]
 
         for _ in range(self.epochs_per_batch):
             get_rng().shuffle(idx)
             for k in np.split(idx, splits):
-                entropy, loss = self.calculate_loss(
-                    batch.obs[k], batch.actions[k], batch.action_prob[k],
-                    batch.values[k], batch.returns[k], batch.advantages[k], batch.agent_state[k])
+                agent_state = batch.agent_state[k]
+                total_loss = 0
+                for i in range(seq_length):
+                    j = k + i
+                    # note that agent is reused from prior step
+                    entropy, loss, agent_state = self.calculate_loss(
+                        batch.obs[j], batch.actions[j], batch.action_prob[j],
+                        batch.values[j], batch.returns[j], batch.advantages[j],
+                        agent_state)
+                    total_loss += loss
                 self.optimizer.zero_grad()
-                loss.backward()
+                total_loss.backward()
                 self.optimizer.step()
                 if self.compute_device.type == "xla":
                     xm.mark_step()
@@ -228,14 +241,14 @@ class PPO(BaseAlgo):
             next_test = round_up(self.num_steps, self.test_interval)
 
             batch = self.gen_training_batch(self.steps_per_env)
-            self.train_batch(batch)
+            self.train_batch(batch, self.training_sequence_length)
 
             self.save_checkpoint_if_needed()
 
             num_steps = self.num_steps
 
             if num_steps >= next_report and self.data_logger is not None:
-                entropy, loss = self.calculate_loss(
+                entropy, loss, agent_state = self.calculate_loss(
                     batch.obs, batch.actions, batch.action_prob,
                     batch.values, batch.returns, batch.advantages, batch.agent_state)
                 loss = loss.item()
@@ -260,30 +273,9 @@ class PPO(BaseAlgo):
 
 @update_hyperparams
 class LSTM_PPO(PPO):
+    training_sequence_length: HyperParam = 10
 
     def __init__(self, *args, **kwargs):
         # ((hidden state, cell state), time, activations) <--- XXX need better init?
         self.default_agent_state = torch.zeros(2, 1, 576)
         super().__init__(*args, **kwargs)
-
-    def train_batch(self, batch):
-        sequence_length = 10  # hyperparam
-
-        num_samples = len(batch.obs)
-        seq_idx = np.arange(num_samples - num_samples % sequence_length)
-        seq_idx = seq_idx.reshape(-1, sequence_length)
-        splits = np.linspace(0, len(seq_idx), self.num_minibatches+2, dtype=int)[1:-1]
-
-        for _ in range(self.epochs_per_batch):
-            get_rng().shuffle(seq_idx)
-            for k in np.split(seq_idx, splits):
-                # k should have shape (num trajectories, trajectory length)
-                k = k.flatten()
-                entropy, loss = self.calculate_loss(
-                    batch.obs[k], batch.actions[k], batch.action_prob[k],
-                    batch.values[k], batch.returns[k], batch.advantages[k], batch.agent_state[k])
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-                if self.compute_device.type == "xla":
-                    xm.mark_step()
