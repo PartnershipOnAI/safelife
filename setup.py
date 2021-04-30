@@ -47,8 +47,8 @@ setuptools.setup(
             py_limited_api=False, # Requires gcc 10 because of https://github.com/numpy/numpy/issues/16970
             define_macros=[
                 ('PY_ARRAY_UNIQUE_SYMBOL', 'safelife_speedups'),
-                ('NPY_NO_DEPRECATED_API', 'NPY_1_11_API_VERSION'),
-                ('Py_LIMITED_API', '0x03060000'),
+                ('NPY_NO_DEPRECATED_API', 'NPY_1_11_API_VERSION')
+                #,('Py_LIMITED_API', '0x03060000'),
             ],
             include_dirs=[ext_path, get_numpy_include()],
             sources=glob.glob(os.path.join(ext_path, '*.c')),
