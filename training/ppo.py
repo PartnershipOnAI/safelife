@@ -214,6 +214,9 @@ class PPO(BaseAlgo):
         idx = np.arange(0, num_samples, seq_length)
         splits = np.linspace(0, len(idx), self.num_minibatches+2, dtype=int)[1:-1]
 
+        state_dims = len(batch.agent_state.shape) - 1
+        state_mask = batch.ongoing.reshape(-1, *(1,)*state_dims)
+
         for _ in range(self.epochs_per_batch):
             get_rng().shuffle(idx)
             for k in np.split(idx, splits):
@@ -227,6 +230,7 @@ class PPO(BaseAlgo):
                         batch.values[j], batch.returns[j], batch.advantages[j],
                         agent_state)
                     total_loss += loss
+                    agent_state *= state_mask[j]
                 self.optimizer.zero_grad()
                 total_loss.backward()
                 self.optimizer.step()
