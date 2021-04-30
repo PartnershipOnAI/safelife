@@ -176,6 +176,7 @@ tmux_cmds = [
     # Activate the virtual environment.
     f"test -d ~/safelife-venv || {src_dir}/gcloud/make-venv.sh",
     "source ~/safelife-venv/bin/activate",
+    "python -c 'import torch, sys ; sys.exit(0 if torch.cuda.is_available() else 1)' || exit"
     "echo $PATH",  # for debugging
 
     # Create a "current_job" directory.
