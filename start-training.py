@@ -256,7 +256,8 @@ def launch_training(config, data_dir):
         algo_args['training_model'] = models.SafeLifeQNetwork(obs_shape)
         algo_args['target_model'] = models.SafeLifeQNetwork(obs_shape)
     elif config['algo'] == 'mppo':
-        from training.ppo import LSTM_PPO as algo_cls
+        config.setdefault('PPO.training_sequence_length', 10)
+        from training.ppo import PPO as algo_cls
         algo_args['model'] = models.SafeLifeLSTMPolicyNetwork(obs_shape)
     else:
         logger.error("Unexpected algorithm type '%s'", config['algo'])

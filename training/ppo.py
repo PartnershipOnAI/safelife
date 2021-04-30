@@ -260,8 +260,3 @@ class PPO(BaseAlgo):
                 self.run_episodes(self.testing_envs, validation=True)
 
         self.save_checkpoint()
-
-
-@update_hyperparams
-class LSTM_PPO(PPO):
-    training_sequence_length: HyperParam = 10
