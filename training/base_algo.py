@@ -48,10 +48,6 @@ class BaseAlgo(object):
     default_agent_state = None  # Can be overridden for stateful agents
 
     @property
-    def stateful(self):
-        return self.default_agent_state is not None
-
-    @property
     def checkpoint_directory(self):
         return self._checkpoint_directory or (
             self.data_logger and self.data_logger.logdir)
@@ -169,10 +165,7 @@ class BaseAlgo(object):
         env.last_obs = obs
         # Agent state will either be a torch tensor or None, so we store
         # it in a regular list.
-        if self.stateful:
-            state = self.default_agent_state.to(self.compute_device)
-        else:
-            state = None
+        state = self.default_agent_state
         env.agent_state = [state] * len(obs)
         if hasattr(env, 'num_resets'):
             env.num_resets += 1

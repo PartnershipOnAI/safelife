@@ -103,6 +103,8 @@ class SafeLifePolicyNetwork(nn.Module):
         self.logits = nn.Linear(width, num_actions)
         self.value_func = nn.Linear(width, 1)
 
+        self.default_agent_state = torch.tensor(0.0)
+
     def forward(self, obs, state=None):
         "Returns (value, policy, new_agent_state)."
         # Switch observation to (c, w, h) instead of (h, w, c)
@@ -112,7 +114,7 @@ class SafeLifePolicyNetwork(nn.Module):
             x = layer(x)
         value = self.value_func(x)[...,0]
         policy = F.softmax(self.logits(x), dim=-1)
-        return value, policy, None
+        return value, policy, state
 
 
 class SafeLifeLSTMPolicyNetwork(nn.Module):
@@ -145,6 +147,8 @@ class SafeLifeLSTMPolicyNetwork(nn.Module):
 
         self.logits = nn.Linear(self.dense_width, num_actions)
         self.value_func = nn.Linear(self.dense_width, 1)
+
+        self.default_agent_state = torch.zeros(2, 1, 576)
 
     def forward(self, obs, state):
         check_shape(state, ("*", 2, 1, 576), "state passed to LSTM PPO")

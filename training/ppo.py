@@ -58,6 +58,7 @@ class PPO(BaseAlgo):
         assert self.training_envs is not None
 
         self.model = model.to(self.compute_device)
+        self.default_agent_state = self.model.default_agent_state.to(self.compute_device)
         self.optimizer = optim.Adam(
             self.model.parameters(), lr=self.learning_rate)
 
@@ -67,13 +68,10 @@ class PPO(BaseAlgo):
     def take_one_step(self, envs):
         obs, agent_ids, agent_states = self.obs_for_envs(envs, return_states=True)
 
+        agent_states = torch.stack(agent_states)
         tensor_obs = self.tensor(obs, torch.float32)
-        if self.stateful:
-            state = torch.stack(agent_states)
-            values, policies, new_state = self.model(tensor_obs, state)
-        else:
-            values, policies = self.model(tensor_obs)[:2]
-            new_state = [None] * len(values)
+
+        values, policies, new_state = self.model(tensor_obs, agent_states)
         values = values.detach().cpu().numpy()
         policies = policies.detach().cpu().numpy()
 
@@ -137,10 +135,7 @@ class PPO(BaseAlgo):
         # For the final step in each environment, also calculate the value
         # function associated with the next observation
         tensor_obs = self.tensor(step.next_obs, torch.float32)
-        if self.stateful:
-            vals = self.model(tensor_obs, step.agent_state)[0]
-        else:
-            vals = self.model(tensor_obs)[0]
+        vals = self.model(tensor_obs, step.agent_state)[0]
         vals = vals.detach().cpu().numpy()
         for k, agent_id in enumerate(step.agent_ids):
             if not step.done[k]:
@@ -167,16 +162,8 @@ class PPO(BaseAlgo):
             x = np.concatenate([d[label] for d in trajectories.values()])
             return torch.as_tensor(x, device=self.compute_device, dtype=dtype)
 
-        # Create a linearized *list* of agent states.
         agent_states = sum((d['agent_state'] for d in trajectories.values()), [])
-        if self.stateful:
-            # Each item in agent_states is a tensor. Stack them.
-            # N.B. this requires that the agent states each be *single*
-            # tensor objects. Might want to relax this in the future to allow
-            # for a tuple of agent states (different shapes at different layers).
-            agent_states = torch.stack(agent_states)
-        else:
-            agent_states = torch.zeros(len(agent_states))
+        agent_states = torch.stack(agent_states)
 
         return (
             t('obs'), t('actions', torch.int64), t('action_prob'),
@@ -278,8 +265,3 @@ class PPO(BaseAlgo):
 @update_hyperparams
 class LSTM_PPO(PPO):
     training_sequence_length: HyperParam = 10
-
-    def __init__(self, *args, **kwargs):
-        # ((hidden state, cell state), time, activations) <--- XXX need better init?
-        self.default_agent_state = torch.zeros(2, 1, 576)
-        super().__init__(*args, **kwargs)
