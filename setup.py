@@ -2,6 +2,7 @@ import os
 import glob
 import setuptools
 import platform
+import argparse
 
 
 class get_numpy_include(object):
@@ -20,6 +21,21 @@ data_files += glob.glob(os.path.join(levels_path, '**', '*.yaml'), recursive=Tru
 
 with open(os.path.join(base_dir, "README.md"), "rt", encoding="utf-8") as fh:
     long_description = fh.read()
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--py-limited-api')
+py_limited_api = parser.parse_known_args()[0].py_limited_api
+if py_limited_api:
+    # Only set up the limited API macros if we request it.
+    # Note that there is a bug in gcc before version 10 which will break
+    # compilation when the macro is set.
+    assert py_limited_api in ['cp34', 'cp35', 'cp36', 'cp37', 'cp38', 'cp39']
+    major, minor = py_limited_api[2:]
+    py_limited_api_macro = [
+        ('Py_LIMITED_API', '0x0{}0{}0000'.format(major, minor))
+    ]
+else:
+    py_limited_api_macro = []
 
 setuptools.setup(
     name='safelife',
@@ -44,11 +60,11 @@ setuptools.setup(
     ext_modules=[
         setuptools.Extension(
             'safelife.speedups',
-            py_limited_api=True,
+            py_limited_api=bool(py_limited_api),
             define_macros=[
                 ('PY_ARRAY_UNIQUE_SYMBOL', 'safelife_speedups'),
                 ('NPY_NO_DEPRECATED_API', 'NPY_1_11_API_VERSION'),
-                ('Py_LIMITED_API', '0x03060000'),
+                *py_limited_api_macro,
             ],
             include_dirs=[ext_path, get_numpy_include()],
             sources=glob.glob(os.path.join(ext_path, '*.c')),
