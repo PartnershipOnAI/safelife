@@ -1,3 +1,12 @@
+# Version 1.2.2
+
+Remove `PY_LIMITED_API` by default and only use it when building distributions that are to be uploaded to PyPI. Evidently, the limited API breaks compilation for older versions of gcc.
+
+# Version 1.2.1
+
+Use `PY_LIMITED_API` during compilation so that a single binary distribution can be run on multiple versions of python.
+
+
 # Version 1.2
 
 SafeLife v1.2 introduces multi-agent training and [Weights & Biases](https://www.wandb.com) integration, as well as support for the [Weights & Biases SafeLife benchmark](https://wandb.ai/safelife/v1dot2/benchmark). There are a slew of other changes as well.

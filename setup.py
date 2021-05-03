@@ -37,9 +37,10 @@ if py_limited_api:
 else:
     py_limited_api_macro = []
 
+
 setuptools.setup(
     name='safelife',
-    version='1.2.1',
+    version='1.2.2',
     author="Carroll L. Wainwright",
     author_email="carroll@partnershiponai.org",
     description="Safety benchmarks for reinforcement learning",
