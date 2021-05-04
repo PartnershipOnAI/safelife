@@ -39,7 +39,7 @@ def parse_args(argv=sys.argv[1:]):
         "If 'train', train the model. If 'benchmark', run the model on testing "
         "environments. If 'inspect', load an ipython prompt for interactive "
         "debugging.")
-    parser.add_argument('--algo', choices=('ppo', 'mppo2', 'dqn'), default='ppo')
+    parser.add_argument('--algo', choices=('ppo', 'mppo2', 'mppo3', 'dqn'), default='ppo')
     parser.add_argument('-e', '--env-type', default='append-spawn')
     parser.add_argument('-s', '--steps', type=float, default=6e6,
         help='Length of training in steps (default: 6e6).')
@@ -257,6 +257,10 @@ def launch_training(config, data_dir):
         algo_args['target_model'] = models.SafeLifeQNetwork(obs_shape)
     elif config['algo'] == 'mppo2':
         config.setdefault('PPO.training_sequence_length', 10)
+        from training.ppo import PPO as algo_cls
+        algo_args['model'] = models.SafeLifeLSTMPolicyNetwork(obs_shape)
+    elif config['algo'] == 'mppo3':
+        config.setdefault('PPO.training_sequence_length', 1)
         from training.ppo import PPO as algo_cls
         algo_args['model'] = models.SafeLifeLSTMPolicyNetwork(obs_shape)
     else:
