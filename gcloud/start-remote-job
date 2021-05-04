@@ -6,6 +6,7 @@ import subprocess as sp
 import shutil
 import tempfile
 import textwrap
+import time
 import uuid
 
 
@@ -140,6 +141,7 @@ try:
     print("Creating", src_dir)
     if result.returncode != 0:
         exit(1)
+    time.sleep(3)
     result = sp.run([ssh_cmd, args.instance_name, "mkdir", "-p", src_dir])
     if result.returncode != 0:
         exit(1)
