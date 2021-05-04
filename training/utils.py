@@ -36,6 +36,16 @@ def named_output(names):
     return decorator
 
 
+def check_shape(tensor, shape, name=""):
+    observed = tensor.shape
+    for axis, value in enumerate(shape):
+        if type(value) is str or value is None:
+            continue
+        if value != observed[axis]:
+            raise TypeError(
+                f"Tensor passed to {name} is of shape {observed} but should be {shape}")
+
+
 def round_up(x, r):
     """
     Round x up to the nearest multiple of r.
@@ -118,3 +128,43 @@ def nested_setattr(obj, key, val):
     if obj_key:
         obj = nested_getattr(obj, obj_key)
     setattr(obj, set_key, val)
+
+
+def get_compute_device():
+    """
+    Try first to get TPU, then cuda, then CPU.
+    """
+    import torch
+    try:
+        # TPU
+        import torch_xla.core.xla_model as xm
+        # import os
+        # os.environ["XLA_USE_BF16"] = "1"
+        return xm.xla_device()
+    except (ModuleNotFoundError, ImportError):
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        else:
+            return torch.device("cpu")
+
+
+def recursive_shape(obj, indent=0):
+    """
+    Recursively prettyprint the shape of a hierarchical torch object.
+    """
+    s = ""
+    if isinstance(obj, list) or isinstance(obj, tuple):
+        c1, c2 = ["[", "]"] if isinstance(obj, list) else ["(", ")"]
+        s += indent * " " + c1 + "\n"
+        indent += 2
+        for item in obj:
+            s += recursive_shape(item, indent) + ",\n"
+        indent -= 2
+        s += indent * " " + c2 + "\n"
+    else:
+        if hasattr(obj, "shape"):
+            s += " " * indent + str(obj.shape)
+        else:
+            s += " " * indent + str(obj)
+
+    return s

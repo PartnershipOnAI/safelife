@@ -46,7 +46,7 @@ parser.add_argument('--no-shutdown', action="store_true",
     "complete. This flag prevents that from happening.")
 parser.add_argument('--sweep', action="store_true",
     help="Specifies that the job is part of a wandb sweep. "
-    "The job name should correspond to the sweep id.")
+    'The job name should be of the form "entity/project/sweepid"')
 args, remaining_args = parser.parse_known_args()
 
 if args.sweep:
@@ -137,10 +137,18 @@ try:
             os.makedirs(os.path.dirname(dst_file), exist_ok=True)
             shutil.copyfile(src_file, dst_file)
 
-    print("Syncing repo to the cloud...")
-    result = sp.run([
+    print("Creating", src_dir)
+    if result.returncode != 0:
+        exit(1)
+    result = sp.run([ssh_cmd, args.instance_name, "mkdir", "-p", src_dir])
+    if result.returncode != 0:
+        exit(1)
+    sync_command = [
         'rsync', '--rsh', ssh_cmd, '-ra',
-        tmp_repo.name + '/', args.instance_name + ':' + src_dir])
+        tmp_repo.name + '/', args.instance_name + ':' + src_dir
+    ]
+    print("Syncing repo to the cloud...", sync_command)
+    result = sp.run(sync_command)
     if result.returncode != 0:
         exit(1)
 finally:
@@ -161,7 +169,10 @@ else:
         training_cmd.append('--port=6006')
     training_cmd = ' '.join(training_cmd)
 
+wandb_key = os.environ.get("WANDB_API_KEY")
 tmux_cmds = [
+    # keep a lot of scrollback history in case it's useful
+    "tmux set-option -g history-limit 100000",
     # Activate the virtual environment.
     f"test -d ~/safelife-venv || {src_dir}/gcloud/make-venv.sh",
     "source ~/safelife-venv/bin/activate",
@@ -172,7 +183,11 @@ tmux_cmds = [
 
     # Install dependencies.
     "sudo apt-get install ffmpeg --yes",
+    f"pip install -U wandb",
     f"pip install -r {src_dir}/requirements.txt",
+
+    # Log in to wandb.
+    f"wandb login {wandb_key}" if wandb_key else "",
 
     # Start training!
     f"cd {src_dir}", training_cmd,

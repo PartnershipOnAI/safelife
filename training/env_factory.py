@@ -21,7 +21,7 @@ from safelife.safelife_game import CellTypes
 from safelife.safelife_logger import SafeLifeLogWrapper
 
 from .logging_setup import setup_data_logger
-
+from .global_config import HyperParam, update_hyperparams
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ class CurricularLevelIterator(SafeLifeLevelIterator):
     curriculum_distribution = "progress_estimate"  # or "uniform"
 
     def __init__(self, *levels, logger, curriculum_params={}, **kwargs):
-        super().__init__(*levels, repeat_levels=True, **kwargs)
+        super().__init__(*levels, **kwargs)
         self.logger = logger
         self.curriculum_stage = 0
         self.max_stage = len(levels) - 1
@@ -214,6 +214,16 @@ task_types = {
         'validation_levels': ['random/navigation'],
         'benchmark_levels': 'benchmarks/v1.0/navigation.npz',
     },
+    'corridor1': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['experiments/corridor1']
+    },
+
+    'memory-redblue': {
+        'iter_class': SafeLifeLevelIterator,
+        'train_levels': ['experiments/lstm-memory']
+    },
+
 
     # Multi-agent tasks:
     'asym1': {
@@ -287,10 +297,11 @@ def safelife_env_factory(
     return envs
 
 
-def build_environments(config, data_dir=None):
+@update_hyperparams
+def build_environments(config, data_dir=None, env_batch_size: HyperParam = 16):
     task = config['env_type']
 
-    assert task in task_types, "'%s' is not a recognized task" % (task,)
+    assert task in task_types, f"'{task}' is not a recognized task"
 
     seed = np.random.SeedSequence(config.get('seed'))
     training_seed, benchmark_seed = seed.spawn(2)
@@ -367,7 +378,7 @@ def build_environments(config, data_dir=None):
 
     envs = {}
     envs['training'] = safelife_env_factory(
-        training_iter, num_envs=16, training=True, env_args=common_env_args,
+        training_iter, num_envs=env_batch_size, training=True, env_args=common_env_args,
         data_logger=training_logger,
         se_baseline=se_baseline, se_penalty=schedule(**se_schedule),
         exit_difficulty=schedule(**exit_difficulty),

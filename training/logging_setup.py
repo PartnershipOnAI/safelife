@@ -10,6 +10,7 @@ from .global_config import config
 
 
 def setup_logging(data_dir, debug=False):
+
     handlers = ['console']
     logging_config = {
         'version': 1,

@@ -5,6 +5,7 @@ import logging
 import torch
 import numpy as np
 
+from .global_config import config
 from .utils import nested_getattr, nested_setattr, named_output
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,12 @@ class BaseAlgo(object):
     _last_checkpoint = -1
     _checkpoint_directory = None
 
+    default_agent_state = None  # Can be overridden for stateful agents
+
+    @property
+    def stateful(self):
+        return self.default_agent_state is not None
+
     @property
     def checkpoint_directory(self):
         return self._checkpoint_directory or (
@@ -79,7 +86,7 @@ class BaseAlgo(object):
         else:
             pass  # already have a recent checkpoint
 
-    def save_checkpoint(self):
+    def save_checkpoint(self, filename=None):
         chkpt_dir = self.checkpoint_directory
         if not chkpt_dir:
             return
@@ -95,7 +102,9 @@ class BaseAlgo(object):
                 val = val.state_dict()
             data[attrib] = val
 
-        path = os.path.join(chkpt_dir, 'checkpoint-%i.data' % self.num_steps)
+        if not filename:
+            filename = 'checkpoint-%i.data' % self.num_steps
+        path = os.path.join(chkpt_dir, filename)
         torch.save(data, path)
         logger.info("Saving checkpoint: '%s'", path)
 
@@ -170,6 +179,8 @@ class BaseAlgo(object):
                 done = env.last_done
             else:
                 obs = env.reset()
+                if self.stateful:
+                    env.agent_state = self.default_agent_state.to(self.compute_device)
                 if getattr(env, 'single_agent', True):
                     obs = np.asanyarray(obs)[np.newaxis]
                 env.last_done = done = np.tile(False, len(obs))
@@ -230,6 +241,8 @@ class BaseAlgo(object):
 
             if np.all(done):
                 obs = env.reset()
+                if self.stateful:
+                    env.agent_state = self.default_agent_state.to(self.compute_device)
                 if getattr(env, 'single_agent', True):
                     obs = np.asanyarray(obs)[np.newaxis]
                 done = np.tile(False, len(obs))
@@ -275,7 +288,8 @@ class BaseAlgo(object):
         # return obs, actions, rewards, done, agent_ids
         raise NotImplementedError
 
-    def run_episodes(self, envs, num_episodes=None):
+    @torch.no_grad()
+    def run_episodes(self, envs, num_episodes=None, validation=False):
         """
         Run each environment to completion.
 
@@ -285,10 +299,14 @@ class BaseAlgo(object):
         Parameters
         ----------
         envs : list
-            List of environments to run in parallel.
+            List of environments to run in parallel. These pull new episodes
+            in as needed.
         num_episodes : int
             Total number of episodes to run. Defaults to the same as number
             of environments.
+        validation : bool
+            True if these are validation episodes & we should do associated
+            housekeeping.
         """
         if not envs:
             return
@@ -296,16 +314,16 @@ class BaseAlgo(object):
             num_episodes = len(envs)
         num_completed = 0
 
-        logger = getattr(envs[0], 'logger', None)
-        if logger is not None:
-            logger.reset_summary()
+        sl_logger = getattr(envs[0], 'logger', None)
+        if sl_logger is not None:
+            sl_logger.reset_summary()
 
         while num_completed < num_episodes:
             data = self.take_one_step(envs)
             num_in_progress = len(envs)
             new_envs = []
             for env, done in zip(envs, data.done):
-                done = np.all(done)
+                done = np.all(done)  # for all agents in a [multiagent] env
                 if done:
                     num_completed += 1
                 if done and num_in_progress + num_completed > num_episodes:
@@ -313,6 +331,15 @@ class BaseAlgo(object):
                 else:
                     new_envs.append(env)
             envs = new_envs
+            if num_completed == 1:
+                config.check_for_unused_hyperparams()
 
-        if logger is not None:
-            logger.log_summary()
+        if sl_logger is not None:
+            sl_logger.log_summary()
+
+        # Keep the agent that performs best on the validation ("test") levels
+        if validation:
+            best_so_far = sl_logger.check_for_best_agent()
+            if best_so_far is not False:
+                logger.info("New best performance on validation levels: %f", best_so_far)
+                self.save_checkpoint(filename="best-validation-agent.data")

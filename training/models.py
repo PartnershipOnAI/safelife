@@ -1,4 +1,9 @@
 import numpy as np
+import subprocess
+
+from training.utils import recursive_shape, check_shape # noqa
+
+import torch
 
 from torch import nn
 from torch.nn import functional as F
@@ -88,16 +93,18 @@ class SafeLifePolicyNetwork(nn.Module):
         self.cnn, cnn_out_shape = safelife_cnn(input_shape)
         num_features = np.product(cnn_out_shape)
         num_actions = 9
+        width = self.dense_width
 
-        dense = [nn.Sequential(nn.Linear(num_features, self.dense_width), nn.ReLU())]
+        dense = [nn.Sequential(nn.Linear(num_features, width), nn.ReLU())]
         for n in range(self.dense_depth - 1):
-            dense.append(nn.Sequential(nn.Linear(self.dense_width, self.dense_width), nn.ReLU()))
+            dense.append(nn.Sequential(nn.Linear(width, width), nn.ReLU()))
         self.dense = nn.Sequential(*dense)
 
-        self.logits = nn.Linear(self.dense_width, num_actions)
-        self.value_func = nn.Linear(self.dense_width, 1)
+        self.logits = nn.Linear(width, num_actions)
+        self.value_func = nn.Linear(width, 1)
 
-    def forward(self, obs):
+    def forward(self, obs, state=None):
+        "Returns (value, policy, new_agent_state)."
         # Switch observation to (c, w, h) instead of (h, w, c)
         obs = obs.transpose(-1, -3)
         x = self.cnn(obs).flatten(start_dim=1)
@@ -105,4 +112,75 @@ class SafeLifePolicyNetwork(nn.Module):
             x = layer(x)
         value = self.value_func(x)[...,0]
         policy = F.softmax(self.logits(x), dim=-1)
-        return value, policy
+        return value, policy, None
+
+
+class SafeLifeLSTMPolicyNetwork(nn.Module):
+
+    dense_depth: HyperParam = 1
+    dense_width: HyperParam = 512
+    lstm_channels: HyperParam = 3
+    lstm_depth: HyperParam = 1
+
+    def __init__(self, input_shape, dense_depth=1, dropout=0):
+        super().__init__()
+
+        self.cnn, cnn_out_shape = safelife_cnn(input_shape)
+        h, w, c = cnn_out_shape
+        num_features = np.product(cnn_out_shape)
+        num_actions = 9
+
+        dense = [nn.Sequential(
+            nn.Linear(num_features + h * w * self.lstm_channels, self.dense_width),
+            nn.ReLU()
+        )]
+        for n in range(dense_depth - 1):
+            dense.append(nn.Sequential(nn.Linear(self.dense_width, self.dense_width), nn.ReLU()))
+        self.dense = nn.Sequential(*dense)
+
+        self.memory = nn.LSTM(
+            input_size=int(num_features), hidden_size=h * w * self.lstm_channels,
+            num_layers=self.lstm_depth, dropout=dropout,
+        )
+
+        self.logits = nn.Linear(self.dense_width, num_actions)
+        self.value_func = nn.Linear(self.dense_width, 1)
+
+    def forward(self, obs, state):
+        check_shape(state, ("*", 2, 1, 576), "state passed to LSTM PPO")
+
+        # Switch observation to (c, w, h) instead of (h, w, c)
+        obs = obs.transpose(-1, -3)
+
+        x = self.cnn(obs).flatten(start_dim=1)
+        y = x[np.newaxis, ...]
+        # print("Applying memory with data", obs.shape, "and state:", recursive_shape(state))
+        state = state.permute(1, 2, 0, 3)  # move (hs, cs) to front
+        try:
+            y = self.memory(y, tuple(state))
+        except RuntimeError as e:
+            # LSTMs call .view() on their state, which requires contiguous memory on GPUs
+            # since we chop and change batches around, we don't preserve this across
+            # all call sites
+            if "hx is not contiguous" in str(e):
+                state = state.contiguous()
+                try:
+                    y = self.memory(y, tuple(state))
+                except RuntimeError:
+                    subprocess.call("nvidia-smi")
+                    raise
+        y, state = y
+        state = torch.stack(state)  # (hs, cs) tuple -> tensor
+        state = state.permute(2, 0, 1, 3)  # move batch to front
+        # print("return shape is", state.shape)
+        y = y[0]  # remove time
+        merged = torch.cat((x, y), dim=1)
+        x = self.dense[0](merged)
+
+        rest = self.dense[1:]
+        for layer in rest:
+
+            x = layer(x)
+        value = self.value_func(x)[...,0]
+        policy = F.softmax(self.logits(x), dim=-1)
+        return value, policy, state

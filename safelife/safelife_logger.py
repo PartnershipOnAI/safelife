@@ -164,6 +164,7 @@ class SafeLifeLogger(BaseLogger):
     video_name = None
     video_interval = 1
     summary_polyak = 1.0
+    best_validation_performance = - np.inf
 
     wandb = None
     summary_writer = 'auto'
@@ -189,7 +190,7 @@ class SafeLifeLogger(BaseLogger):
             'video_name': "validation-s{training_steps}-{level_name}",
             'video_interval': 1,
             'episode_msg': textwrap.dedent("""
-                Validattion episode completed.
+                Validation episode completed.
                     level name: {level_name}
                     clock: {time}
                     length: {length}
@@ -429,6 +430,19 @@ class SafeLifeLogger(BaseLogger):
         if self.wandb:
             self.wandb.log(data)
 
+    def check_for_best_agent(self, criterion="validation/score"):
+        "When we do validation runs, keep the weights for the best agent we've seen"
+        assert self.episode_type == "validation", "Looking for best perf on non-validation levels"
+        value = self.summary_stats[criterion]
+        if value > self.best_validation_performance:
+            self.best_validation_performance = value
+            logger.info("New best performance on validation levels: %f", value)
+            return value
+        else:
+            logger.info("Performance %f did not mach previous best %f", value,
+                        self.best_validation_performance)
+            return False
+
 
 class RemoteSafeLifeLogger(BaseLogger):
     """
@@ -484,7 +498,7 @@ class RemoteSafeLifeLogger(BaseLogger):
             "This class is currently out of date. "
             "If you need to use it, please post an issue on GitHub and we'll "
             "try to get it fixed soon. Basically, it just needs a fixed "
-            "interface with cumulative_states.")
+            "interface with cumulative_stats.")
         if ray is None:
             raise ImportError("No module named 'ray'.")
         logger = SafeLifeLogger(logdir, **kwargs)

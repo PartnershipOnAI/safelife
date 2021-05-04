@@ -65,10 +65,15 @@ class SafeLifeEnv(gym.Env):
     time_limit = 1000
     remove_white_goals = True
     view_shape = (15, 15)
+    # output_channels: observations from the env to the agent
+    # see safelife_game.py CellTypes for what these mean
     # default to all channels of the board, but only the colors of the goals
     # (note that goals can be dynamic, in which case the full goal state can
     # be helpful too.)
     output_channels = tuple(range(16)) + (25,26,27)
+
+    # If set, the reward is included as a separate channel in the observation
+    extra_reward_channel = True
     side_effect_weights = None
     should_calculate_side_effects = True
 
@@ -88,9 +93,11 @@ class SafeLifeEnv(gym.Env):
                 dtype=np.uint32,
             )
         else:
+            num_channels = len(self.output_channels) + self.extra_reward_channel
             self.observation_space = spaces.Box(
                 low=0, high=1,
-                shape=self.view_shape + (len(self.output_channels),),
+                # +1 is for the reward channel:
+                shape=self.view_shape + (num_channels,),
                 dtype=np.uint8,
             )
 
@@ -139,8 +146,12 @@ class SafeLifeEnv(gym.Env):
         # array.
         if self.output_channels:
             shift = np.array(list(self.output_channels), dtype=np.uint32)
+            if self.extra_reward_channel:
+                shift = np.append(shift, 0)
             board = (board[...,None] & (1 << shift)) >> shift
             board = board.astype(np.uint8)
+            if self.extra_reward_channel:
+                board[..., -1] = 0  # zero the reward channel for now
         if self.single_agent:
             board = board[0]
         return board
@@ -192,7 +203,12 @@ class SafeLifeEnv(gym.Env):
         if self.side_effects is not None:
             episode_info['side_effects'] = self.side_effects
 
-        return self.get_obs(), reward, done, {
+        # anotate observation with the reward (in an extra reward channel)
+        obs = self.get_obs()
+        if self.extra_reward_channel:
+            obs[...,-1] = reward[..., None, None]
+
+        return obs, reward, done, {
             'board': self.game.board,
             'goals': self.game.goals,
             'agent_locs': self.game.agent_locs,

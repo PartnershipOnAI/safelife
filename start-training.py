@@ -39,7 +39,7 @@ def parse_args(argv=sys.argv[1:]):
         "If 'train', train the model. If 'benchmark', run the model on testing "
         "environments. If 'inspect', load an ipython prompt for interactive "
         "debugging.")
-    parser.add_argument('--algo', choices=('ppo', 'dqn'), default='ppo')
+    parser.add_argument('--algo', choices=('ppo', 'mppo', 'dqn'), default='ppo')
     parser.add_argument('-e', '--env-type', default='append-spawn')
     parser.add_argument('-s', '--steps', type=float, default=6e6,
         help='Length of training in steps (default: 6e6).')
@@ -47,11 +47,12 @@ def parse_args(argv=sys.argv[1:]):
     parser.add_argument('--deterministic', action="store_true",
         help="If set, uses deterministic cudnn routines. This may slow "
         "down training, but it should make the results reproducable.")
-
     parser.add_argument('--port', type=int,
         help="Port on which to run tensorboard.")
     parser.add_argument('-w', '--wandb', action='store_true',
         help='Use wandb for analytics.')
+    parser.add_argument('--resume', type=str,
+        help='Wandb run ID to resume.')
     parser.add_argument('--project', default=None,
         help='[Entity and] project for wandb. '
         'Eg: "safelife/multiagent" or "multiagent"')
@@ -60,12 +61,10 @@ def parse_args(argv=sys.argv[1:]):
         "(helpful for running remotely).")
     parser.add_argument('--ensure-gpu', action='store_true',
         help="Check that the machine we're running on has CUDA support")
-
     parser.add_argument('-x', '--extra-params', default=None,
         help="Extra config values/hyperparameters. Should be loadable as JSON.")
 
     args = parser.parse_args(argv)
-
     if args.extra_params:
         try:
             args.extra_params = json.loads(args.extra_params)
@@ -73,12 +72,12 @@ def parse_args(argv=sys.argv[1:]):
         except (json.JSONDecodeError, AssertionError):
             print(f"'{args.extra_params}' is not a valid JSON dictionary. "
                 "Make sure to escape your quotes!")
-            exit(1)
+            sys.exit(1)
 
     assert args.wandb or args.data_dir or args.run_type == 'inspect', (
         "Either a data directory must be set or the wandb flag must be set. "
         "If wandb is set but there is no data directory, then a run name will be "
-        "picked automatically.")
+        "picked automatically. %s" % args)
 
     if args.ensure_gpu:
         assert torch.cuda.is_available(), "CUDA support requested but not available!"
@@ -147,6 +146,7 @@ def setup_config_and_wandb(args):
         k: v for k, v in vars(args).items() if k not in
         ['port', 'wandb', 'ensure_gpu', 'project', 'shutdown', 'extra_params']
     }
+    base_config['run_date'] = time.strftime("%Y-%m-%d")
 
     # tag any hyperparams from the commandline
     if args.extra_params is not None:
@@ -170,7 +170,7 @@ def setup_config_and_wandb(args):
 
             wandb.init(
                 name=job_name, notes=run_notes, project=project, entity=entity,
-                config=base_config)
+                config=base_config if not args.resume else None, resume=args.resume)
             # Note that wandb config can contain different and/or new keys that
             # aren't in the command-line arguments. This is especially true for
             # wandb sweeps.
@@ -182,8 +182,8 @@ def setup_config_and_wandb(args):
 
             if job_name is None:
                 job_name = wandb.run.name
-                data_dir = os.path.join(
-                    safety_dir, 'data', time.strftime("%Y-%m-%d-") + wandb.run.id)
+                slug = config['run_date'] + '-' + wandb.run.id
+                data_dir = os.path.join(safety_dir, 'data', slug)
 
             logging_setup.save_code_to_wandb()
     else:
@@ -255,6 +255,9 @@ def launch_training(config, data_dir):
         from training.dqn import DQN as algo_cls
         algo_args['training_model'] = models.SafeLifeQNetwork(obs_shape)
         algo_args['target_model'] = models.SafeLifeQNetwork(obs_shape)
+    elif config['algo'] == 'mppo':
+        from training.ppo import LSTM_PPO as algo_cls
+        algo_args['model'] = models.SafeLifeLSTMPolicyNetwork(obs_shape)
     else:
         logger.error("Unexpected algorithm type '%s'", config['algo'])
         raise ValueError("unexpected algorithm type")
@@ -267,15 +270,18 @@ def launch_training(config, data_dir):
         config2 = config.copy()
         config2.pop('_wandb', None)
         wandb.config.update(config2, allow_val_change=True)
+        wandb.watch(algo_args['model'])
 
     print("")
     logger.info("Hyperparameters: %s", config)
-    config.check_for_unused_hyperparams()
+    # config.check_for_unused_hyperparams()
     print("")
 
     if config['run_type'] == "train":
         algo.train(int(config['steps']))
         if 'benchmark' in envs:
+            # "Early stopping"... load the best agent from training for the benchmark run
+            algo.load_checkpoint("best-validation-agent.data")
             algo.run_episodes(envs['benchmark'], num_episodes=1000)
     elif config['run_type'] == "benchmark" and "benchmark" in envs:
         algo.run_episodes(envs['benchmark'], num_episodes=1000)

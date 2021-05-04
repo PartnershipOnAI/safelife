@@ -7,4 +7,8 @@
 
 host="$1"
 shift
-exec gcloud compute ssh "$host" -- "$@"
+zone=""
+if echo $host | grep -q central || [ "$host" = "pde-5" ] ; then
+    zone="--zone us-central1-b"
+fi
+exec gcloud compute ssh $zone "$host" -- "$@"
