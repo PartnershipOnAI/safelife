@@ -12,3 +12,4 @@ plays
 .*.swp
 wandb/
 ./tmp/
+.idea/
