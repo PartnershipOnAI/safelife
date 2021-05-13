@@ -73,7 +73,7 @@ def setup_data_logger(data_dir, episode_type):
     if data_dir is not None:
         os.makedirs(data_dir, exist_ok=True)
 
-    if config.get('_wandb'):
+    if config.get('_wandb') is not None:
         import wandb
         summary_writer = False
     elif config['run_type'] == 'train':
